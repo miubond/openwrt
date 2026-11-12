@@ -1,0 +1,12 @@
+#
+# MP716 LED defaults
+#
+
+board_config_update
+board_config_flush
+
+case "$(board_name)" in
+yunxm,mp716)
+	ucidef_set_led_netdev "wan" "wan" "green:status" "wan"
+	;;
+esac

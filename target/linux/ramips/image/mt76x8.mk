@@ -1508,3 +1508,32 @@ define Device/teltonika_rut241
   IMAGE/sysupgrade.bin := append-kernel | pad-to $$$$(BLOCKSIZE) | append-rootfs | pad-rootfs | check-size | append-metadata
 endef
 TARGET_DEVICES += teltonika_rut241
+
+### MP716 ###
+# 由 scripts/bootstrap-openwrt.sh 合并进 target/linux/ramips/image/mt76x8.mk
+
+define Device/yunxm_mp716
+  SOC := mt7628an
+  BLOCKSIZE := 64k
+  IMAGE_SIZE := 7744k
+  KERNEL := $(KERNEL_DTB) | uImage lzma
+  KERNEL_INITRAMFS := $$(KERNEL_DTB) | uImage lzma
+  DEVICE_VENDOR := YUNXM
+  DEVICE_MODEL := MP716
+  DEVICE_PACKAGES := \
+	mp716-profiles \
+	kmod-mt7603 \
+	kmod-sdhci-mt7620 \
+	-urngd
+  SUPPORTED_DEVICES := yunxm,mp716
+endef
+TARGET_DEVICES += yunxm_mp716
+
+define Device/yunxm_mp716_ram
+  $(call Device/yunxm_mp716)
+  DEVICE_VARIANT := RAM test
+  KERNEL_INITRAMFS_NAME := MT7628_DB-AP-RAM
+  IMAGE/sysupgrade.bin :=
+endef
+TARGET_DEVICES += yunxm_mp716_ram
+

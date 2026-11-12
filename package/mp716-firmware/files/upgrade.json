@@ -1,0 +1,8 @@
+{
+  "maxsize": 8060928,
+  "maxsize_tip": "8M",
+  "stream_cgi": "/cgi-bin/cgi_stream.cgi",
+  "stream_id": 4,
+  "keep_setting_default": true,
+  "allow_flash_flag": "/etc/mp716/allow-flash-upgrade"
+}

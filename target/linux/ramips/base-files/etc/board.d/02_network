@@ -1,0 +1,14 @@
+#
+# MP716 logical interface layout
+#
+
+board_config_update
+board_config_flush
+
+case "$(board_name)" in
+yunxm,mp716)
+	ucidef_set_interfaces_lan_wan "lan" "wan"
+	ucidef_set_interface_lan "eth0.1" "static" "192.168.199.1" "255.255.255.0"
+	ucidef_set_interface_wan "eth0.2" "dhcp"
+	;;
+esac

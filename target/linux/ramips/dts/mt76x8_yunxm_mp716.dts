@@ -1,0 +1,130 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * YUNXM / HUAYI MP716 — MT7628, 64 MiB RAM, 8 MiB SPI NOR, 5-port FE switch
+ * 引脚/分区参数需在实机串口与 bootloader 输出中独立核对后再固化安装镜像。
+ */
+/dts-v1/;
+
+#include "mt7628.dtsi"
+
+/ {
+	compatible = "yunxm,mp716", "ralink,mt7628a-soc";
+	model = "YUNXM MP716";
+
+	aliases {
+		serial0 = &uartlite;
+		led-boot = &led_status;
+		led-failsafe = &led_status;
+		led-running = &led_status;
+		led-upgrade = &led_status;
+	};
+
+	chosen {
+		bootstrap-modifiable;
+		stdout-path = "serial0:57600n8";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x0 0x4000000>;
+	};
+
+	keys {
+		compatible = "gpio-keys";
+
+		reset {
+			label = "reset";
+			linux,code = <KEY_RESTART>;
+			/* TODO: 实机核对 GPIO */
+			gpios = <&gpio 38 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led_status: status {
+			label = "green:status";
+			/* TODO: 实机核对 GPIO */
+			gpios = <&gpio 44 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
+
+&pinctrl {
+	state_default: pinctrl0 {
+		gpio {
+			groups = "gpio", "ref";
+			function = "gpio";
+		};
+	};
+
+	ephy_pins: ephy-pins {
+		groups = "ephy";
+	};
+};
+
+&uartlite {
+	status = "okay";
+};
+
+&pcie {
+	status = "disabled";
+};
+
+&ethernet {
+	pinctrl-names = "default";
+	pinctrl-0 = <&ephy_pins>;
+	mediatek,mportmap = <0xf>;
+	/*
+	 * 五物理网口：典型为 CPU port5 + ESW port0-3，映射待交换机探测确认
+	 * portmap 0x1f = port0-4 enabled
+	 */
+};
+
+&esw {
+	mediatek,portmap = <0x1f>;
+};
+
+&wmac {
+	status = "okay";
+};
+
+&spi0 {
+	status = "okay";
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <40000000>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "u-boot";
+				reg = <0x0 0x30000>;
+				read-only;
+			};
+
+			partition@30000 {
+				label = "u-boot-env";
+				reg = <0x30000 0x10000>;
+			};
+
+			partition@40000 {
+				label = "factory";
+				reg = <0x40000 0x10000>;
+				read-only;
+			};
+
+			partition@50000 {
+				label = "firmware";
+				reg = <0x50000 0x7b0000>;
+				compatible = "denx,uimage";
+			};
+		};
+	};
+};
