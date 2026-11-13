@@ -23,6 +23,8 @@ int mp716_paths_from_root(struct mp716_paths *paths, const char *root)
 	if (mp716_join(paths->image, sizeof(paths->image), root, "incoming.mp716upd") ||
 	    mp716_join(paths->state_path, sizeof(paths->state_path), root, "state") ||
 	    mp716_join(paths->history, sizeof(paths->history), root, "history.log") ||
+	    mp716_join(paths->pending, sizeof(paths->pending), root, "sysupgrade.pending") ||
+	    mp716_join(paths->running_profile, sizeof(paths->running_profile), root, "running.profile") ||
 	    mp716_join(paths->profile, sizeof(paths->profile), root, "device.profile") ||
 	    mp716_join(paths->pubkey, sizeof(paths->pubkey), root, "upgrade.pub") ||
 	    mp716_join(paths->auth_mode, sizeof(paths->auth_mode), root, "auth.mode") ||
@@ -38,6 +40,10 @@ int mp716_paths_device(struct mp716_paths *paths)
 	int rc = mp716_paths_from_root(paths, "/tmp/mp716-upgrade");
 	if (rc != MP716_OK)
 		return rc;
+	snprintf(paths->state_path, sizeof(paths->state_path), "/etc/mp716-upgrade/state");
+	snprintf(paths->history, sizeof(paths->history), "/etc/mp716-upgrade/history.log");
+	snprintf(paths->pending, sizeof(paths->pending), "/etc/mp716-upgrade/sysupgrade.pending");
+	snprintf(paths->running_profile, sizeof(paths->running_profile), "/rom/etc/mp716-upgrade/device.profile");
 	snprintf(paths->profile, sizeof(paths->profile), "/etc/mp716-upgrade/device.profile");
 	snprintf(paths->pubkey, sizeof(paths->pubkey), "/etc/mp716-upgrade/upgrade.pub");
 	snprintf(paths->auth_mode, sizeof(paths->auth_mode), "/etc/mp716-upgrade/auth.mode");
@@ -105,34 +111,94 @@ static void remember_state(struct mp716_report *report, const struct mp716_state
 	report->unrecoverable = state->unrecoverable;
 }
 
+static int save_state(const struct mp716_paths *paths, const struct mp716_state *state, struct mp716_report *report)
+{
+	int rc = mp716_state_store(paths->state_path, state);
+	if (rc != MP716_OK) {
+		mp716_report_fail(report, rc, "upgrade state cannot be saved");
+		return rc;
+	}
+	remember_state(report, state);
+	return MP716_OK;
+}
+
+static int load_profile(const struct mp716_paths *paths, struct mp716_profile *profile, char *detail, size_t detail_len)
+{
+	struct mp716_profile running;
+	int rc = mp716_profile_load(paths->profile, profile, detail, detail_len);
+	if (rc != MP716_OK)
+		return rc;
+	if (mp716_profile_load(paths->running_profile, &running, detail, detail_len) == MP716_OK)
+		snprintf(profile->installed_custom_firmware, sizeof(profile->installed_custom_firmware), "%s",
+			 running.installed_custom_firmware);
+	return MP716_OK;
+}
+
 static int save_failure(const struct mp716_paths *paths, struct mp716_state *state, struct mp716_report *report)
 {
-	mp716_state_transition(state, MP716_ST_FAILED, report->code, report->detail);
-	mp716_state_store(paths->state_path, state);
-	remember_state(report, state);
+	int rc = mp716_state_transition(state, MP716_ST_FAILED, report->code, report->detail);
+	if (rc != MP716_OK) {
+		mp716_report_fail(report, rc, "upgrade cannot enter the failed state");
+		return rc;
+	}
+	if (save_state(paths, state, report) != MP716_OK)
+		return report->code;
 	mp716_history_append(paths->history, report);
 	return report->code;
 }
 
-int mp716_cmd_check(const char *image, const char *pubkey, const char *profile_path, const char *meminfo,
-		    int operator_allow_downgrade, struct mp716_report *report)
+int mp716_cmd_check(const struct mp716_paths *paths, const char *image, const char *meminfo,
+		    int operator_allow_downgrade, const char *payload_path, const char *pending_path,
+		    struct mp716_report *report)
 {
 	struct mp716_profile profile;
+	FILE *payload = NULL;
 	char detail[180];
 	int rc;
 	if (!image || strstr(image, "..") || strstr(image, "/dev/mtd") || strstr(image, "mtdblock")) {
 		mp716_report_fail(report, MP716_ERR_PATH, "check refuses a device path");
 		return MP716_ERR_PATH;
 	}
-	rc = mp716_profile_load(profile_path, &profile, detail, sizeof(detail));
+	rc = load_profile(paths, &profile, detail, sizeof(detail));
 	if (rc != MP716_OK) {
 		mp716_report_fail(report, rc, detail);
 		return rc;
 	}
-	rc = mp716_verify_image(image, pubkey, &profile, meminfo, meminfo != NULL, operator_allow_downgrade, report);
-	if (rc == MP716_OK) {
-		snprintf(report->vendor_software_version, sizeof(report->vendor_software_version), "%s", profile.vendor_software_version);
-		report->upgraded = 0;
+	if (payload_path) {
+		rc = mp716_exclusive_create(payload_path);
+		if (rc == MP716_OK) {
+			payload = fopen(payload_path, "wb");
+			if (!payload)
+				mp716_remove_file(payload_path);
+		}
+		if (!payload) {
+			mp716_report_fail(report, MP716_ERR_IO, "new payload file cannot be created");
+			return MP716_ERR_IO;
+		}
+	}
+	rc = mp716_verify_image_to(image, paths->pubkey, &profile, meminfo, meminfo != NULL,
+				   operator_allow_downgrade, payload, report);
+	if (payload) {
+		if (fclose(payload) != 0 && rc == MP716_OK) {
+			rc = MP716_ERR_IO;
+			mp716_report_fail(report, rc, "payload could not be committed");
+		}
+		if (rc != MP716_OK)
+			mp716_remove_file(payload_path);
+	}
+	if (rc == MP716_OK && pending_path) {
+		struct mp716_state pending;
+		mp716_state_init(&pending);
+		pending.id = MP716_ST_REBOOT_REQUIRED;
+		snprintf(pending.name, sizeof(pending.name), "%s", mp716_state_name(pending.id));
+		snprintf(pending.detail, sizeof(pending.detail), "openwrt_sysupgrade");
+		snprintf(pending.expected_custom_firmware, sizeof(pending.expected_custom_firmware), "%s", report->firmware_version);
+		snprintf(pending.payload_sha256, sizeof(pending.payload_sha256), "%s", report->payload_sha256);
+		rc = mp716_state_store(pending_path, &pending);
+		if (rc != MP716_OK) {
+			mp716_remove_file(payload_path);
+			mp716_report_fail(report, rc, "pending upgrade record cannot be saved");
+		}
 	}
 	return rc;
 }
@@ -142,13 +208,17 @@ int mp716_cmd_info(const struct mp716_paths *paths, struct mp716_report *report)
 	struct mp716_profile profile;
 	struct mp716_state state;
 	char detail[180];
-	int rc = mp716_profile_load(paths->profile, &profile, detail, sizeof(detail));
+	int rc = load_profile(paths, &profile, detail, sizeof(detail));
 	if (rc != MP716_OK) {
 		mp716_report_fail(report, rc, detail);
 		return rc;
 	}
 	fill_profile(report, &profile);
-	mp716_state_load(paths->state_path, &state);
+	rc = mp716_state_load(paths->state_path, &state);
+	if (rc != MP716_OK) {
+		mp716_report_fail(report, rc, "upgrade state cannot be read");
+		return rc;
+	}
 	remember_state(report, &state);
 	report->code = MP716_OK;
 	snprintf(report->error, sizeof(report->error), "ok");
@@ -171,7 +241,7 @@ int mp716_cmd_status(const struct mp716_paths *paths, struct mp716_report *repor
 	snprintf(report->firmware_version, sizeof(report->firmware_version), "%s", state.expected_custom_firmware);
 	report->code = MP716_OK;
 	snprintf(report->error, sizeof(report->error), "ok");
-	report->upgraded = 0;
+	report->upgraded = state.id == MP716_ST_SUCCESS;
 	return MP716_OK;
 }
 
@@ -224,9 +294,12 @@ int mp716_cmd_reset(const struct mp716_paths *paths, struct mp716_report *report
 		unlock(paths, owned);
 		return rc;
 	}
+	rc = save_state(paths, &state, report);
+	if (rc != MP716_OK) {
+		unlock(paths, owned);
+		return rc;
+	}
 	mp716_remove_file(paths->image);
-	mp716_state_store(paths->state_path, &state);
-	remember_state(report, &state);
 	report->code = MP716_OK;
 	snprintf(report->error, sizeof(report->error), "ok");
 	report->upgraded = 0;
@@ -272,14 +345,18 @@ int mp716_cmd_upload(const struct mp716_paths *paths, FILE *body, long content_l
 		unlock(paths, owned);
 		return rc;
 	}
-	mp716_state_store(paths->state_path, &state);
+	rc = save_state(paths, &state, report);
+	if (rc != MP716_OK) {
+		unlock(paths, owned);
+		return rc;
+	}
 	snprintf(tmp, sizeof(tmp), "%s.tmp", paths->image);
 	out = fopen(tmp, "wb");
 	if (!out) {
 		mp716_report_fail(report, MP716_ERR_IO, "upload file cannot be created");
-		save_failure(paths, &state, report);
+		rc = save_failure(paths, &state, report);
 		unlock(paths, owned);
-		return MP716_ERR_IO;
+		return rc;
 	}
 	remaining = content_length;
 	while (remaining > 0) {
@@ -290,33 +367,35 @@ int mp716_cmd_upload(const struct mp716_paths *paths, FILE *body, long content_l
 			fclose(out);
 			mp716_remove_file(tmp);
 			mp716_report_fail(report, MP716_ERR_INTERRUPTED, "upload ended before content-length");
-			save_failure(paths, &state, report);
+			rc = save_failure(paths, &state, report);
 			unlock(paths, owned);
-			return MP716_ERR_INTERRUPTED;
+			return rc;
 		}
 		if (fwrite(chunk, 1, got, out) != got) {
 			fclose(out);
 			mp716_remove_file(tmp);
 			mp716_report_fail(report, MP716_ERR_IO, "upload could not be stored");
-			save_failure(paths, &state, report);
+			rc = save_failure(paths, &state, report);
 			unlock(paths, owned);
-			return MP716_ERR_IO;
+			return rc;
 		}
 		remaining -= (long)got;
 	}
-	fclose(out);
-	if (mp716_replace_file(tmp, paths->image) != MP716_OK) {
+	if (fclose(out) != 0 || mp716_replace_file(tmp, paths->image) != MP716_OK) {
 		mp716_remove_file(tmp);
 		mp716_report_fail(report, MP716_ERR_IO, "upload could not be committed");
-		save_failure(paths, &state, report);
+		rc = save_failure(paths, &state, report);
 		unlock(paths, owned);
-		return MP716_ERR_IO;
+		return rc;
 	}
 	snprintf(state.detail, sizeof(state.detail), "upload_stored");
 	state.code = MP716_OK;
 	snprintf(state.error, sizeof(state.error), "ok");
-	mp716_state_store(paths->state_path, &state);
-	remember_state(report, &state);
+	rc = save_state(paths, &state, report);
+	if (rc != MP716_OK) {
+		unlock(paths, owned);
+		return rc;
+	}
 	report->code = MP716_OK;
 	snprintf(report->error, sizeof(report->error), "ok");
 	snprintf(report->detail, sizeof(report->detail), "upload_stored");
@@ -338,16 +417,21 @@ int mp716_cmd_verify(const struct mp716_paths *paths, int operator_allow_downgra
 		return rc;
 	}
 	rc = mp716_state_load(paths->state_path, &state);
-	if (rc == MP716_OK && state.id != MP716_ST_UPLOADING)
+	if (rc == MP716_OK && state.id != MP716_ST_VERIFYING &&
+	    (state.id != MP716_ST_UPLOADING || strcmp(state.detail, "upload_started") == 0))
 		rc = MP716_ERR_STATE;
-	if (rc == MP716_OK)
+	if (rc == MP716_OK && state.id == MP716_ST_UPLOADING)
 		rc = mp716_state_transition(&state, MP716_ST_VERIFYING, MP716_OK, "verifying");
 	if (rc != MP716_OK) {
-		mp716_report_fail(report, rc == MP716_ERR_STATE ? rc : rc, "verify requires a stored upload");
+		mp716_report_fail(report, rc, "verify requires a stored upload");
 		unlock(paths, owned);
 		return rc;
 	}
-	mp716_state_store(paths->state_path, &state);
+	rc = save_state(paths, &state, report);
+	if (rc != MP716_OK) {
+		unlock(paths, owned);
+		return rc;
+	}
 	rc = mp716_profile_load(paths->profile, &profile, detail, sizeof(detail));
 	if (rc != MP716_OK)
 		mp716_report_fail(report, rc, detail);
@@ -362,8 +446,12 @@ int mp716_cmd_verify(const struct mp716_paths *paths, int operator_allow_downgra
 	rc = mp716_state_transition(&state, MP716_ST_READY, MP716_OK, "verified");
 	snprintf(state.payload_sha256, sizeof(state.payload_sha256), "%s", report->payload_sha256);
 	snprintf(state.expected_custom_firmware, sizeof(state.expected_custom_firmware), "%s", report->firmware_version);
-	mp716_state_store(paths->state_path, &state);
-	remember_state(report, &state);
+	if (rc == MP716_OK)
+		rc = save_state(paths, &state, report);
+	if (rc != MP716_OK) {
+		unlock(paths, owned);
+		return rc;
+	}
 	report->code = MP716_OK;
 	snprintf(report->error, sizeof(report->error), "ok");
 	report->upgraded = 0;
@@ -430,12 +518,17 @@ int mp716_cmd_apply(const struct mp716_paths *paths, const char *backend, const 
 	snprintf(sha_hex, sizeof(sha_hex), "%s", report->payload_sha256);
 	if (mp716_hex_decode_fixed(sha_hex, 64, expected, 32) != 0) {
 		mp716_report_fail(report, MP716_ERR_HASH, "verified hash could not be decoded");
-		save_failure(paths, &state, report);
+		rc = save_failure(paths, &state, report);
 		unlock(paths, owned);
-		return MP716_ERR_HASH;
+		return rc;
 	}
 	rc = mp716_state_transition(&state, MP716_ST_APPLYING, MP716_OK, "applying");
-	mp716_state_store(paths->state_path, &state);
+	if (rc == MP716_OK)
+		rc = save_state(paths, &state, report);
+	if (rc != MP716_OK) {
+		unlock(paths, owned);
+		return rc;
+	}
 	image = fopen(paths->image, "rb");
 	if (!image || fread(header, 1, 64, image) != 64) {
 		if (image)
@@ -476,8 +569,12 @@ int mp716_cmd_apply(const struct mp716_paths *paths, const char *backend, const 
 	state.erased = 1;
 	state.unrecoverable = 0;
 	rc = mp716_state_transition(&state, MP716_ST_REBOOT_REQUIRED, MP716_OK, "reboot_required");
-	mp716_state_store(paths->state_path, &state);
-	remember_state(report, &state);
+	if (rc == MP716_OK)
+		rc = save_state(paths, &state, report);
+	if (rc != MP716_OK) {
+		unlock(paths, owned);
+		return rc;
+	}
 	report->code = MP716_OK;
 	snprintf(report->error, sizeof(report->error), "ok");
 	snprintf(report->detail, sizeof(report->detail), "fake partition programmed; device profile was not changed");
@@ -589,6 +686,12 @@ int mp716_cmd_recover(const struct mp716_paths *paths, const char *backend, cons
 		unlock(paths, owned);
 		return MP716_ERR_SIZE;
 	}
+	rc = save_state(paths, &state, report);
+	if (rc != MP716_OK) {
+		fclose(image);
+		unlock(paths, owned);
+		return rc;
+	}
 	mp716_hex32(digest, sha_hex);
 	rc = mp716_fake_apply(fakemtd, image, MP716_FIRMWARE_BYTES, digest, report);
 	fclose(image);
@@ -604,8 +707,10 @@ int mp716_cmd_recover(const struct mp716_paths *paths, const char *backend, cons
 		state.code = report->code;
 		snprintf(state.error, sizeof(state.error), "%s", report->error);
 		snprintf(state.detail, sizeof(state.detail), "%s", report->detail);
-		mp716_state_store(paths->state_path, &state);
-		remember_state(report, &state);
+		if (save_state(paths, &state, report) != MP716_OK) {
+			unlock(paths, owned);
+			return report->code;
+		}
 		report->upgraded = 0;
 		mp716_history_append(paths->history, report);
 		unlock(paths, owned);
@@ -618,8 +723,12 @@ int mp716_cmd_recover(const struct mp716_paths *paths, const char *backend, cons
 	state.unrecoverable = 0;
 	rc = mp716_state_transition(&state, MP716_ST_IDLE, MP716_OK,
 				    "manual recovery restored the fake firmware partition; this is not automatic rollback");
-	mp716_state_store(paths->state_path, &state);
-	remember_state(report, &state);
+	if (rc == MP716_OK)
+		rc = save_state(paths, &state, report);
+	if (rc != MP716_OK) {
+		unlock(paths, owned);
+		return rc;
+	}
 	report->code = MP716_OK;
 	snprintf(report->error, sizeof(report->error), "ok");
 	snprintf(report->detail, sizeof(report->detail), "%s", state.detail);
@@ -633,14 +742,28 @@ int mp716_cmd_boot_verify(const struct mp716_paths *paths, struct mp716_report *
 {
 	struct mp716_state state;
 	struct mp716_profile profile;
+	const char *profile_path = paths->profile;
 	char detail[180];
+	int openwrt_upgrade = 0;
 	int owned = 0;
 	int rc = with_lock(paths, 0, &owned);
 	if (rc != MP716_OK) {
 		mp716_report_fail(report, rc, "another upgrade task holds the lock");
 		return rc;
 	}
-	rc = mp716_state_load(paths->state_path, &state);
+	rc = mp716_state_load(paths->pending, &state);
+	if (rc == MP716_OK && state.id != MP716_ST_IDLE) {
+		if (state.id != MP716_ST_REBOOT_REQUIRED || strcmp(state.detail, "openwrt_sysupgrade") != 0 ||
+		    !state.expected_custom_firmware[0]) {
+			mp716_report_fail(report, MP716_ERR_STATE, "invalid pending sysupgrade record");
+			unlock(paths, owned);
+			return MP716_ERR_STATE;
+		}
+		openwrt_upgrade = 1;
+		profile_path = paths->running_profile;
+	} else if (rc == MP716_OK) {
+		rc = mp716_state_load(paths->state_path, &state);
+	}
 	if (rc != MP716_OK) {
 		unlock(paths, owned);
 		mp716_report_fail(report, rc, "upgrade state cannot be read");
@@ -655,17 +778,30 @@ int mp716_cmd_boot_verify(const struct mp716_paths *paths, struct mp716_report *
 		unlock(paths, owned);
 		return MP716_OK;
 	}
-	if (state.id != MP716_ST_REBOOT_REQUIRED) {
+	if (state.id == MP716_ST_SUCCESS) {
+		rc = mp716_cmd_status(paths, report);
+		unlock(paths, owned);
+		return rc;
+	}
+	if (state.id != MP716_ST_REBOOT_REQUIRED && state.id != MP716_ST_BOOT_VERIFYING) {
 		mp716_report_fail(report, MP716_ERR_STATE, "boot verification requires a reboot-required task");
 		unlock(paths, owned);
 		return MP716_ERR_STATE;
 	}
-	mp716_state_transition(&state, MP716_ST_BOOT_VERIFYING, MP716_OK, "boot_verifying");
-	mp716_state_store(paths->state_path, &state);
-	rc = mp716_profile_load(paths->profile, &profile, detail, sizeof(detail));
+	if (state.id == MP716_ST_REBOOT_REQUIRED) {
+		mp716_state_transition(&state, MP716_ST_BOOT_VERIFYING, MP716_OK, "boot_verifying");
+		rc = save_state(paths, &state, report);
+		if (rc != MP716_OK) {
+			unlock(paths, owned);
+			return rc;
+		}
+	}
+	rc = mp716_profile_load(profile_path, &profile, detail, sizeof(detail));
 	if (rc != MP716_OK) {
 		mp716_report_fail(report, rc, detail);
-		save_failure(paths, &state, report);
+		rc = save_failure(paths, &state, report);
+		if (openwrt_upgrade && state.id == MP716_ST_FAILED && report->code != MP716_ERR_IO)
+			mp716_remove_file(paths->pending);
 		unlock(paths, owned);
 		return rc;
 	}
@@ -673,18 +809,25 @@ int mp716_cmd_boot_verify(const struct mp716_paths *paths, struct mp716_report *
 	if (profile.installed_custom_firmware[0] &&
 	    strcmp(profile.installed_custom_firmware, state.expected_custom_firmware) == 0) {
 		mp716_state_transition(&state, MP716_ST_SUCCESS, MP716_OK, "running custom version matches the pending image");
-		mp716_state_store(paths->state_path, &state);
-		remember_state(report, &state);
+		rc = save_state(paths, &state, report);
+		if (rc != MP716_OK) {
+			unlock(paths, owned);
+			return rc;
+		}
 		report->code = MP716_OK;
 		snprintf(report->error, sizeof(report->error), "ok");
 		snprintf(report->detail, sizeof(report->detail), "running custom version matches the pending image");
 		report->upgraded = 1;
+		if (openwrt_upgrade)
+			mp716_remove_file(paths->pending);
 		mp716_history_append(paths->history, report);
 		unlock(paths, owned);
 		return MP716_OK;
 	}
 	mp716_report_fail(report, MP716_ERR_VERSION, "running custom firmware does not match the pending image");
-	save_failure(paths, &state, report);
+	rc = save_failure(paths, &state, report);
+	if (openwrt_upgrade && rc == MP716_ERR_VERSION)
+		mp716_remove_file(paths->pending);
 	unlock(paths, owned);
-	return MP716_ERR_VERSION;
+	return rc;
 }

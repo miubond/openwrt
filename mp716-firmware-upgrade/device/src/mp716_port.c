@@ -80,13 +80,22 @@ int mp716_remove_file(const char *path)
 int mp716_replace_file(const char *tmp, const char *dst)
 {
 #ifdef _WIN32
-	if (!MoveFileExA(tmp, dst, MOVEFILE_REPLACE_EXISTING))
-		return MP716_ERR_IO;
+	int attempt;
+	for (attempt = 0; attempt < 5; attempt++) {
+		DWORD error;
+		if (MoveFileExA(tmp, dst, MOVEFILE_REPLACE_EXISTING))
+			return MP716_OK;
+		error = GetLastError();
+		if (error != ERROR_SHARING_VIOLATION && error != ERROR_LOCK_VIOLATION && error != ERROR_ACCESS_DENIED)
+			break;
+		Sleep(20);
+	}
+	return MP716_ERR_IO;
 #else
 	if (rename(tmp, dst) != 0)
 		return MP716_ERR_IO;
-#endif
 	return MP716_OK;
+#endif
 }
 
 int mp716_join(char *out, size_t out_len, const char *dir, const char *name)

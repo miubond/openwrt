@@ -3,13 +3,16 @@ include $(TOPDIR)/rules.mk
 PKG_NAME:=mp716-sysupgrade
 PKG_VERSION:=0.5.0
 PKG_RELEASE:=1
+MP716_SOURCE_DIR ?= $(abspath $(CURDIR)/../..)
+MP716_IMAGE_PROFILE ?=
+PKG_FILE_DEPENDS:=$(MP716_SOURCE_DIR)/device $(MP716_SOURCE_DIR)/shared $(MP716_IMAGE_PROFILE)
 
 include $(INCLUDE_DIR)/package.mk
 
 define Package/mp716-sysupgrade
   SECTION:=base
   CATEGORY:=Base system
-  TITLE:=MP716 adapter in front of official sysupgrade
+  TITLE:=MP716 adapter and signed image checker for official sysupgrade
 endef
 
 define Package/mp716-sysupgrade/description
@@ -25,14 +28,32 @@ define Package/luci-app-mp716-upgrade
   DEPENDS:=+mp716-sysupgrade +luci-base
 endef
 
+define Build/Prepare
+	$(INSTALL_DIR) $(PKG_BUILD_DIR)/device
+	$(CP) $(MP716_SOURCE_DIR)/device/Makefile $(MP716_SOURCE_DIR)/device/src \
+		$(MP716_SOURCE_DIR)/device/include $(MP716_SOURCE_DIR)/device/third_party $(PKG_BUILD_DIR)/device/
+	$(CP) $(MP716_SOURCE_DIR)/shared $(PKG_BUILD_DIR)/
+endef
+
 define Build/Compile
+	$(MAKE) -C $(PKG_BUILD_DIR)/device CC="$(TARGET_CC)" \
+		CFLAGS_EXTRA="$(TARGET_CFLAGS) $(TARGET_LDFLAGS)" build/mp716-upgraded
+endef
+
+define Package/mp716-sysupgrade/conffiles
+/etc/mp716-upgrade/device.profile
+/etc/mp716-upgrade/upgrade.pub
+/etc/mp716-upgrade/state
+/etc/mp716-upgrade/history.log
 endef
 
 define Package/mp716-sysupgrade/install
 	$(INSTALL_DIR) $(1)/usr/sbin $(1)/etc/mp716-upgrade $(1)/etc/init.d $(1)/usr/share/rpcd/acl.d
 	$(INSTALL_BIN) ./files/usr/sbin/mp716-sysupgrade $(1)/usr/sbin/mp716-sysupgrade
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/device/build/mp716-upgraded $(1)/usr/sbin/mp716-upgraded
 	$(INSTALL_CONF) ./files/etc/mp716-upgrade/flash-gate $(1)/etc/mp716-upgrade/flash-gate
 	$(INSTALL_CONF) ./files/etc/mp716-upgrade/platform $(1)/etc/mp716-upgrade/platform
+	$(if $(strip $(MP716_IMAGE_PROFILE)),$(INSTALL_CONF) "$(MP716_IMAGE_PROFILE)" $(1)/etc/mp716-upgrade/device.profile)
 	$(INSTALL_BIN) ./files/etc/init.d/mp716-sysupgrade $(1)/etc/init.d/mp716-sysupgrade
 	$(INSTALL_DATA) ./files/usr/share/rpcd/acl.d/mp716-upgrade.json $(1)/usr/share/rpcd/acl.d/mp716-upgrade.json
 endef

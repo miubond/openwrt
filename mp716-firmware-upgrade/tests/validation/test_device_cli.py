@@ -68,6 +68,46 @@ class DeviceCliTests(unittest.TestCase):
         rc, report = self.check(self.image, self.root / "meminfo")
         self.assertEqual(report["code"], code("downgrade"))
 
+    def test_extraction_requires_a_valid_signature_and_new_output(self) -> None:
+        payload = self.root / "sysupgrade.bin"
+        args = ["check", "--root", str(self.root), "--image", str(self.image), "--extract", str(payload)]
+        bad = bytearray(self.blob)
+        bad[-1] ^= 1
+        self.image.write_bytes(bad)
+        rc, report = run_json(args)
+        self.assertEqual(rc, code("signature"), report)
+        self.assertFalse(payload.exists())
+        self.image.write_bytes(self.blob)
+        rc, report = run_json(args)
+        self.assertEqual(rc, 0, report)
+        self.assertEqual(payload.read_bytes(), uimage_payload())
+        rc, report = run_json(args)
+        self.assertEqual(rc, code("io"), report)
+        self.assertEqual(payload.read_bytes(), uimage_payload())
+
+    def test_state_write_failure_stops_verify_and_apply(self) -> None:
+        (self.root / "incoming.mp716upd").write_bytes(self.blob)
+        state = self.root / "state"
+        state.write_text("state=UPLOADING\ndetail=upload_stored\n", encoding="utf-8")
+        (self.root / "state.tmp").mkdir()
+        rc, report = run_json(["verify", "--root", str(self.root)])
+        self.assertEqual(rc, code("io"), report)
+        self.assertEqual(state.read_text(encoding="utf-8"), "state=UPLOADING\ndetail=upload_stored\n")
+
+        state.write_text("state=READY\n", encoding="utf-8")
+        fakemtd = self.root / "firmware.fakemtd"
+        contents = b"\xa5" * 0x7B0000
+        fakemtd.write_bytes(contents)
+        runtime = self.root / "mp716-upgraded.exe"
+        runtime.touch()
+        rc, report = run_json([
+            "apply", "--root", str(self.root), "--backend", "fake",
+            "--fakemtd", str(fakemtd), "--runtime-path", str(runtime),
+        ])
+        self.assertEqual(rc, code("io"), report)
+        self.assertEqual(fakemtd.read_bytes(), contents)
+        self.assertEqual(state.read_text(encoding="utf-8"), "state=READY\n")
+
     def test_low_memory_and_flash_flag(self) -> None:
         write_meminfo(self.root / "low.meminfo", 100)
         rc, report = self.check(self.image, self.root / "low.meminfo")
@@ -131,6 +171,10 @@ class DeviceCliTests(unittest.TestCase):
         self.assertEqual(boot["code"], 0, boot)
         self.assertTrue(boot["upgraded"])
         self.assertEqual(boot["state"], "SUCCESS")
+        rc, status = run_json(["status", "--root", str(self.root)])
+        self.assertEqual(rc, 0, status)
+        self.assertEqual(status["state"], "SUCCESS")
+        self.assertTrue(status["upgraded"])
 
 
 if __name__ == "__main__":

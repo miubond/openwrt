@@ -5,6 +5,7 @@
 #include "error_codes.h"
 #include "mp716_port.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,7 +41,7 @@ int mp716_state_can(int from, int to)
 	case MP716_ST_IDLE:
 		return to == MP716_ST_UPLOADING;
 	case MP716_ST_UPLOADING:
-		return to == MP716_ST_VERIFYING;
+		return to == MP716_ST_VERIFYING || to == MP716_ST_UPLOADING;
 	case MP716_ST_VERIFYING:
 		return to == MP716_ST_READY;
 	case MP716_ST_READY:
@@ -72,11 +73,12 @@ int mp716_state_load(const char *path, struct mp716_state *state)
 {
 	FILE *fp;
 	char line[256];
+	int read_failed;
 
 	mp716_state_init(state);
 	fp = fopen(path, "rb");
 	if (!fp)
-		return MP716_OK;
+		return errno == ENOENT ? MP716_OK : MP716_ERR_IO;
 	while (fgets(line, sizeof(line), fp)) {
 		char *eq;
 		size_t n = strlen(line);
@@ -112,15 +114,15 @@ int mp716_state_load(const char *path, struct mp716_state *state)
 			state->unrecoverable = atoi(eq + 1);
 		}
 	}
-	fclose(fp);
-	return MP716_OK;
+	read_failed = ferror(fp);
+	return fclose(fp) != 0 || read_failed ? MP716_ERR_IO : MP716_OK;
 }
 
 int mp716_state_store(const char *path, const struct mp716_state *state)
 {
 	char tmp[320];
 	FILE *fp;
-	int wrote;
+	int wrote, write_failed;
 
 	wrote = snprintf(tmp, sizeof(tmp), "%s.tmp", path);
 	if (wrote < 0 || (size_t)wrote >= sizeof(tmp))
@@ -137,9 +139,15 @@ int mp716_state_store(const char *path, const struct mp716_state *state)
 	fprintf(fp, "bytes_programmed=%u\n", state->bytes_programmed);
 	fprintf(fp, "erased=%d\n", state->erased);
 	fprintf(fp, "unrecoverable=%d\n", state->unrecoverable);
-	if (fclose(fp) != 0)
+	write_failed = ferror(fp);
+	if (fclose(fp) != 0 || write_failed) {
+		mp716_remove_file(tmp);
 		return MP716_ERR_IO;
-	return mp716_replace_file(tmp, path);
+	}
+	wrote = mp716_replace_file(tmp, path);
+	if (wrote != MP716_OK)
+		mp716_remove_file(tmp);
+	return wrote;
 }
 
 int mp716_state_transition(struct mp716_state *state, int to, int code, const char *detail)

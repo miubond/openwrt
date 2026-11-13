@@ -647,9 +647,9 @@ static int check_profile(const struct mp716_manifest *manifest, const struct mp7
 	return MP716_OK;
 }
 
-int mp716_verify_image(const char *image_path, const char *pubkey_path, const struct mp716_profile *profile,
-		       const char *meminfo_path, int require_memory, int operator_allow_downgrade,
-		       struct mp716_report *report)
+int mp716_verify_image_to(const char *image_path, const char *pubkey_path, const struct mp716_profile *profile,
+			  const char *meminfo_path, int require_memory, int operator_allow_downgrade,
+			  FILE *payload_out, struct mp716_report *report)
 {
 	FILE *fp = NULL;
 	uint8_t *manifest_bytes = NULL;
@@ -727,6 +727,26 @@ int mp716_verify_image(const char *image_path, const char *pubkey_path, const st
 	snprintf(report->web_ui, sizeof(report->web_ui), "%s", manifest.web_ui);
 	snprintf(report->upgrade_engine, sizeof(report->upgrade_engine), "%s", manifest.upgrade_engine);
 	report->payload_size = payload_size;
+	if (require_memory) {
+		int available = 0;
+		if (!meminfo_path) {
+			rc = MP716_ERR_LOW_MEMORY;
+			mp716_report_fail(report, rc, "memory budget was required but meminfo is missing");
+			goto done;
+		}
+		rc = mp716_meminfo_available_kib(meminfo_path, &available, detail, sizeof(detail));
+		if (rc != MP716_OK) {
+			mp716_report_fail(report, rc, detail);
+			goto done;
+		}
+		report->memory_available_kib = available;
+		report->memory_checked = 1;
+		if (!mp716_memory_allows(available, payload_size, payload_out ? "upload" : "verify")) {
+			rc = MP716_ERR_LOW_MEMORY;
+			mp716_report_fail(report, rc, "not enough free memory to process the image");
+			goto done;
+		}
+	}
 	memset(&scan, 0, sizeof(scan));
 	scan.payload_size = payload_size;
 	sha256_init(&sha);
@@ -738,6 +758,11 @@ int mp716_verify_image(const char *image_path, const char *pubkey_path, const st
 		if (got != ask) {
 			rc = MP716_ERR_TRUNCATED;
 			mp716_report_fail(report, rc, "payload ended early");
+			goto done;
+		}
+		if (payload_out && fwrite(chunk, 1, got, payload_out) != got) {
+			rc = MP716_ERR_IO;
+			mp716_report_fail(report, rc, "payload could not be staged");
 			goto done;
 		}
 		sha256_update(&sha, chunk, got);
@@ -791,26 +816,6 @@ int mp716_verify_image(const char *image_path, const char *pubkey_path, const st
 	report->historical_offset_match = scan.squash_off == MP716_HISTORICAL_SQUASHFS_OFFSET;
 	report->lzma_dictionary = scan.lzma_dictionary;
 	snprintf(report->uimage_name, sizeof(report->uimage_name), "%s", scan.name);
-	if (require_memory) {
-		int available = 0;
-		if (!meminfo_path) {
-			rc = MP716_ERR_LOW_MEMORY;
-			mp716_report_fail(report, rc, "memory budget was required but meminfo is missing");
-			goto done;
-		}
-		rc = mp716_meminfo_available_kib(meminfo_path, &available, detail, sizeof(detail));
-		if (rc != MP716_OK) {
-			mp716_report_fail(report, rc, detail);
-			goto done;
-		}
-		report->memory_available_kib = available;
-		report->memory_checked = 1;
-		if (!mp716_memory_allows(available, payload_size, "verify")) {
-			rc = MP716_ERR_LOW_MEMORY;
-			mp716_report_fail(report, rc, "not enough free memory to verify");
-			goto done;
-		}
-	}
 	snprintf(report->vendor_software_version, sizeof(report->vendor_software_version), "%s", profile->vendor_software_version);
 	report->code = MP716_OK;
 	snprintf(report->error, sizeof(report->error), "ok");
@@ -823,4 +828,12 @@ done:
 	if (fp)
 		fclose(fp);
 	return rc;
+}
+
+int mp716_verify_image(const char *image_path, const char *pubkey_path, const struct mp716_profile *profile,
+		       const char *meminfo_path, int require_memory, int operator_allow_downgrade,
+		       struct mp716_report *report)
+{
+	return mp716_verify_image_to(image_path, pubkey_path, profile, meminfo_path, require_memory,
+				    operator_allow_downgrade, NULL, report);
 }

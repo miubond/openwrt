@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "system_info.h"
 
@@ -31,5 +32,8 @@ int mp716_manifest_parse(const uint8_t *raw, uint32_t len, struct mp716_manifest
 int mp716_verify_image(const char *image_path, const char *pubkey_path, const struct mp716_profile *profile,
 		       const char *meminfo_path, int require_memory, int operator_allow_downgrade,
 		       struct mp716_report *report);
+int mp716_verify_image_to(const char *image_path, const char *pubkey_path, const struct mp716_profile *profile,
+			  const char *meminfo_path, int require_memory, int operator_allow_downgrade,
+			  FILE *payload_out, struct mp716_report *report);
 
 #endif

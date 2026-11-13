@@ -4,5 +4,9 @@ START=95
 USE_PROCD=1
 
 start_service() {
-	return 0
+	if [ ! -f /etc/mp716-upgrade/sysupgrade.pending ]; then
+		grep -Eq '^state=(REBOOT_REQUIRED|BOOT_VERIFYING)$' /etc/mp716-upgrade/state 2>/dev/null || return 0
+	fi
+	mkdir -p -m 0700 /tmp/mp716-upgrade || return 1
+	/usr/sbin/mp716-upgraded boot-verify
 }

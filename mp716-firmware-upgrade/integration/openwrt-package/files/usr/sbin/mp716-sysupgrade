@@ -21,7 +21,7 @@ for arg in "$@"; do
 	esac
 done
 
-[ "$#" -ge 2 ] || usage
+[ "$#" -ge 2 ] && [ "$#" -le 3 ] || usage
 cmd=$1
 file=$2
 keep=0
@@ -37,12 +37,20 @@ case "$file" in
 		exit 23
 		;;
 esac
+case "$file" in
+	/*) ;;
+	*) file="./$file" ;;
+esac
 [ -f "$file" ] || {
 	printf '%s\n' '{"ok":false,"error":"io","flash_write":false}'
 	exit 2
 }
 
-magic=$(od -An -t x1 -N 8 "$file" | tr -d ' \n')
+if command -v hexdump >/dev/null 2>&1; then
+	magic=$(hexdump -v -n 8 -e '1/1 "%02x"' "$file")
+else
+	magic=$(od -An -t x1 -N 8 "$file" | tr -d ' \n')
+fi
 kind=unknown
 case "$magic" in
 	4d50373136555044*) kind=custom ;;
@@ -51,9 +59,9 @@ esac
 
 plan_command() {
 	if [ "$keep" -eq 1 ]; then
-		printf '%s\n' "sysupgrade $file"
+		printf '%s\n' 'sysupgrade -f <config-and-pending-archive> <verified-payload>'
 	else
-		printf '%s\n' "sysupgrade -n $file"
+		printf '%s\n' 'sysupgrade -n -f <pending-only-archive> <verified-payload>'
 	fi
 }
 
@@ -69,24 +77,30 @@ platform_confirmed() {
 	[ "$value" = "confirmed" ]
 }
 
+check_container() {
+	case "$kind" in
+		unknown)
+			printf '%s\n' '{"ok":false,"error":"format","flash_write":false}'
+			return 3
+			;;
+		vendor)
+			printf '%s\n' '{"ok":false,"error":"vendor_image_not_audited","flash_write":false}'
+			return 9
+			;;
+	esac
+	if ! command -v mp716-upgraded >/dev/null 2>&1; then
+		printf '%s\n' '{"ok":false,"error":"checker_missing","flash_write":false}'
+		return 1
+	fi
+	mp716-upgraded check --image "$file" "$@"
+}
+
 case "$cmd" in
 	identify)
 		printf '{"ok":true,"kind":"%s","flash_write":false}\n' "$kind"
 		;;
 	verify)
-		if [ "$kind" = "unknown" ]; then
-			printf '%s\n' '{"ok":false,"error":"format","flash_write":false}'
-			exit 3
-		fi
-		if [ "$kind" = "vendor" ]; then
-			printf '%s\n' '{"ok":false,"error":"vendor_image_not_audited","flash_write":false}'
-			exit 9
-		fi
-		if ! command -v mp716-upgraded >/dev/null 2>&1; then
-			printf '%s\n' '{"ok":false,"error":"checker_missing","flash_write":false}'
-			exit 1
-		fi
-		mp716-upgraded check --image "$file"
+		check_container
 		;;
 	plan)
 		printf '{"ok":true,"kind":"%s","command":"%s","flash_write":false}\n' "$kind" "$(plan_command)"
@@ -100,15 +114,47 @@ case "$cmd" in
 			printf '%s\n' '{"ok":false,"error":"flash_disabled","flash_write":false}'
 			exit 24
 		fi
-		if [ "$kind" != "custom" ]; then
-			printf '%s\n' '{"ok":false,"error":"vendor_image_not_audited","flash_write":false}'
-			exit 9
+		stage=$(mktemp -d /tmp/mp716-sysupgrade.XXXXXX)
+		payload="$stage/sysupgrade.bin"
+		trap 'rm -rf -- "$stage"' EXIT
+		trap 'exit 1' HUP INT TERM
+		archive="$stage/config.tgz"
+		root="$stage/root"
+		check_container --extract "$payload" --pending-state "$stage/sysupgrade.pending"
+		set -- "$payload"
+		if [ "$keep" -eq 0 ]; then
+			set -- -n "$@"
 		fi
-		# Official NOR path. sysupgrade selects firmware; this script does not name an MTD device.
+		sysupgrade -T "$@"
+		mkdir "$root"
 		if [ "$keep" -eq 1 ]; then
-			exec sysupgrade "$file"
+			sysupgrade -b "$archive"
+			tar -xzf "$archive" -C "$root"
 		fi
-		exec sysupgrade -n "$file"
+		mkdir -p "$root/etc/mp716-upgrade"
+		mv -f "$stage/sysupgrade.pending" "$root/etc/mp716-upgrade/sysupgrade.pending"
+		if [ "$keep" -eq 1 ]; then
+			(
+				cd "$root"
+				set --
+				for entry in ./* ./.[!.]* ./..?*; do
+					[ -e "$entry" ] || [ -L "$entry" ] || continue
+					set -- "$@" "$entry"
+				done
+				tar -czf "$archive" "$@"
+			)
+		else
+			tar -czf "$archive" -C "$root" ./etc/mp716-upgrade/sysupgrade.pending
+		fi
+		# procd may consume the image after sysupgrade returns.
+		trap - EXIT HUP INT TERM
+		if sysupgrade -f "$archive" "$@"; then
+			exit 0
+		else
+			status=$?
+			rm -rf -- "$stage"
+			exit "$status"
+		fi
 		;;
 	*)
 		usage

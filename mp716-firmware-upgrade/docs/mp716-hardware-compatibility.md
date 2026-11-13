@@ -68,14 +68,16 @@ MT7628 在 v25.12.6 的 `target/linux/ramips/mt76x8/base-files/lib/upgrade/platf
 
 模块放在独立的 OpenWrt 包里，不改官方 `sysupgrade`、`mtd`、`rpcd` 源码。
 
-- Shell 适配器负责识别格式、生成官方命令和准入判断。
+- `mp716-sysupgrade` 包同时编译并安装 C 校验器。保留仓库目录结构时可直接引用包目录。单独复制包目录时，通过 `MP716_SOURCE_DIR` 指向包含 `device/` 和 `shared/` 的项目根目录。
+- `verify` 使用 `/etc/mp716-upgrade/device.profile` 和 `/etc/mp716-upgrade/upgrade.pub` 校验签名及设备兼容性。构建目标镜像时用 `MP716_IMAGE_PROFILE` 提供镜像自己的设备配置，并将其中的 `installed_custom_firmware` 设为与签名 Manifest 一致的版本。目标镜像须包含 `mp716-sysupgrade` 包。
+- `apply` 通过准入检查后重新验签，把通过签名校验的原始载荷交给 OpenWrt。载荷须为本机型的 OpenWrt sysupgrade 镜像，并包含上游所需的尾部元数据。`sysupgrade -T` 通过后才会提交升级。
 - 平台文件默认是 `unconfirmed`，准入文件默认是 `closed`。任一未确认都不执行 `sysupgrade`。
-- procd 初始化脚本不启动刷写进程。
+- 适配器通过 OpenWrt 的备份归档传递待核验版本。启动脚本从 `/rom/etc/mp716-upgrade/device.profile` 读取镜像内置版本，核对通过后记录 `SUCCESS`。
 - rpcd 的 ACL 只预留只读项，没有写入方法。
 - LuCI 页面只说明刷写关闭。原厂 lighttpd 页面仍走现有 CGI，不另做云端后台。
 - 不使用 Go、Gin 或 MySQL。
 
-配置保留是显式选项。未指定时，计划中的命令带 `sysupgrade -n`，避免把配置写进即将擦除的分区。指定保留后也只是改变计划命令，准入关闭时仍然不执行。
+配置保留是显式选项。默认的 `-f` 归档只携带待核验记录。指定 `--keep-config` 时，归档同时包含 OpenWrt 生成的配置备份。
 
 ## 结论
 

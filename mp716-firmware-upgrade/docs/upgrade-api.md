@@ -33,6 +33,10 @@ POST 还要带 `X-MP716-Upgrade: 1`。没有这个头的浏览器表单提交会
 
 上传成功的状态是 `UPLOADING`，`upgraded` 为 false。校验成功是 `READY`。`start` 被接受时 `accepted` 为 true，仍然不是成功。只有重启后的 `boot-verify` 发现运行中的 `installed_custom_firmware` 与待升级版本一致，状态才是 `SUCCESS`。
 
+设备端将任务状态和历史保存在 `/etc/mp716-upgrade/state` 和 `/etc/mp716-upgrade/history.log`。上传文件和任务锁仍位于 `/tmp/mp716-upgrade`。设备正常重启后可读取待核验任务，状态接口在 `SUCCESS` 时返回 `upgraded: true`。
+
+OpenWrt 适配器通过归档将 `sysupgrade.pending` 传到新系统。启动核验使用镜像内置的只读版本，结果写入同一状态文件。
+
 `info` 里的 `custom_firmware_installed` 只反映配置文件。Fake MTD 写完不会改这份配置。
 
 没有恢复接口。人工恢复是升级程序的 `recover` 命令，只接受 Fake MTD 和一份分区大小的离线副本。把它放进 HTTP 会让浏览器成为擦写入口，因此 CGI 不提供这个操作。

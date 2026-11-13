@@ -10,6 +10,8 @@ struct mp716_paths {
 	char image[300];
 	char state_path[300];
 	char history[300];
+	char pending[300];
+	char running_profile[300];
 	char profile[300];
 	char pubkey[300];
 	char auth_mode[300];
@@ -24,8 +26,9 @@ int mp716_history_write(FILE *fp, const char *path);
 int mp716_argv_rejected(int argc, char **argv, struct mp716_report *report);
 
 int mp716_cmd_info(const struct mp716_paths *paths, struct mp716_report *report);
-int mp716_cmd_check(const char *image, const char *pubkey, const char *profile_path, const char *meminfo,
-		    int operator_allow_downgrade, struct mp716_report *report);
+int mp716_cmd_check(const struct mp716_paths *paths, const char *image, const char *meminfo,
+		    int operator_allow_downgrade, const char *payload_path, const char *pending_path,
+		    struct mp716_report *report);
 int mp716_cmd_status(const struct mp716_paths *paths, struct mp716_report *report);
 int mp716_cmd_history(const struct mp716_paths *paths, struct mp716_report *report);
 int mp716_cmd_reset(const struct mp716_paths *paths, struct mp716_report *report);

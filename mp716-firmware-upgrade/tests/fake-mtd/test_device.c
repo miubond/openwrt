@@ -6,6 +6,7 @@
 #include "mtd_backend.h"
 #include "signature_verify.h"
 #include "system_info.h"
+#include "upgrade_manager.h"
 #include "upgrade_state.h"
 
 #include <stdio.h>
@@ -63,6 +64,7 @@ int main(int argc, char **argv)
 	uint8_t expected[32];
 	char hex[65];
 	struct mp716_report report;
+	struct mp716_paths device_paths;
 	FILE *payload;
 
 	expect(mp716_crc32((const uint8_t *)"123456789", 9) == 0xcbf43926u, "crc32");
@@ -74,6 +76,10 @@ int main(int argc, char **argv)
 	expect(mp716_state_can(MP716_ST_APPLYING, MP716_ST_REBOOT_REQUIRED), "apply to reboot");
 	expect(mp716_state_can(MP716_ST_APPLYING, MP716_ST_FAILED), "apply can fail");
 	expect(!mp716_state_can(MP716_ST_IDLE, MP716_ST_SUCCESS), "idle is not success");
+	expect(mp716_paths_device(&device_paths) == MP716_OK, "device paths");
+	expect(strcmp(device_paths.state_path, "/etc/mp716-upgrade/state") == 0, "state survives reboot");
+	expect(strcmp(device_paths.history, "/etc/mp716-upgrade/history.log") == 0, "history survives reboot");
+	expect(strcmp(device_paths.image, "/tmp/mp716-upgrade/incoming.mp716upd") == 0, "upload stays in RAM");
 	expect(mp716_runtime_is_ram("/tmp/mp716-upgraded", 0, NULL), "tmp path");
 	expect(!mp716_runtime_is_ram("/usr/sbin/mp716-upgraded", 0, NULL), "rootfs path");
 	expect(!mp716_runtime_is_ram("/tmp/../etc/passwd", 0, NULL), "dotdot path");
