@@ -48,6 +48,8 @@ def compiler() -> str:
 
 def compile_one(cc: str, source: Path, out: Path, our_code: bool) -> None:
     cmd = [cc, "-std=c99", "-Wall", "-Wextra", "-Wno-macro-redefined", "-D_CRT_SECURE_NO_WARNINGS", "-DMP716_HOST", "-c", str(source), "-o", str(out)]
+    if os.name != "nt":
+        cmd[5:5] = ["-D_POSIX_C_SOURCE=200809L", "-D_FILE_OFFSET_BITS=64"]
     cmd[5:5] = INCLUDE
     if our_code:
         cmd.insert(4, "-Werror")

@@ -1,4 +1,6 @@
 #ifndef _WIN32
+/* -std=c99 hides POSIX declarations unless this is set before any libc header. */
+#define _POSIX_C_SOURCE 200809L
 #define _FILE_OFFSET_BITS 64
 #endif
 #define _CRT_SECURE_NO_WARNINGS

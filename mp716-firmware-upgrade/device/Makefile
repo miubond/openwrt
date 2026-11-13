@@ -2,7 +2,7 @@ CC ?= gcc
 HOST ?= 0
 BUILD := build
 CFLAGS_EXTRA ?=
-CFLAGS := -std=c99 -Wall -Wextra -Os -D_FILE_OFFSET_BITS=64 $(CFLAGS_EXTRA) -Iinclude -I../shared -Ithird_party/monocypher -Ithird_party/sha256
+CFLAGS := -std=c99 -Wall -Wextra -Os -D_POSIX_C_SOURCE=200809L -D_FILE_OFFSET_BITS=64 $(CFLAGS_EXTRA) -Iinclude -I../shared -Ithird_party/monocypher -Ithird_party/sha256
 ifeq ($(HOST),1)
 CFLAGS += -DMP716_HOST -D_CRT_SECURE_NO_WARNINGS
 endif
