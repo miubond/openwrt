@@ -1,0 +1,16 @@
+build/
+__pycache__/
+*.pyc
+firmware/input/*
+firmware/staging/*
+firmware/output/*
+!firmware/input/.gitkeep
+!firmware/staging/.gitkeep
+!firmware/output/.gitkeep
+keys/
+*.priv
+*.pem
+*.bin
+*.fakemtd
+*.fault
+.DS_Store

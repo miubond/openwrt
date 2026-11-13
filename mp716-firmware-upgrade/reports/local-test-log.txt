@@ -1,0 +1,98 @@
+{"base_firmware": "014", "code": 0, "command": "pack", "container_bytes": 788, "error": "ok", "firmware_version": "1.0.0", "flash_write": false, "ok": true, "output": "D:\\goweb\\src\\mp716-firmware-upgrade\\build\\pytests\\cli.mp716upd", "payload_size": 237, "signing_key_id": "08749c7ecf6699f6", "upgraded": false}
+{"allow_downgrade": false, "base_firmware": "014", "build_time": "2026-11-13T01:02:03Z", "code": 0, "command": "inspect", "container_bytes": 788, "custom_firmware": "1.0.0", "error": "ok", "firmware_version": "1.0.0", "flash_write": false, "format_version": 1, "hardware_revision": "mp716-r0-test", "image_type": "vendor-compatible", "manifest_size": 423, "ok": true, "payload_sha256": "05460ba4bdabb328e5cf2c0f54bb1d75ec2b806001f3025c4719629a8e5c2884", "payload_size": 237, "product": "MP716", "signature_checked": false, "signing_key_id": "08749c7ecf6699f6", "upgrade_engine": "1.0.0", "upgraded": false, "web_ui": "1.0.0", "within_firmware_partition": true}
+{"code": 0, "command": "compare", "differences": [], "error": "ok", "flash_write": false, "identical": true, "left": {"allow_downgrade": false, "base_firmware": "014", "build_time": "2026-11-13T01:02:03Z", "code": 0, "command": "inspect", "container_bytes": 788, "custom_firmware": "1.0.0", "error": "ok", "firmware_version": "1.0.0", "flash_write": false, "format_version": 1, "hardware_revision": "mp716-r0-test", "image_type": "vendor-compatible", "manifest_size": 423, "ok": true, "payload_sha256": "05460ba4bdabb328e5cf2c0f54bb1d75ec2b806001f3025c4719629a8e5c2884", "payload_size": 237, "product": "MP716", "signature_checked": false, "signing_key_id": "08749c7ecf6699f6", "upgrade_engine": "1.0.0", "upgraded": false, "web_ui": "1.0.0", "within_firmware_partition": true}, "ok": true, "right": {"allow_downgrade": false, "base_firmware": "014", "build_time": "2026-11-13T01:02:03Z", "code": 0, "command": "inspect", "container_bytes": 788, "custom_firmware": "1.0.0", "error": "ok", "firmware_version": "1.0.0", "flash_write": false, "format_version": 1, "hardware_revision": "mp716-r0-test", "image_type": "vendor-compatible", "manifest_size": 423, "ok": true, "payload_sha256": "05460ba4bdabb328e5cf2c0f54bb1d75ec2b806001f3025c4719629a8e5c2884", "payload_size": 237, "product": "MP716", "signature_checked": false, "signing_key_id": "08749c7ecf6699f6", "upgrade_engine": "1.0.0", "upgraded": false, "web_ui": "1.0.0", "within_firmware_partition": true}, "upgraded": false}
+usage: mp716-fwpack [-h] {inspect,pack,verify,compare} ...
+
+Build and check MP716 upgrade containers. This tool never writes flash.
+
+positional arguments:
+  {inspect,pack,verify,compare}
+    inspect             parse a container and print JSON
+    pack                sign a vendor-compatible payload into .mp716upd
+    verify              verify signature, compatibility, and payload structure
+    compare             compare two containers
+
+options:
+  -h, --help            show this help message and exit
+usage: mp716-fwpack inspect [-h] image
+
+positional arguments:
+  image
+
+options:
+  -h, --help  show this help message and exit
+usage: mp716-fwpack pack [-h] --payload PAYLOAD --private-key PRIVATE_KEY
+                         --out OUT --hardware-revision HARDWARE_REVISION
+                         --firmware-version FIRMWARE_VERSION
+                         [--base-firmware BASE_FIRMWARE] [--web-ui WEB_UI]
+                         [--upgrade-engine UPGRADE_ENGINE]
+                         [--build-time BUILD_TIME] [--allow-downgrade]
+
+options:
+  -h, --help            show this help message and exit
+  --payload PAYLOAD
+  --private-key PRIVATE_KEY
+  --out OUT
+  --hardware-revision HARDWARE_REVISION
+  --firmware-version FIRMWARE_VERSION
+  --base-firmware BASE_FIRMWARE
+  --web-ui WEB_UI
+  --upgrade-engine UPGRADE_ENGINE
+  --build-time BUILD_TIME
+  --allow-downgrade
+usage: mp716-fwpack verify [-h] --public-key PUBLIC_KEY --profile PROFILE
+                           [--meminfo MEMINFO] [--require-memory]
+                           [--allow-downgrade]
+                           image
+
+positional arguments:
+  image
+
+options:
+  -h, --help            show this help message and exit
+  --public-key PUBLIC_KEY
+  --profile PROFILE
+  --meminfo MEMINFO
+  --require-memory
+  --allow-downgrade
+usage: mp716-fwpack compare [-h] left right
+
+positional arguments:
+  left
+  right
+
+options:
+  -h, --help  show this help message and exit
+test_busy_lock (mp716_api_test_cgi.CgiTests.test_busy_lock) ... ok
+test_complete_upload_is_not_success (mp716_api_test_cgi.CgiTests.test_complete_upload_is_not_success) ... ok
+test_deny_mode_and_public_address (mp716_api_test_cgi.CgiTests.test_deny_mode_and_public_address) ... ok
+test_info_upload_and_path_attack (mp716_api_test_cgi.CgiTests.test_info_upload_and_path_attack) ... ok
+test_missing_cookie_viewer_and_csrf (mp716_api_test_cgi.CgiTests.test_missing_cookie_viewer_and_csrf) ... ok
+test_power_loss_is_not_success (mp716_fault_injection_test_apply.FaultTests.test_power_loss_is_not_success) ... ok
+test_real_backend_file_has_no_flash_operation (mp716_integration_test_policy.PolicyTests.test_real_backend_file_has_no_flash_operation) ... ok
+test_release_script_refuses_flash (mp716_integration_test_policy.PolicyTests.test_release_script_refuses_flash) ... ok
+test_sources_do_not_erase_real_flash (mp716_integration_test_policy.PolicyTests.test_sources_do_not_erase_real_flash) ... ok
+test_vendor_image_audit_is_blocked_without_the_sample (mp716_integration_test_policy.PolicyTests.test_vendor_image_audit_is_blocked_without_the_sample) ... ok
+test_bad_signature_modified_payload_and_forged_manifest (mp716_packer_test_container.PackTests.test_bad_signature_modified_payload_and_forged_manifest) ... ok
+test_bad_version_and_noncanonical (mp716_packer_test_container.PackTests.test_bad_version_and_noncanonical) ... ok
+test_cli_pack_and_compare (mp716_packer_test_container.PackTests.test_cli_pack_and_compare) ... ok
+test_downgrade_and_same_version (mp716_packer_test_container.PackTests.test_downgrade_and_same_version) ... ok
+test_duplicate_manifest_key (mp716_packer_test_container.PackTests.test_duplicate_manifest_key) ... ok
+test_hardware_mismatch_and_placeholder (mp716_packer_test_container.PackTests.test_hardware_mismatch_and_placeholder) ... ok
+test_help_commands (mp716_packer_test_container.PackTests.test_help_commands) ... ok
+test_low_memory_and_base_firmware (mp716_packer_test_container.PackTests.test_low_memory_and_base_firmware) ... ok
+test_round_trip_keeps_vendor_version (mp716_packer_test_container.PackTests.test_round_trip_keeps_vendor_version) ... ok
+test_truncated_trailing_and_overflow (mp716_packer_test_container.PackTests.test_truncated_trailing_and_overflow) ... ok
+test_uimage_and_rootfs_rejected_after_signature (mp716_packer_test_container.PackTests.test_uimage_and_rootfs_rejected_after_signature) ... ok
+test_wrong_product (mp716_packer_test_container.PackTests.test_wrong_product) ... ok
+test_apply_does_not_mark_success_or_change_profile (mp716_validation_test_device_cli.DeviceCliTests.test_apply_does_not_mark_success_or_change_profile) ... ok
+test_c_accepts_python_signature (mp716_validation_test_device_cli.DeviceCliTests.test_c_accepts_python_signature) ... ok
+test_c_rejects_bad_signature_and_downgrade (mp716_validation_test_device_cli.DeviceCliTests.test_c_rejects_bad_signature_and_downgrade) ... ok
+test_low_memory_and_flash_flag (mp716_validation_test_device_cli.DeviceCliTests.test_low_memory_and_flash_flag) ... ok
+
+----------------------------------------------------------------------
+Ran 26 tests in 1.279s
+
+OK
+
+EXIT:0

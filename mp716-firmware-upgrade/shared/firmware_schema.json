@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mp716-upgrade-manifest-v1",
+  "title": "MP716 upgrade manifest",
+  "description": "Canonical UTF-8 JSON object stored between the fixed header and the vendor-compatible payload. The byte string is covered by the Ed25519 signature together with the header and the payload SHA-256. Placeholder hardware revisions and empty hashes are not valid release values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "allow_downgrade",
+    "base_firmware",
+    "build_time",
+    "custom_firmware",
+    "firmware_version",
+    "format_version",
+    "hardware_revision",
+    "image_type",
+    "payload_sha256",
+    "payload_size",
+    "product",
+    "signing_key_id",
+    "upgrade_engine",
+    "web_ui"
+  ],
+  "properties": {
+    "allow_downgrade": {
+      "type": "boolean",
+      "description": "Even when true, the device still refuses a downgrade unless the operator flag is set for that invocation."
+    },
+    "base_firmware": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16,
+      "description": "Vendor firmware generation this image is built on. Current devices report 014. This field must not be replaced with the custom version."
+    },
+    "build_time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "custom_firmware": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,4})\\.(0|[1-9][0-9]{0,4})\\.(0|[1-9][0-9]{0,4})$",
+      "description": "Self-developed firmware version. Must equal firmware_version. It is not the vendor software version."
+    },
+    "firmware_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,4})\\.(0|[1-9][0-9]{0,4})\\.(0|[1-9][0-9]{0,4})$"
+    },
+    "format_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "hardware_revision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "description": "Must match the device profile. The schema example value validated-revision is rejected by the packer."
+    },
+    "image_type": {
+      "type": "string",
+      "const": "vendor-compatible"
+    },
+    "payload_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "payload_size": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8060928
+    },
+    "product": {
+      "type": "string",
+      "const": "MP716"
+    },
+    "signing_key_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "description": "First 8 bytes of SHA-256(raw Ed25519 public key), lowercase hex."
+    },
+    "upgrade_engine": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,4})\\.(0|[1-9][0-9]{0,4})\\.(0|[1-9][0-9]{0,4})$"
+    },
+    "web_ui": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,4})\\.(0|[1-9][0-9]{0,4})\\.(0|[1-9][0-9]{0,4})$"
+    }
+  }
+}

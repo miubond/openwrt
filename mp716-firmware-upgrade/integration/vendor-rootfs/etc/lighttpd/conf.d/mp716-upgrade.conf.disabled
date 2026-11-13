@@ -1,0 +1,6 @@
+# Disabled on purpose.
+# Chaos Calmer lighttpd serves a CGI file such as /www/cgi-bin/mp716-upgrade.cgi.
+# PATH_INFO of the form /cgi-bin/mp716-upgrade.cgi/info is the compatible route.
+# Do not install this alias into the running server until the vendor session
+# check exists. The CGI also rejects non-private REMOTE_ADDR by itself.
+# alias.url += ( "/cgi-bin/mp716-upgrade" => "/www/cgi-bin/mp716-upgrade.cgi" )

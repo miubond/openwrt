@@ -1,0 +1,15 @@
+{
+  "file_name": "HUAYI_ZC-AP_MT7628DA_spi_8M64M_None_014_2024-11-13.bin",
+  "reference_sha256": "28b9a075a5e298159a0a49b5372659d264a8cf686c8171ef2d7dff8320e02733",
+  "file_found": false,
+  "computed_sha256": null,
+  "hash_match": false,
+  "status": "BLOCKED",
+  "historical_squashfs_offset": 1235849,
+  "historical_offset_verified": false,
+  "squashfs_offsets": [],
+  "uimage": null,
+  "size_bytes": null,
+  "within_firmware_partition": null,
+  "note": "Vendor image is not in this workspace, so the reference hash was not checked."
+}

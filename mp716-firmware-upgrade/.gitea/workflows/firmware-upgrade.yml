@@ -1,0 +1,78 @@
+name: firmware-upgrade
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Python dependencies
+        run: python3 -m pip install -r packer/requirements.txt
+      - name: Host C build and unit tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc
+          python3 scripts/build_host.py
+          mkdir -p build/host/unit
+          ./build/host/test_device build/host/unit
+      - name: Python and device integration tests
+        run: python3 tests/run_all.py
+      - name: Cross compile MIPS32r2
+        run: |
+          sudo apt-get install -y gcc-mipsel-linux-gnu
+          make -C device clean all CC=mipsel-linux-gnu-gcc CFLAGS_EXTRA="-mips32r2 -EL -mabi=32 -msoft-float"
+          echo "MIPS binaries were not executed and no device was flashed"
+      - name: Package and verify a test container
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          from tests.support.images import uimage_payload
+          root = Path("build/ci-release")
+          root.mkdir(parents=True)
+          key = root / "ci-test.priv"
+          seed = Ed25519PrivateKey.generate()
+          key.write_bytes(seed.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()))
+          Path("build/payload.bin").write_bytes(uimage_payload())
+          print(key)
+          PY
+          python3 packer/mp716_fwpack.py pack --payload build/payload.bin --private-key build/ci-release/ci-test.priv \
+            --out build/ci-release/test.mp716upd --hardware-revision ci-lab --firmware-version 1.0.0 \
+            --build-time 2026-11-13T00:00:00Z
+          python3 - <<'PY'
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          seed = Path("build/ci-release/ci-test.priv").read_bytes()
+          pub = Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+          Path("build/ci-release/ci-test.pub").write_bytes(pub)
+          Path("build/ci-release/device.profile").write_text("product=MP716\nhardware_revision=ci-lab\nbase_firmware=014\nvendor_software_version=014\ninstalled_custom_firmware=\nweb_ui=1.0.0\nupgrade_engine=1.0.0\n")
+          PY
+          python3 packer/mp716_fwverify.py build/ci-release/test.mp716upd --public-key build/ci-release/ci-test.pub --profile build/ci-release/device.profile
+          set +e
+          python3 packer/audit_vendor_image.py
+          test "$?" -eq 2
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sign only when a protected key is present
+        env:
+          MP716_SIGNING_KEY: ${{ secrets.MP716_SIGNING_KEY }}
+        run: |
+          if [ -z "$MP716_SIGNING_KEY" ]; then
+            echo "production signing key is not available to branch builds"
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$MP716_SIGNING_KEY" > "$RUNNER_TEMP/release.priv"
+          echo "tag signing is wired; the payload command is supplied by the release owner"
+          rm -f "$RUNNER_TEMP/release.priv"
+          echo "CI did not flash a device"

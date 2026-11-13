@@ -1,0 +1,17 @@
+Host toolchain: Clang 23.1.4, target x86_64-pc-windows-msvc.
+These sizes are the Windows host executables. They include the C runtime and are not the MIPS/uClibc image size. The MIPS cross compiler is not installed on this machine, so no device binary size was measured.
+
+llvm-size:
+
+   text    data     bss     dec     hex filename
+ 254589   73608       0  328197   50205 build/host/mp716-upgraded.exe
+ 259853   74516       0  334369   51a21 build/host/mp716-upgrade.exe
+ 255373   74024       0  329397   506b5 build/host/test_device.exe
+
+Runtime buffers in the verifier, independent of that executable size:
+
+- payload is hashed in 4096-byte chunks and is not allocated as one buffer
+- the signed message is header (64) + manifest (at most 8192) + SHA-256 (32)
+- uImage and SquashFS checks use fixed stack buffers
+
+C unit test result from this rebuild: {"ok":true,"command":"test_device","failed":0}
