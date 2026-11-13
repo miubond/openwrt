@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+//
+// Draft board file for a fork of OpenWrt v25.12.6.
+// Include the SoC from target/linux/ramips/dts/mt7628an.dtsi.
+// This is not the MediaTek EVB and not the Jotale JS76x8.
+// Their images must not be written to an MP716.
+// The partition addresses match the candidate map and still need a UART check.
+// The image profile is BROKEN until that check is recorded.
+
+#include "mt7628an.dtsi"
+
+/ {
+	compatible = "yunxm,mp716", "mediatek,mt7628an-soc";
+	model = "YUNXM MP716 TEST";
+	/* RAM is 64 MiB on the running vendor system. The size is not encoded
+	 * here until the bootloader memory report is confirmed over serial.
+	 * MAC address, switch ports, Wi-Fi EEPROM and GPIO are not measured.
+	 */
+};
+
+&ethernet {
+	/* pending verification: PHY mode and port map */
+	status = "disabled";
+};
+
+&wmac {
+	/* pending verification: do not copy another board's factory EEPROM */
+	status = "disabled";
+};
+
+&gpio {
+	/* pending verification: button and LED pins */
+	status = "disabled";
+};
+
+&spi0 {
+	status = "okay";
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <10000000>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 {
+				label = "u-boot";
+				reg = <0x0 0x30000>;
+				read-only;
+			};
+
+			partition@30000 {
+				label = "u-boot-env";
+				reg = <0x30000 0x10000>;
+				read-only;
+			};
+
+			partition@40000 {
+				label = "factory";
+				reg = <0x40000 0x10000>;
+				read-only;
+			};
+
+			partition@50000 {
+				compatible = "denx,uimage";
+				label = "firmware";
+				reg = <0x50000 0x7b0000>;
+			};
+		};
+	};
+};

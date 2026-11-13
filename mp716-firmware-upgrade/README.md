@@ -33,8 +33,11 @@ python packer/mp716_fwverify.py --help
 
 私钥必须放在仓库外。`scripts/release.sh` 会拒绝仓库内的私钥、占位硬件修订，以及 `--allow-flash-upgrade`。
 
+自研升级选型是 OpenWrt Chaos Calmer 15.05.1 的 sysupgrade 机制，加上 Shell/C 校验。第一阶段参考仓库是 `openwrt/chaos_calmer` 标签 `v15.05.1`。入口在 `integration/openwrt-package`。它不自写 `mtd write`，也不带 Go 或数据库服务。官方 15.05.1 内核是 3.18.23，设备是 3.10.108，所以不能把官方镜像或官方 sysupgrade 装进当前系统。平台文件默认 `unconfirmed`，准入文件默认 `closed`。兼容性结论见 `docs/mp716-hardware-compatibility.md`。
+
 ## 还不能做的事
 
-- 原厂 BIN `HUAYI_ZC-AP_MT7628DA_spi_8M64M_None_014_2024-11-13.bin` 不在本工作区，参考 SHA-256 尚未核对。
+- 原厂升级包 `HUAYI_ZC-AP_MT7628DA_spi_8M64M_None_014_2024-11-13.bin` 不在本工作区，参考 SHA-256 尚未核对。
+- 当前路由器 firmware 分区副本已核对：8060928 字节，uImage 名称 `ZC-AP`，SquashFS 在 `0x12DB89`。这不是可写回的升级包。
 - 原厂管理员 Cookie 的名字和服务端会话存储没有确认，CGI 默认 `auth.mode=deny`。
 - 真实 MTD 后端没有实现，也没有加入构建。测试机安装要等第一阶段的打包、验签、模拟写入和人工恢复全部通过，并且串口与原厂固件恢复演练有记录之后再开始。

@@ -1,0 +1,7 @@
+# Insert this case before the default branch in
+# target/linux/ramips/mt76x8/base-files/lib/upgrade/platform.sh
+# on OpenWrt v25.12.6. It calls the same writer as the default branch.
+
+	yunxm,mp716)
+		default_do_upgrade "$1"
+		;;

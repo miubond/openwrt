@@ -1,0 +1,10 @@
+{
+	"mp716-upgrade": {
+		"description": "Read-only MP716 upgrade status. No write or flash method is granted.",
+		"read": {
+			"file": {
+				"/etc/mp716-upgrade/flash-gate": ["read"]
+			}
+		}
+	}
+}

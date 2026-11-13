@@ -170,7 +170,7 @@ static int forbidden_hardware(const char *text)
 	size_t i;
 	static const char *bad[] = {
 		"validated-revision", "placeholder", "todo", "changeme", "unverified",
-		"unknown", "none", "mp716", "test", NULL
+		"unknown", "none", "mp716", "test", "mt7628", "mtk-apsoc-demo", NULL
 	};
 	if (n == 0 || n >= sizeof(lower))
 		return 1;

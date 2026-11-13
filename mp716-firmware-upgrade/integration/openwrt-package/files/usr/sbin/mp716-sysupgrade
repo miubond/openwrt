@@ -1,0 +1,116 @@
+#!/bin/sh
+# Front door for sysupgrade on an OpenWrt image built for MP716.
+# Installing this onto the vendor firmware does not make that firmware upgradable.
+# Platform format and recovery must both be confirmed. Never calls mtd and never accepts -F.
+set -eu
+
+GATE_FILE="${MP716_GATE_FILE:-/etc/mp716-upgrade/flash-gate}"
+PLATFORM_FILE="${MP716_PLATFORM_FILE:-/etc/mp716-upgrade/platform}"
+
+usage() {
+	echo "usage: mp716-sysupgrade identify|verify|plan|apply FILE [--keep-config]" >&2
+	exit 1
+}
+
+for arg in "$@"; do
+	case "$arg" in
+		-F|--force|allow-flash-upgrade)
+			printf '%s\n' '{"ok":false,"error":"flash_disabled","flash_write":false}'
+			exit 24
+			;;
+	esac
+done
+
+[ "$#" -ge 2 ] || usage
+cmd=$1
+file=$2
+keep=0
+if [ "${3:-}" = "--keep-config" ]; then
+	keep=1
+elif [ -n "${3:-}" ]; then
+	usage
+fi
+
+case "$file" in
+	*".."*|*/dev/mtd*|*/dev/mtdblock*|*mtdblock*)
+		printf '%s\n' '{"ok":false,"error":"path","flash_write":false}'
+		exit 23
+		;;
+esac
+[ -f "$file" ] || {
+	printf '%s\n' '{"ok":false,"error":"io","flash_write":false}'
+	exit 2
+}
+
+magic=$(od -An -t x1 -N 8 "$file" | tr -d ' \n')
+kind=unknown
+case "$magic" in
+	4d50373136555044*) kind=custom ;;
+	27051956*) kind=vendor ;;
+esac
+
+plan_command() {
+	if [ "$keep" -eq 1 ]; then
+		printf '%s\n' "sysupgrade $file"
+	else
+		printf '%s\n' "sysupgrade -n $file"
+	fi
+}
+
+gate_open() {
+	[ -f "$GATE_FILE" ] || return 1
+	value=$(tr -d '\r\n' < "$GATE_FILE")
+	[ "$value" = "serial-recovery-verified" ]
+}
+
+platform_confirmed() {
+	[ -f "$PLATFORM_FILE" ] || return 1
+	value=$(tr -d '\r\n' < "$PLATFORM_FILE")
+	[ "$value" = "confirmed" ]
+}
+
+case "$cmd" in
+	identify)
+		printf '{"ok":true,"kind":"%s","flash_write":false}\n' "$kind"
+		;;
+	verify)
+		if [ "$kind" = "unknown" ]; then
+			printf '%s\n' '{"ok":false,"error":"format","flash_write":false}'
+			exit 3
+		fi
+		if [ "$kind" = "vendor" ]; then
+			printf '%s\n' '{"ok":false,"error":"vendor_image_not_audited","flash_write":false}'
+			exit 9
+		fi
+		if ! command -v mp716-upgraded >/dev/null 2>&1; then
+			printf '%s\n' '{"ok":false,"error":"checker_missing","flash_write":false}'
+			exit 1
+		fi
+		mp716-upgraded check --image "$file"
+		;;
+	plan)
+		printf '{"ok":true,"kind":"%s","command":"%s","flash_write":false}\n' "$kind" "$(plan_command)"
+		;;
+	apply)
+		if ! platform_confirmed; then
+			printf '%s\n' '{"ok":false,"error":"platform_unconfirmed","flash_write":false}'
+			exit 12
+		fi
+		if ! gate_open; then
+			printf '%s\n' '{"ok":false,"error":"flash_disabled","flash_write":false}'
+			exit 24
+		fi
+		if [ "$kind" != "custom" ]; then
+			printf '%s\n' '{"ok":false,"error":"vendor_image_not_audited","flash_write":false}'
+			exit 9
+		fi
+		# Official NOR path. sysupgrade selects firmware; this script does not name an MTD device.
+		if [ "$keep" -eq 1 ]; then
+			exec sysupgrade "$file"
+		fi
+		exec sysupgrade -n "$file"
+		;;
+	*)
+		usage
+		;;
+esac

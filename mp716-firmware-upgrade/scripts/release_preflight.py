@@ -45,7 +45,7 @@ def main(argv: list[str]) -> int:
     if inside:
         print("signing key must stay outside the git repository", file=sys.stderr)
         return 1
-    if hardware.strip().lower() in {"validated-revision", "placeholder", "unverified", "test", "mp716"} or hardware.endswith("-test"):
+    if hardware.strip().lower() in {"validated-revision", "placeholder", "unverified", "test", "mp716", "mt7628", "mtk-apsoc-demo"} or hardware.endswith("-test"):
         print("hardware revision is not a release value", file=sys.stderr)
         return 12
     if out.suffix != ".mp716upd":

@@ -1,0 +1,45 @@
+{
+  "kind": "firmware-partition-dump",
+  "source_name": "factory-mtd-from-device.bin",
+  "sha256": "56cac090ab7fa2be00a5c5d3970aef484be8303ae76889e16cd297b19436607d",
+  "size_bytes": 8060928,
+  "firmware_partition_bytes": 8060928,
+  "factory_upgrade_bin": "HUAYI_ZC-AP_MT7628DA_spi_8M64M_None_014_2024-11-13.bin",
+  "factory_upgrade_bin_sha256": "28b9a075a5e298159a0a49b5372659d264a8cf686c8171ef2d7dff8320e02733",
+  "factory_upgrade_bin_hash_match": false,
+  "uimage": {
+    "offset": 0,
+    "ih_magic": "0x27051956",
+    "ih_hcrc_ok": true,
+    "ih_time_utc": "2024-11-13T03:17:01Z",
+    "ih_size": 1235785,
+    "ih_load": "0x80000000",
+    "ih_ep": "0x80000000",
+    "ih_dcrc_ok": true,
+    "os": 5,
+    "arch": 5,
+    "type": 2,
+    "compression": 3,
+    "ih_name": "ZC-AP",
+    "lzma_dictionary": 8388608,
+    "kernel_span_end": 1235849
+  },
+  "squashfs": {
+    "offset": 1235849,
+    "offset_hex": "0x12db89",
+    "starts_at_kernel_end": true,
+    "magic": "hsqs",
+    "major": 4,
+    "compression": 4,
+    "block_size": 1048576,
+    "bytes_used": 5557896
+  },
+  "after_squashfs": {
+    "deadc0de_offset": 6795264,
+    "jffs2_offset": 6815744,
+    "trailing_0xff_pad_bytes": 65524,
+    "mp716_meta_magic_at_tail": false
+  },
+  "structural_gates_passed": true,
+  "flash_write": false
+}

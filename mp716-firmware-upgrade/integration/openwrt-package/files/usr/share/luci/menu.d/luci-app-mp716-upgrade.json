@@ -1,0 +1,10 @@
+{
+	"admin/system/mp716-upgrade": {
+		"title": "MP716 Upgrade",
+		"order": 90,
+		"action": {
+			"type": "view",
+			"path": "mp716-upgrade"
+		}
+	}
+}

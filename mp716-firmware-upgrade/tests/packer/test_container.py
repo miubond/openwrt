@@ -123,6 +123,10 @@ class PackTests(unittest.TestCase):
         self.assertEqual(self.verify(blob)["code"], code("hw_revision"))
         with self.assertRaises(Exception):
             signed_image(hardware_revision="validated-revision")
+        with self.assertRaises(Exception):
+            signed_image(hardware_revision="mtk-apsoc-demo")
+        with self.assertRaises(Exception):
+            signed_image(hardware_revision="MT7628")
 
     def test_downgrade_and_same_version(self) -> None:
         self.assertEqual(self.verify(self.blob, installed_custom_firmware="1.2.0")["code"], code("downgrade"))

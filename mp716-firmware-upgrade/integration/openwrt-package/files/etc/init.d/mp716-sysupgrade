@@ -1,0 +1,8 @@
+#!/bin/sh /etc/rc.common
+# procd integration point. It does not start a flasher.
+START=95
+USE_PROCD=1
+
+start_service() {
+	return 0
+}

@@ -41,6 +41,8 @@ FORBIDDEN_HARDWARE = {
     "none",
     "mp716",
     "test",
+    "mt7628",
+    "mtk-apsoc-demo",
 }
 
 
