@@ -1,0 +1,197 @@
+# 自托管 Gitea Runner，检出方式对齐 gim 的 deploy.yml。
+# 单 job：编译、测试、打出测试用 .mp716upd 并上传。
+# 不 sudo mkdir/chown，不拷贝到网站目录，不重启服务，不写路由器 Flash。
+# 生产签名私钥不在这个工作流里使用。
+
+name: MP716 Firmware Package
+
+concurrency:
+  group: mp716-firmware-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - feature/lz
+  workflow_dispatch:
+    inputs:
+      build_only:
+        description: "只打包测试升级包（本工作流本来就不会部署或刷机）"
+        type: boolean
+        default: true
+
+jobs:
+  pipeline:
+    name: Build & Package
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Code
+        id: repo
+        env:
+          GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          rm -rf openwrt
+          REPO="${{ github.server_url }}/${{ github.repository }}.git"
+          case "$REPO" in
+            https://*) CLONE_URL="https://oauth2:${GIT_TOKEN}@${REPO#https://}" ;;
+            http://*)  CLONE_URL="http://oauth2:${GIT_TOKEN}@${REPO#http://}" ;;
+            *)         CLONE_URL="$REPO" ;;
+          esac
+          git -c protocol.version=2 clone --depth 1 --branch "${{ github.ref_name }}" "$CLONE_URL" openwrt
+          cd openwrt
+          if [ "$(git rev-parse HEAD)" != "${{ github.sha }}" ]; then
+            git fetch --depth 1 origin "${{ github.sha }}"
+            git checkout "${{ github.sha }}"
+          fi
+          if [ -f mp716-firmware-upgrade/packer/mp716_fwpack.py ]; then
+            echo "project=openwrt/mp716-firmware-upgrade" >> "$GITHUB_OUTPUT"
+          elif [ -f packer/mp716_fwpack.py ]; then
+            echo "project=openwrt" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ 找不到 packer/mp716_fwpack.py"
+            exit 1
+          fi
+          echo "已检出 $(git rev-parse --short HEAD) @ ${{ github.ref_name }}"
+
+      - name: Verify Environment
+        run: |
+          set -e
+          PROJECT="${{ steps.repo.outputs.project }}"
+          echo "### 环境验证 ###"
+          echo "工作目录: $(pwd)"
+          echo "项目目录: $PROJECT"
+          echo "分支: ${{ github.ref_name }} SHA: ${{ github.sha }}"
+          echo "build_only: ${{ inputs.build_only }}"
+          ls -la "$PROJECT"
+          test -f "$PROJECT/packer/mp716_fwpack.py"
+          test -f "$PROJECT/tests/run_all.py"
+          if ! command -v python3 >/dev/null 2>&1; then
+            echo "❌ Runner 未安装 python3"
+            exit 1
+          fi
+          python3 --version
+          if ! command -v gcc >/dev/null 2>&1 && ! command -v clang >/dev/null 2>&1; then
+            echo "❌ Runner 未安装 gcc 或 clang，无法编译设备端校验器"
+            exit 1
+          fi
+          echo "本工作流不部署、不刷机。build_only=false 也不会写入设备。"
+
+      - name: Python dependencies
+        run: |
+          set -e
+          PROJECT="${{ steps.repo.outputs.project }}"
+          if ! python3 -c "import cryptography" >/dev/null 2>&1; then
+            python3 -m pip install --user -r "$PROJECT/packer/requirements.txt"
+          fi
+          python3 -c "import cryptography; print('cryptography', cryptography.__version__)"
+
+      - name: Host build and tests
+        run: |
+          set -e
+          PROJECT="${{ steps.repo.outputs.project }}"
+          cd "$PROJECT"
+          python3 scripts/build_host.py
+          mkdir -p build/host/unit
+          ./build/host/test_device build/host/unit
+          python3 tests/run_all.py
+
+      - name: Cross compile MIPS32r2 when the toolchain is already installed
+        run: |
+          set -e
+          PROJECT="${{ steps.repo.outputs.project }}"
+          if ! command -v mipsel-linux-gnu-gcc >/dev/null 2>&1; then
+            echo "⚠️ Runner 未安装 mipsel-linux-gnu-gcc，跳过交叉编译。"
+            echo "   测试升级包仍由主机打包器生成。本步骤不安装软件包，也不刷机。"
+            exit 0
+          fi
+          make -C "$PROJECT/device" clean all \
+            CC=mipsel-linux-gnu-gcc \
+            CFLAGS_EXTRA="-mips32r2 -EL -mabi=32 -msoft-float"
+          echo "MIPS 程序已编译，未执行，也未写入设备。"
+
+      - name: Package test container
+        run: |
+          set -e
+          PROJECT="${{ steps.repo.outputs.project }}"
+          cd "$PROJECT"
+          python3 - <<'PY'
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          from tests.support.images import uimage_payload
+          root = Path("build/ci-release")
+          root.mkdir(parents=True, exist_ok=True)
+          key = root / "ci-test.priv"
+          seed = Ed25519PrivateKey.generate()
+          key.write_bytes(seed.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()))
+          Path("build/payload.bin").write_bytes(uimage_payload())
+          PY
+          python3 packer/mp716_fwpack.py pack \
+            --payload build/payload.bin \
+            --private-key build/ci-release/ci-test.priv \
+            --out build/ci-release/test.mp716upd \
+            --hardware-revision ci-lab \
+            --firmware-version 1.0.0 \
+            --build-time 2026-11-13T00:00:00Z
+          python3 - <<'PY'
+          from pathlib import Path
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          seed = Path("build/ci-release/ci-test.priv").read_bytes()
+          pub = Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
+              serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+          Path("build/ci-release/ci-test.pub").write_bytes(pub)
+          Path("build/ci-release/device.profile").write_text(
+              "product=MP716\nhardware_revision=ci-lab\nbase_firmware=014\n"
+              "vendor_software_version=014\ninstalled_custom_firmware=\n"
+              "web_ui=1.0.0\nupgrade_engine=1.0.0\n",
+              encoding="utf-8")
+          PY
+          python3 packer/mp716_fwverify.py build/ci-release/test.mp716upd \
+            --public-key build/ci-release/ci-test.pub \
+            --profile build/ci-release/device.profile \
+            > build/ci-release/verify.json
+          set +e
+          python3 packer/audit_vendor_image.py > build/ci-release/vendor-audit.json
+          audit_code=$?
+          set -e
+          test "$audit_code" -eq 2
+          rm -f build/ci-release/ci-test.priv build/payload.bin
+          sha256sum build/ci-release/test.mp716upd > build/ci-release/test.mp716upd.sha256
+          mkdir -p "${{ github.workspace }}/build"
+          cp -v build/ci-release/test.mp716upd \
+                build/ci-release/test.mp716upd.sha256 \
+                build/ci-release/verify.json \
+                build/ci-release/vendor-audit.json \
+                build/ci-release/ci-test.pub \
+                "${{ github.workspace }}/build/"
+          echo "✅ 测试升级包已生成。这不是生产签名，也没有写入设备。"
+
+      - name: Upload test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716upd-${{ github.sha }}
+          path: build/
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Summary
+        run: |
+          echo "✅ 打包完成，未部署，未刷机。"
+          echo "产物目录: ${{ github.workspace }}/build"
+          sha256sum build/test.mp716upd
+          echo "原厂 BIN 不在仓库中，vendor-audit.json 应为 BLOCKED。"
+
+      - name: Cleanup build directory
+        if: always()
+        run: |
+          find openwrt -name 'ci-test.priv' -delete 2>/dev/null || true
+          if [ -d openwrt ]; then
+            rm -rf openwrt
+          fi
+          if [ -d build ]; then
+            rm -rf build
+          fi
+          echo "🧹 清理完成"
