@@ -39,6 +39,18 @@ class PolicyTests(unittest.TestCase):
         self.assertFalse(report["historical_offset_verified"])
         self.assertIsNone(report["computed_sha256"])
 
+    def test_upstream_reference_is_pinned(self) -> None:
+        text = (ROOT / "docs" / "upstream-reference.md").read_text(encoding="utf-8")
+        self.assertIn("64900e756efa667774214f9c6b17c113222e01f7", text)
+        self.assertIn("22dd0e28678a6cd6fbadea2d5aaded3a805ab8a4", text)
+        self.assertIn("04cd252e4e9394ffacd51f56f1f124abc534f715", text)
+        self.assertIn("target/linux/ramips/mt76x8/base-files/lib/upgrade/platform.sh", text)
+        self.assertIn("PART_NAME=firmware", text)
+        self.assertIn("dual_image", text)
+        sources = "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in (ROOT / "device" / "src").glob("*.c"))
+        self.assertNotIn("ubus call system sysupgrade", sources)
+        self.assertNotIn("fwtool", sources)
+
     def test_release_script_refuses_flash(self) -> None:
         proc = subprocess.run([sys.executable, str(ROOT / "scripts" / "release_preflight.py"), "--allow-flash-upgrade"], capture_output=True, text=True, check=False)
         self.assertEqual(proc.returncode, 24)

@@ -57,3 +57,5 @@ Manifest 必须是无空白、键严格排序的 ASCII JSON。字段以 `shared/
 - 内核结束之后扫描 `hsqs`，要求 SquashFS 主版本 4、压缩 XZ、`bytes_used` 落在 Payload 内
 
 这些门用于我们自己签发的 vendor-compatible 载荷。在原厂 BIN 核对完成之前，不能声称原厂文件已经通过这些门。
+
+原厂网页升级接受的是这份 BIN 本身。`.mp716upd` 是包在它外面的签名容器，不能把 OpenWrt 25.12 的 sysupgrade 镜像塞进原厂升级页。两种格式的差异和上游参考提交见 `upstream-reference.md`。
