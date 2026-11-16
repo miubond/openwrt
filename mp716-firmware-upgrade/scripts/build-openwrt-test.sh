@@ -6,12 +6,17 @@ project=$(cd "$(dirname "$0")/.." && pwd -P)
 pin=64900e756efa667774214f9c6b17c113222e01f7
 
 serial_rx=0
-if [ "${1:-}" = --serial-rx ]; then
+ram_web=""
+if [ "${1:-}" = --ram-web ] && [ "$#" -ge 2 ]; then
+	ram_web=$(realpath -e "$2")
+	serial_rx=1
+	shift 2
+elif [ "${1:-}" = --serial-rx ]; then
 	serial_rx=1
 	shift
 fi
 if [ "$#" -ne 3 ]; then
-	echo "usage: bash $0 [--serial-rx] OPENWRT_CHECKOUT DEVICE_PROFILE OUTPUT_DIR" >&2
+	echo "usage: bash $0 [--serial-rx | --ram-web WEB_INPUT_ZIP] OPENWRT_CHECKOUT DEVICE_PROFILE OUTPUT_DIR" >&2
 	exit 2
 fi
 if [ "$(uname -s)" != Linux ]; then
@@ -54,6 +59,11 @@ cd "$tree"
 overlay="$project/openwrt-overlay/target/linux/ramips"
 cp "$overlay/dts/mt7628an_yunxm_mp716.dts" target/linux/ramips/dts/
 cp "$overlay/image/yunxm_mp716.mk" target/linux/ramips/image/
+if [ -n "$ram_web" ]; then
+	cat "$project/integration/ram-web/ram-web.dtsi" >> target/linux/ramips/dts/mt7628an_yunxm_mp716.dts
+	python3 "$project/integration/ram-web/stage.py" "$ram_web" "$tree/files"
+	install -D -m 0755 "$project/integration/ram-web/03_mp716_ram_web" files/etc/board.d/03_mp716_ram_web
+fi
 include='include ./yunxm_mp716.mk'
 grep -Fxq "$include" target/linux/ramips/image/mt76x8.mk ||
 	printf '\n%s\n' "$include" >> target/linux/ramips/image/mt76x8.mk
@@ -84,6 +94,16 @@ CONFIG
 else
 	echo CONFIG_TARGET_ROOTFS_SQUASHFS=y >> .config
 fi
+if [ -n "$ram_web" ]; then
+	cat >> .config <<'CONFIG'
+CONFIG_PACKAGE_uhttpd=y
+CONFIG_PACKAGE_rpcd=y
+CONFIG_PACKAGE_ucode=y
+CONFIG_PACKAGE_ucode-mod-fs=y
+CONFIG_PACKAGE_ucode-mod-ubus=y
+CONFIG_PACKAGE_ucode-mod-uci=y
+CONFIG
+fi
 make defconfig
 required_config=(CONFIG_TARGET_ramips_mt76x8_DEVICE_yunxm_mp716 CONFIG_TARGET_ROOTFS_INITRAMFS CONFIG_PACKAGE_mp716-sysupgrade)
 if [ "$serial_rx" -eq 1 ]; then
@@ -91,6 +111,10 @@ if [ "$serial_rx" -eq 1 ]; then
 	grep -Fxq '# CONFIG_TARGET_ROOTFS_SQUASHFS is not set' .config
 else
 	required_config+=(CONFIG_TARGET_ROOTFS_SQUASHFS)
+fi
+if [ -n "$ram_web" ]; then
+	required_config+=(CONFIG_PACKAGE_uhttpd CONFIG_PACKAGE_rpcd CONFIG_PACKAGE_ucode
+		CONFIG_PACKAGE_ucode-mod-fs CONFIG_PACKAGE_ucode-mod-ubus CONFIG_PACKAGE_ucode-mod-uci)
 fi
 for required in "${required_config[@]}"; do
 	grep -Fxq "$required=y" .config || { echo "Missing build configuration: $required" >&2; exit 2; }
@@ -112,13 +136,35 @@ if [ "$serial_rx" -eq 1 ]; then
 	archives=(build_dir/target-*/linux-ramips_mt76x8/linux-*/usr/initramfs_data.cpio)
 	[ "${#archives[@]}" -eq 1 ] || { echo "Missing MP716 initramfs CPIO archive." >&2; exit 2; }
 	staging_dir/host/bin/cpio -it < "${archives[0]}" > "$output/initramfs-files.txt"
-	for entry in usr/bin/rx sbin/sysupgrade usr/libexec/validate_firmware_image; do
+	entries=(usr/bin/rx sbin/sysupgrade usr/libexec/validate_firmware_image)
+	name=openwrt-ramips-mt76x8-yunxm_mp716-initramfs-rx-kernel.bin
+	if [ -n "$ram_web" ]; then
+		linux_dir=${archives[0]%/usr/initramfs_data.cpio}
+		"$linux_dir/scripts/dtc/dtc" -q -I dtb -O dts \
+			"$linux_dir/../image-mt7628an_yunxm_mp716.dtb" > "$output/board.dts"
+		python3 - "$output/board.dts" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+board = Path(sys.argv[1]).read_text()
+for node, status in (("spi@b00", "disabled"), ("ethernet@10100000", "okay"), ("esw@10110000", "okay")):
+    match = re.search(rf"^\s*{node}\s*\{{([^{{}}]*)", board, re.MULTILINE)
+    if not match or f'status = "{status}";' not in match[1]:
+        raise SystemExit(f"Expected {node} status {status} in the RAM image")
+PY
+		entries+=(usr/sbin/uhttpd sbin/rpcd usr/bin/ucode
+			www/mp716/index.html www/cgi-bin/mp716 usr/share/mp716/httpd.uc
+			usr/share/rpcd/acl.d/mp716.json usr/sbin/mp716-package-verify
+			usr/sbin/mp716-upgraded etc/mp716-upgrade/upgrade.pub etc/board.d/03_mp716_ram_web)
+		name=openwrt-ramips-mt76x8-yunxm_mp716-initramfs-ram-web-kernel.bin
+	fi
+	for entry in "${entries[@]}"; do
 		grep -Eq "^(\\./)?$entry$" "$output/initramfs-files.txt" || {
 			echo "Missing initramfs entry: $entry" >&2
 			exit 2
 		}
 	done
-	name=openwrt-ramips-mt76x8-yunxm_mp716-initramfs-rx-kernel.bin
 	cp "${initramfs[0]}" "$output/$name"
 	cp .config "$output/openwrt.config"
 	(cd "$output" && sha256sum "$name" > SHA256SUMS)

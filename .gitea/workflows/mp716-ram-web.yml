@@ -1,0 +1,69 @@
+name: MP716 RAM Web Verification
+
+on:
+  push:
+    branches:
+      - codex/mp716-ram-web
+  workflow_dispatch:
+
+jobs:
+  initramfs:
+    runs-on: self-hosted
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout build inputs
+        env:
+          GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          mkdir -p mp716-ram-web-work/project mp716-ram-web-work/openwrt mp716-ram-web-output
+          git -C mp716-ram-web-work/project init
+          AUTH=$(printf 'oauth2:%s' "$GIT_TOKEN" | base64 -w0)
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader \
+            GIT_CONFIG_VALUE_0="Authorization: Basic $AUTH" \
+            git -C mp716-ram-web-work/project fetch --depth 1 "$REPOSITORY_URL" "$SOURCE_COMMIT"
+          git -C mp716-ram-web-work/project checkout --detach FETCH_HEAD
+          git -C mp716-ram-web-work/openwrt init
+          git -C mp716-ram-web-work/openwrt fetch --depth 1 https://github.com/openwrt/openwrt.git \
+            64900e756efa667774214f9c6b17c113222e01f7
+          git -C mp716-ram-web-work/openwrt checkout --detach FETCH_HEAD
+
+      - name: Build and inspect RAM-only initramfs
+        run: |
+          set -euo pipefail
+          project=mp716-ram-web-work/project/mp716-firmware-upgrade
+          cat > mp716-ram-web-work/device.profile <<'PROFILE'
+          product=MP716
+          hardware_revision=ci-lab
+          base_firmware=014
+          vendor_software_version=014
+          installed_custom_firmware=0.0.0
+          web_ui=1.0.0
+          upgrade_engine=1.0.0
+          PROFILE
+          bash "$project/scripts/build-openwrt-test.sh" --ram-web \
+            "$project/integration/ram-web/web-input.zip" mp716-ram-web-work/openwrt \
+            mp716-ram-web-work/device.profile mp716-ram-web-output
+          (cd mp716-ram-web-output && sha256sum -c SHA256SUMS)
+
+      - name: Upload RAM image
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-initramfs-ram-web-${{ github.sha }}
+          path: |
+            mp716-ram-web-output/*-initramfs-ram-web-kernel.bin
+            mp716-ram-web-output/SHA256SUMS
+            mp716-ram-web-output/initramfs-files.txt
+            mp716-ram-web-output/openwrt.config
+            mp716-ram-web-output/board.dts
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Clean build files
+        if: always()
+        run: rm -rf -- mp716-ram-web-work mp716-ram-web-output

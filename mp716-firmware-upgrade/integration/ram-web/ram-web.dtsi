@@ -1,0 +1,12 @@
+// RAM-only Ethernet test. Use the MT7628 switch defaults on a direct LAN cable.
+&ethernet {
+	status = "okay";
+};
+
+&esw {
+	status = "okay";
+};
+
+&spi0 {
+	status = "disabled";
+};
