@@ -1,0 +1,76 @@
+name: MP716 Serial Initramfs
+
+on:
+  push:
+    branches:
+      - codex/mp716-serial-rx
+  workflow_dispatch:
+
+concurrency:
+  group: mp716-serial-initramfs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  initramfs:
+    name: Build MP716 initramfs with rx
+    runs-on: self-hosted
+    timeout-minutes: 300
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout inputs
+        env:
+          GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          mkdir -p mp716-serial-work/project mp716-serial-work/openwrt-source mp716-serial-output
+          git -C mp716-serial-work/project init
+          AUTH=$(printf 'oauth2:%s' "$GIT_TOKEN" | base64 -w0)
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader \
+            GIT_CONFIG_VALUE_0="Authorization: Basic $AUTH" \
+            git -C mp716-serial-work/project fetch --depth 1 "$REPOSITORY_URL" "$SOURCE_COMMIT"
+          git -C mp716-serial-work/project checkout --detach FETCH_HEAD
+          PIN=64900e756efa667774214f9c6b17c113222e01f7
+          git -C mp716-serial-work/openwrt-source init
+          git -C mp716-serial-work/openwrt-source fetch --depth 1 https://github.com/openwrt/openwrt.git "$PIN"
+          git -C mp716-serial-work/openwrt-source checkout --detach FETCH_HEAD
+
+      - name: Build and check RAM-only image
+        run: |
+          set -euo pipefail
+          cat > mp716-serial-work/device.profile <<'PROFILE'
+          product=MP716
+          hardware_revision=ci-lab
+          base_firmware=014
+          vendor_software_version=014
+          installed_custom_firmware=1.0.0
+          web_ui=1.0.0
+          upgrade_engine=1.0.0
+          PROFILE
+          bash mp716-serial-work/project/mp716-firmware-upgrade/scripts/build-openwrt-test.sh --serial-rx \
+            mp716-serial-work/openwrt-source mp716-serial-work/device.profile mp716-serial-output
+          cd mp716-serial-output
+          sha256sum -c SHA256SUMS
+          printf '%s  %s\n' \
+            9c7367233b2eb7af815eb32907b0a872d2a1a468cfb7ed160bdb7bb20e920c58 \
+            openwrt-ramips-mt76x8-yunxm_mp716-squashfs-sysupgrade.bin > original-sysupgrade.sha256
+
+      - name: Upload serial initramfs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-initramfs-rx-${{ github.sha }}
+          path: |
+            mp716-serial-output/*-initramfs-rx-kernel.bin
+            mp716-serial-output/SHA256SUMS
+            mp716-serial-output/original-sysupgrade.sha256
+            mp716-serial-output/initramfs-files.txt
+            mp716-serial-output/openwrt.config
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Clean build files
+        if: always()
+        run: rm -rf -- mp716-serial-work mp716-serial-output

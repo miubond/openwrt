@@ -5,8 +5,13 @@ set -euo pipefail
 project=$(cd "$(dirname "$0")/.." && pwd -P)
 pin=64900e756efa667774214f9c6b17c113222e01f7
 
+serial_rx=0
+if [ "${1:-}" = --serial-rx ]; then
+	serial_rx=1
+	shift
+fi
 if [ "$#" -ne 3 ]; then
-	echo "usage: bash $0 OPENWRT_CHECKOUT DEVICE_PROFILE OUTPUT_DIR" >&2
+	echo "usage: bash $0 [--serial-rx] OPENWRT_CHECKOUT DEVICE_PROFILE OUTPUT_DIR" >&2
 	exit 2
 fi
 if [ "$(uname -s)" != Linux ]; then
@@ -68,11 +73,26 @@ CONFIG_TARGET_ramips=y
 CONFIG_TARGET_ramips_mt76x8=y
 CONFIG_TARGET_ramips_mt76x8_DEVICE_yunxm_mp716=y
 CONFIG_TARGET_ROOTFS_INITRAMFS=y
-CONFIG_TARGET_ROOTFS_SQUASHFS=y
 CONFIG_PACKAGE_mp716-sysupgrade=y
 CONFIG
+if [ "$serial_rx" -eq 1 ]; then
+	cat >> .config <<'CONFIG'
+# CONFIG_TARGET_ROOTFS_SQUASHFS is not set
+CONFIG_BUSYBOX_CUSTOM=y
+CONFIG_BUSYBOX_CONFIG_RX=y
+CONFIG
+else
+	echo CONFIG_TARGET_ROOTFS_SQUASHFS=y >> .config
+fi
 make defconfig
-for required in CONFIG_TARGET_ramips_mt76x8_DEVICE_yunxm_mp716 CONFIG_TARGET_ROOTFS_INITRAMFS CONFIG_TARGET_ROOTFS_SQUASHFS CONFIG_PACKAGE_mp716-sysupgrade; do
+required_config=(CONFIG_TARGET_ramips_mt76x8_DEVICE_yunxm_mp716 CONFIG_TARGET_ROOTFS_INITRAMFS CONFIG_PACKAGE_mp716-sysupgrade)
+if [ "$serial_rx" -eq 1 ]; then
+	required_config+=(CONFIG_BUSYBOX_CUSTOM CONFIG_BUSYBOX_CONFIG_RX)
+	grep -Fxq '# CONFIG_TARGET_ROOTFS_SQUASHFS is not set' .config
+else
+	required_config+=(CONFIG_TARGET_ROOTFS_SQUASHFS)
+fi
+for required in "${required_config[@]}"; do
 	grep -Fxq "$required=y" .config || { echo "Missing build configuration: $required" >&2; exit 2; }
 done
 
@@ -84,6 +104,26 @@ target=bin/targets/ramips/mt76x8
 shopt -s nullglob
 sysupgrade=("$target"/*-yunxm_mp716-squashfs-sysupgrade.bin)
 initramfs=("$target"/*-yunxm_mp716-initramfs-kernel.bin)
+if [ "$serial_rx" -eq 1 ]; then
+	[ "${#initramfs[@]}" -eq 1 ] && [ "${#sysupgrade[@]}" -eq 0 ] || {
+		echo "Expected only the MP716 initramfs image." >&2
+		exit 2
+	}
+	archives=(build_dir/target-*/linux-ramips_mt76x8/linux-*/usr/initramfs_data.cpio)
+	[ "${#archives[@]}" -eq 1 ] || { echo "Missing MP716 initramfs CPIO archive." >&2; exit 2; }
+	staging_dir/host/bin/cpio -it < "${archives[0]}" > "$output/initramfs-files.txt"
+	for entry in usr/bin/rx sbin/sysupgrade usr/libexec/validate_firmware_image; do
+		grep -Eq "^(\\./)?$entry$" "$output/initramfs-files.txt" || {
+			echo "Missing initramfs entry: $entry" >&2
+			exit 2
+		}
+	done
+	name=openwrt-ramips-mt76x8-yunxm_mp716-initramfs-rx-kernel.bin
+	cp "${initramfs[0]}" "$output/$name"
+	cp .config "$output/openwrt.config"
+	(cd "$output" && sha256sum "$name" > SHA256SUMS)
+	exit 0
+fi
 [ "${#sysupgrade[@]}" -eq 1 ] && [ "${#initramfs[@]}" -eq 1 ] || {
 	echo "Expected one MP716 sysupgrade image and one MP716 initramfs image." >&2
 	exit 2
