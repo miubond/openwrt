@@ -137,10 +137,24 @@ jobs:
           cp "$1" build/payload.bin
 
       - name: Package test container
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
           PROJECT="${{ steps.repo.outputs.project }}"
+          ARTIFACT_DIR="${{ github.workspace }}/build"
+          mkdir -p "$ARTIFACT_DIR"
           cd "$PROJECT"
+          verify_report() {
+            local report=$1 status
+            shift
+            if "$@" > "$report"; then
+              cat "$report"
+            else
+              status=$?
+              cat "$report" >&2
+              return "$status"
+            fi
+          }
           python3 - <<'PY'
           from pathlib import Path
           from cryptography.hazmat.primitives import serialization
@@ -169,47 +183,48 @@ jobs:
           seed = Path("build/ci-release/ci-test.priv").read_bytes()
           pub = Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
               serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-          Path("build/ci-release/ci-test.pub").write_bytes(pub)
+          Path("build/ci-release/upgrade.pub").write_bytes(pub)
           Path("build/ci-release/device.profile").write_text(
               "product=MP716\nhardware_revision=ci-lab\nbase_firmware=014\n"
               "vendor_software_version=014\ninstalled_custom_firmware=\n"
               "web_ui=1.0.0\nupgrade_engine=1.0.0\n",
               encoding="utf-8")
           PY
-          python3 packer/mp716_fwverify.py build/ci-release/test.mp716upd \
-            --public-key build/ci-release/ci-test.pub \
-            --profile build/ci-release/device.profile \
-            > build/ci-release/verify.json
-          set +e
-          python3 packer/audit_vendor_image.py > build/ci-release/vendor-audit.json
-          audit_code=$?
-          set -e
+          verify_report build/ci-release/verify.json \
+            python3 packer/mp716_fwverify.py build/ci-release/test.mp716upd \
+            --public-key build/ci-release/upgrade.pub \
+            --profile build/ci-release/device.profile
+          audit_code=0
+          python3 packer/audit_vendor_image.py > build/ci-release/vendor-audit.json || audit_code=$?
+          cat build/ci-release/vendor-audit.json
           test "$audit_code" -eq 2
           rm -f build/ci-release/ci-test.priv build/payload.bin
           (cd build/ci-release && sha256sum test.mp716upd > test.mp716upd.sha256)
-          ./build/host/mp716-upgraded check --root build/ci-release \
-            --image build/ci-release/test.mp716upd > build/ci-release/device-verify.json
-          if [ -d build/target-images ]; then
+          verify_report build/ci-release/device-verify.json \
             ./build/host/mp716-upgraded check --root build/ci-release \
+            --image build/ci-release/test.mp716upd
+          if [ -d build/target-images ]; then
+            verify_report build/ci-release/stage-verify.json \
+              ./build/host/mp716-upgraded check --root build/ci-release \
               --image build/ci-release/test.mp716upd --meminfo /proc/meminfo \
               --extract build/ci-release/extracted.bin \
-              --pending-state build/ci-release/sysupgrade.pending > build/ci-release/stage-verify.json
+              --pending-state build/ci-release/sysupgrade.pending
             set -- build/target-images/*-yunxm_mp716-squashfs-sysupgrade.bin
             cmp "$1" build/ci-release/extracted.bin
             cp build/target-device.profile build/ci-release/running.profile
-            ./build/host/mp716-upgraded boot-verify --root build/ci-release > build/ci-release/boot-verify.json
-            cp build/ci-release/boot-verify.json "${{ github.workspace }}/build/"
+            verify_report build/ci-release/boot-verify.json \
+              ./build/host/mp716-upgraded boot-verify --root build/ci-release
+            cp build/ci-release/boot-verify.json "$ARTIFACT_DIR/"
           fi
-          mkdir -p "${{ github.workspace }}/build"
+          cp build/ci-release/upgrade.pub "$ARTIFACT_DIR/ci-test.pub"
           cp -v build/ci-release/test.mp716upd \
                 build/ci-release/test.mp716upd.sha256 \
                 build/ci-release/verify.json \
                 build/ci-release/device-verify.json \
                 build/ci-release/vendor-audit.json \
-                build/ci-release/ci-test.pub \
-                "${{ github.workspace }}/build/"
+                "$ARTIFACT_DIR/"
           if [ -d build/target-images ]; then
-            cp -R build/target-images "${{ github.workspace }}/build/"
+            cp -R build/target-images "$ARTIFACT_DIR/"
           fi
           echo "测试升级包已生成。这不是生产签名，也没有写入设备。"
 

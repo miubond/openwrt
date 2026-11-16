@@ -91,12 +91,12 @@ int mp716_load_pubkey(const char *path, uint8_t out[32])
 	fclose(fp);
 	if (n == sizeof(buf))
 		return MP716_ERR_IO;
-	while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r' || buf[n - 1] == ' '))
-		n--;
 	if (n == 32) {
 		memcpy(out, buf, 32);
 		return MP716_OK;
 	}
+	while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r' || buf[n - 1] == ' '))
+		n--;
 	if (mp716_hex_decode_fixed((const char *)buf, n, out, 32) != 0)
 		return MP716_ERR_IO;
 	return MP716_OK;

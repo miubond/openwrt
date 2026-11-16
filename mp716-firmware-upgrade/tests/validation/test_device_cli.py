@@ -56,6 +56,15 @@ class DeviceCliTests(unittest.TestCase):
         self.assertFalse(report["historical_offset_match"])
         self.assertTrue(report["signature_checked"])
 
+    def test_raw_public_key_preserves_trailing_space(self) -> None:
+        blob, _, public = signed_image(seed=(230).to_bytes(32, "little"))
+        self.assertTrue(public.endswith(b" "))
+        self.image.write_bytes(blob)
+        (self.root / "upgrade.pub").write_bytes(public)
+        rc, report = self.check(self.image)
+        self.assertEqual(rc, 0, report)
+        self.assertTrue(report["signature_checked"])
+
     def test_c_rejects_bad_signature_and_downgrade(self) -> None:
         bad = bytearray(self.blob)
         bad[-1] ^= 1
