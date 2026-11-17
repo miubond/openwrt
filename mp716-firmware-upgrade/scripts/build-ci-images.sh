@@ -11,10 +11,14 @@ TIMEFORMAT='LAN sysupgrade elapsed: %3R s'
 { time bash scripts/build-openwrt-cached.sh --lan-candidate web/dist \
   build/target-device.profile build/target-images; } 2>&1 | tee build/ci-logs/sysupgrade.log
 (cd build/target-images && sha256sum -c SHA256SUMS)
+python3 scripts/prepare-ci-test-key.py
+trap 'rm -f build/ci-release/ci-test.priv' EXIT
 TIMEFORMAT='RAM initramfs elapsed: %3R s'
-{ time bash scripts/build-openwrt-cached.sh --ram-web web/dist \
+{ time MP716_RAM_TEST_PUBLIC_KEY="$PWD/build/ci-release/upgrade.pub" \
+  bash scripts/build-openwrt-cached.sh --ram-web web/dist \
   config/test-device.profile build/ram-images; } 2>&1 | tee build/ci-logs/initramfs.log
 (cd build/ram-images && sha256sum -c SHA256SUMS)
 set -- build/target-images/*-yunxm_mp716-squashfs-sysupgrade.bin
 test "$#" -eq 1
 cp "$1" build/payload.bin
+trap - EXIT

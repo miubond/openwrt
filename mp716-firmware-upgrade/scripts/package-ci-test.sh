@@ -2,7 +2,7 @@
 # Sign and verify a CI-only container using a disposable test key.
 set -euo pipefail
 ARTIFACT_DIR=${1:?Missing absolute CI artifact directory}
-mkdir -p "$ARTIFACT_DIR"
+mkdir -p "$ARTIFACT_DIR" build/ci-logs
 verify_report() {
   local report=$1 status
   shift
@@ -14,16 +14,20 @@ verify_report() {
     return "$status"
   fi
 }
+if [ -d build/ram-images ]; then
+  trap 'rm -f build/ci-release/ci-test.priv' EXIT
+  if [ ! -f build/payload.bin ] || [ ! -f build/ci-release/ci-test.priv ] ||
+     ! cmp -s build/ram-images/ram-upgrade.pub build/ci-release/upgrade.pub; then
+    echo "Missing CI payload or signing key pair matching the compiled RAM image." >&2
+    exit 2
+  fi
+else
+  python3 scripts/prepare-ci-test-key.py
+  trap 'rm -f build/ci-release/ci-test.priv' EXIT
+fi
 python3 - <<'PY'
 from pathlib import Path
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from tests.support.images import uimage_payload
-root = Path("build/ci-release")
-root.mkdir(parents=True, exist_ok=True)
-key = root / "ci-test.priv"
-seed = Ed25519PrivateKey.generate()
-key.write_bytes(seed.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()))
 payload = Path("build/payload.bin")
 if not payload.exists():
     payload.write_bytes(uimage_payload())
@@ -37,12 +41,6 @@ python3 packer/mp716_fwpack.py pack \
   --build-time 2026-11-13T00:00:00Z 2>&1 | tee build/ci-logs/pack-test-container.log
 python3 - <<'PY'
 from pathlib import Path
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-seed = Path("build/ci-release/ci-test.priv").read_bytes()
-pub = Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(
-    serialization.Encoding.Raw, serialization.PublicFormat.Raw)
-Path("build/ci-release/upgrade.pub").write_bytes(pub)
 Path("build/ci-release/device.profile").write_text(
     "product=MP716\nhardware_revision=ci-lab\nbase_firmware=014\n"
     "vendor_software_version=014\ninstalled_custom_firmware=\n"

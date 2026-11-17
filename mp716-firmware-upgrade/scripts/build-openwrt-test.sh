@@ -76,6 +76,9 @@ if [ -n "$web_input" ]; then
 		stage_args+=(--no-test-key)
 	else
 		cat "$project/integration/ram-web/ram-web.dtsi" >> target/linux/ramips/dts/mt7628an_yunxm_mp716.dts
+		if [ -n "${MP716_RAM_TEST_PUBLIC_KEY:-}" ]; then
+			stage_args+=(--test-public-key "$MP716_RAM_TEST_PUBLIC_KEY")
+		fi
 	fi
 	python3 "$project/integration/ram-web/stage.py" "$web_input" "$tree/files" "${stage_args[@]}"
 	install -D -m 0755 "$project/integration/ram-web/03_mp716_ram_web" files/etc/board.d/03_mp716_ram_web
@@ -185,6 +188,14 @@ if [ "$serial_rx" -eq 1 ]; then
 			exit 2
 		}
 	done
+	if [ -n "$web_input" ] && [ -n "${MP716_RAM_TEST_PUBLIC_KEY:-}" ]; then
+		staging_dir/host/bin/cpio -i --to-stdout 'etc/mp716-upgrade/upgrade.pub' './etc/mp716-upgrade/upgrade.pub' \
+			< "${archives[0]}" > "$output/ram-upgrade.pub"
+		if ! cmp -s "$MP716_RAM_TEST_PUBLIC_KEY" "$output/ram-upgrade.pub"; then
+			echo "The compiled RAM image has the wrong CI test public key." >&2
+			exit 2
+		fi
+	fi
 	cp "${initramfs[0]}" "$output/$name"
 	cp .config "$output/openwrt.config"
 	(cd "$output" && sha256sum "$name" > SHA256SUMS)
