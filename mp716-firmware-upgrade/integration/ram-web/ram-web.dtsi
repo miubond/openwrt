@@ -1,12 +1,4 @@
-// RAM-only Ethernet test. Use the MT7628 switch defaults on a direct LAN cable.
-&ethernet {
-	status = "okay";
-};
-
-&esw {
-	status = "okay";
-};
-
+// RAM test also disables access to persistent SPI storage.
 &spi0 {
 	status = "disabled";
 };

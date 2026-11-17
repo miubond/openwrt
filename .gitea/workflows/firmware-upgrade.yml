@@ -13,6 +13,7 @@ on:
   push:
     branches:
       - feature/lz
+      - codex/mp716-firmware
   workflow_dispatch:
     inputs:
       build_only:
@@ -111,6 +112,12 @@ jobs:
             CFLAGS_EXTRA="-mips32r2 -EL -mabi=32 -msoft-float"
           echo "MIPS 程序已编译，未执行，也未写入设备。"
 
+      - name: Set up Node.js
+        if: ${{ github.event_name == 'push' || !inputs.build_only }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
       - name: Build MP716 OpenWrt target images
         if: ${{ github.event_name == 'push' || !inputs.build_only }}
         timeout-minutes: 300
@@ -118,7 +125,7 @@ jobs:
           set -eu
           cd "${{ steps.repo.outputs.project }}"
           mkdir -p build/openwrt-source build/target-images
-          PIN=64900e756efa667774214f9c6b17c113222e01f7
+          PIN=$(cat config/openwrt.commit)
           git -C build/openwrt-source init
           git -C build/openwrt-source fetch --depth 1 https://github.com/openwrt/openwrt.git "$PIN"
           git -C build/openwrt-source checkout --detach FETCH_HEAD
@@ -131,7 +138,11 @@ jobs:
           web_ui=1.0.0
           upgrade_engine=1.0.0
           PROFILE
-          bash scripts/build-openwrt-test.sh build/openwrt-source build/target-device.profile build/target-images
+          npm ci --prefix web --no-audit --no-fund
+          npm run --prefix web build
+          bash scripts/build-openwrt-test.sh --lan-candidate web/dist \
+            build/openwrt-source build/target-device.profile build/target-images
+          (cd build/target-images && sha256sum -c SHA256SUMS)
           set -- build/target-images/*-yunxm_mp716-squashfs-sysupgrade.bin
           test "$#" -eq 1
           cp "$1" build/payload.bin

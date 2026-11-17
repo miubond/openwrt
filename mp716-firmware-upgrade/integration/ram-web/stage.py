@@ -1,25 +1,26 @@
 """Install the device Web snapshot and the public test key into an OpenWrt overlay."""
 
+import argparse
 import shutil
-import sys
 from pathlib import Path, PurePosixPath
 from zipfile import ZipFile
 
 
-def stage(bundle: Path, root: Path) -> None:
+def stage(bundle: Path, root: Path, *, web_dist: Path | None = None, test_key: bool = True) -> None:
     paths = {
         "rootfs/www/cgi-bin/mp716": ("www/cgi-bin/mp716", 0o755),
         "rootfs/usr/share/rpcd/acl.d/mp716.json": ("usr/share/rpcd/acl.d/mp716.json", 0o644),
         "rootfs/usr/sbin/mp716-package-verify": ("usr/sbin/mp716-package-verify", 0o755),
-        "test-data/upgrade.pub": ("etc/mp716-upgrade/upgrade.pub", 0o644),
     }
+    if test_key:
+        paths["test-data/upgrade.pub"] = ("etc/mp716-upgrade/upgrade.pub", 0o644)
     with ZipFile(bundle) as archive:
         entries = {entry.filename for entry in archive.infolist() if not entry.is_dir()}
-        required = paths.keys() | {"rootfs/www/mp716/index.html"}
+        required = paths.keys() if web_dist else paths.keys() | {"rootfs/www/mp716/index.html"}
         if missing := required - entries:
             raise SystemExit("Missing Web inputs: " + ", ".join(sorted(missing)))
         for name in sorted(entries):
-            if name.startswith("rootfs/www/mp716/"):
+            if web_dist is None and name.startswith("rootfs/www/mp716/"):
                 path = PurePosixPath(name)
                 if ".." in path.parts or "\\" in name:
                     raise SystemExit(f"Invalid Web input path: {name}")
@@ -30,6 +31,10 @@ def stage(bundle: Path, root: Path) -> None:
             with archive.open(name) as source, destination.open("wb") as output:
                 shutil.copyfileobj(source, output)
             destination.chmod(mode)
+    if web_dist is not None:
+        if not (web_dist / "index.html").is_file():
+            raise SystemExit(f"Missing built Vue frontend: {web_dist}")
+        shutil.copytree(web_dist, root / "www/mp716", dirs_exist_ok=True)
     gateway = root / "usr/share/mp716/httpd.uc"
     gateway.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("httpd.uc"), gateway)
@@ -37,4 +42,10 @@ def stage(bundle: Path, root: Path) -> None:
 
 
 if __name__ == "__main__":
-    stage(Path(sys.argv[1]), Path(sys.argv[2]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("bundle", type=Path)
+    parser.add_argument("root", type=Path)
+    parser.add_argument("--web-dist", type=Path)
+    parser.add_argument("--no-test-key", action="store_true")
+    args = parser.parse_args()
+    stage(args.bundle, args.root, web_dist=args.web_dist, test_key=not args.no_test_key)

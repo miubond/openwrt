@@ -33,7 +33,7 @@ jobs:
             GIT_CONFIG_VALUE_0="Authorization: Basic $AUTH" \
             git -C mp716-serial-work/project fetch --depth 1 "$REPOSITORY_URL" "$SOURCE_COMMIT"
           git -C mp716-serial-work/project checkout --detach FETCH_HEAD
-          PIN=64900e756efa667774214f9c6b17c113222e01f7
+          PIN=$(cat mp716-serial-work/project/mp716-firmware-upgrade/config/openwrt.commit)
           git -C mp716-serial-work/openwrt-source init
           git -C mp716-serial-work/openwrt-source fetch --depth 1 https://github.com/openwrt/openwrt.git "$PIN"
           git -C mp716-serial-work/openwrt-source checkout --detach FETCH_HEAD
@@ -68,6 +68,7 @@ jobs:
             mp716-serial-output/original-sysupgrade.sha256
             mp716-serial-output/initramfs-files.txt
             mp716-serial-output/openwrt.config
+            mp716-serial-output/build-report.json
           if-no-files-found: error
           compression-level: 0
 

@@ -1,6 +1,24 @@
-# MP716 固件升级系统
+# mp716-firmware
 
-独立仓库，负责 MP716（YUNXM / HUAYI，MT7628，8 MiB SPI NOR，64 MiB RAM）的升级包格式、签名、设备端校验、升级状态机和 Fake MTD。升级逻辑不放进 Vue 管理后台。
+面向 MP716（YUNXM / HUAYI，MT7628、64 MiB RAM、8 MiB SPI NOR）的 OpenWrt 固件工程。仓库维护板级配置、镜像配方、Vue 3 固件管理后台、签名验证和 Fake MTD 测试。上游版本固定为 OpenWrt v25.12.6，精确提交见 [config/openwrt.commit](config/openwrt.commit)。
+
+## 构建测试镜像
+
+在有 OpenWrt 构建依赖的 Linux 主机上使用下列命令。Vue 构建按 `web/package-lock.json` 安装依赖，需 Node.js 22.12 或更新的 LTS。
+
+```sh
+npm ci --prefix web
+npm run --prefix web build
+git init build/openwrt-source
+git -C build/openwrt-source fetch --depth 1 https://github.com/openwrt/openwrt.git "$(cat config/openwrt.commit)"
+git -C build/openwrt-source checkout --detach FETCH_HEAD
+bash scripts/build-openwrt-test.sh --lan-candidate web/dist \
+    build/openwrt-source config/test-device.profile build/lan-candidate
+```
+
+RAM 镜像在另一份干净的同提交 checkout 中用 `--ram-web web/dist` 构建。它禁用 SPI 控制器并保留串口 XMODEM 接收。两种镜像都启用直连测试用的单一 LAN，预期地址为 `192.168.1.1`。连接测试时仅接隔离的电脑网线，物理口及 WAN VLAN 映射待确认。候选镜像不会预装 RAM 测试公钥。
+
+Gitea 在 `codex/mp716-firmware` 上自动运行 RAM 和候选镜像工作流，并上传构建报告、配置、SHA-256 清单和测试产物。验收范围、实机证据和待验证项见 [构建报告与验收](docs/production-acceptance.md)。
 
 当前版本可以在开发机上独立生成 `.mp716upd`、验证签名、模拟写入，并在模拟失败后按操作者给出的离线副本恢复。它不会写真实路由器 Flash，也不会在失败时自动回滚。
 

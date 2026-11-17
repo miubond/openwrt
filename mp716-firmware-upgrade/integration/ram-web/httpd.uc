@@ -80,11 +80,11 @@ function main() {
 	if (method == 'GET' && path == '/cgi-bin/mp716/system/ping')
 		return ok({ latencyMs: 0 });
 	if (method == 'GET' && path == '/cgi-bin/mp716/system/firmware')
-		return ok({ currentVersion: 'RAM test', buildDate: '', hardware: 'MP716',
+		return ok({ currentVersion: 'OpenWrt test', buildDate: '', hardware: 'MP716',
 			canUpgrade: false, flashUpgradeEnabled: false });
 	if (method == 'POST' && path == '/cgi-bin/mp716/system/firmware-package/verify')
 		return verify();
-	return fail(404, 'NOT_IMPLEMENTED', '此接口在 RAM 验签环境不可用');
+	return fail(404, 'NOT_IMPLEMENTED', '此接口在测试固件中不可用');
 }
 
 main();

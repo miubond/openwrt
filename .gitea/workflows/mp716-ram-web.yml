@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - codex/mp716-ram-web
+      - codex/mp716-firmware
   workflow_dispatch:
 
 jobs:
@@ -28,10 +29,16 @@ jobs:
             GIT_CONFIG_VALUE_0="Authorization: Basic $AUTH" \
             git -C mp716-ram-web-work/project fetch --depth 1 "$REPOSITORY_URL" "$SOURCE_COMMIT"
           git -C mp716-ram-web-work/project checkout --detach FETCH_HEAD
+          PIN=$(cat mp716-ram-web-work/project/mp716-firmware-upgrade/config/openwrt.commit)
           git -C mp716-ram-web-work/openwrt init
           git -C mp716-ram-web-work/openwrt fetch --depth 1 https://github.com/openwrt/openwrt.git \
-            64900e756efa667774214f9c6b17c113222e01f7
+            "$PIN"
           git -C mp716-ram-web-work/openwrt checkout --detach FETCH_HEAD
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
 
       - name: Build and inspect RAM-only initramfs
         run: |
@@ -46,8 +53,10 @@ jobs:
           web_ui=1.0.0
           upgrade_engine=1.0.0
           PROFILE
+          npm ci --prefix "$project/web" --no-audit --no-fund
+          npm run --prefix "$project/web" build
           bash "$project/scripts/build-openwrt-test.sh" --ram-web \
-            "$project/integration/ram-web/web-input.zip" mp716-ram-web-work/openwrt \
+            "$project/web/dist" mp716-ram-web-work/openwrt \
             mp716-ram-web-work/device.profile mp716-ram-web-output
           (cd mp716-ram-web-output && sha256sum -c SHA256SUMS)
 
@@ -61,6 +70,7 @@ jobs:
             mp716-ram-web-output/initramfs-files.txt
             mp716-ram-web-output/openwrt.config
             mp716-ram-web-output/board.dts
+            mp716-ram-web-output/build-report.json
           if-no-files-found: error
           compression-level: 0
 

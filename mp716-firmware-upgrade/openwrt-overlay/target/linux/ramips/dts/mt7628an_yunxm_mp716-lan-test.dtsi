@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+
+// TODO: Verify physical switch ports, VLAN membership, and board MAC source.
+// Until then this profile exposes a single untagged LAN for direct lab access.
+&ethernet {
+	status = "okay";
+};
+
+&esw {
+	status = "okay";
+};

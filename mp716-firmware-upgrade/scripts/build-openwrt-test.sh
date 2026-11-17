@@ -3,20 +3,25 @@
 set -euo pipefail
 
 project=$(cd "$(dirname "$0")/.." && pwd -P)
-pin=64900e756efa667774214f9c6b17c113222e01f7
+pin=$(cat "$project/config/openwrt.commit")
 
 serial_rx=0
-ram_web=""
-if [ "${1:-}" = --ram-web ] && [ "$#" -ge 2 ]; then
-	ram_web=$(realpath -e "$2")
-	serial_rx=1
-	shift 2
-elif [ "${1:-}" = --serial-rx ]; then
-	serial_rx=1
-	shift
-fi
+web_input=""
+lan_candidate=0
+case "${1:-}" in
+	--ram-web|--lan-candidate)
+		web_input=$(realpath -e "${2:?Missing Web input}")
+		if [ "$1" = --ram-web ]; then
+			serial_rx=1
+		else
+			lan_candidate=1
+		fi
+		shift 2
+		;;
+	--serial-rx) serial_rx=1; shift ;;
+esac
 if [ "$#" -ne 3 ]; then
-	echo "usage: bash $0 [--serial-rx | --ram-web WEB_INPUT_ZIP] OPENWRT_CHECKOUT DEVICE_PROFILE OUTPUT_DIR" >&2
+	echo "usage: bash $0 [--serial-rx | --ram-web WEB_INPUT | --lan-candidate WEB_INPUT] OPENWRT_CHECKOUT DEVICE_PROFILE OUTPUT_DIR" >&2
 	exit 2
 fi
 if [ "$(uname -s)" != Linux ]; then
@@ -59,9 +64,20 @@ cd "$tree"
 overlay="$project/openwrt-overlay/target/linux/ramips"
 cp "$overlay/dts/mt7628an_yunxm_mp716.dts" target/linux/ramips/dts/
 cp "$overlay/image/yunxm_mp716.mk" target/linux/ramips/image/
-if [ -n "$ram_web" ]; then
-	cat "$project/integration/ram-web/ram-web.dtsi" >> target/linux/ramips/dts/mt7628an_yunxm_mp716.dts
-	python3 "$project/integration/ram-web/stage.py" "$ram_web" "$tree/files"
+if [ -n "$web_input" ]; then
+	cat "$overlay/dts/mt7628an_yunxm_mp716-lan-test.dtsi" >> target/linux/ramips/dts/mt7628an_yunxm_mp716.dts
+	stage_args=()
+	if [ -d "$web_input" ]; then
+		stage_args+=(--web-dist "$web_input")
+		web_input="$project/integration/ram-web/web-input.zip"
+	fi
+	if [ "$lan_candidate" -eq 1 ]; then
+		[ ! -e files/etc/mp716-upgrade/upgrade.pub ] || { echo "Use a checkout without a staged test key." >&2; exit 2; }
+		stage_args+=(--no-test-key)
+	else
+		cat "$project/integration/ram-web/ram-web.dtsi" >> target/linux/ramips/dts/mt7628an_yunxm_mp716.dts
+	fi
+	python3 "$project/integration/ram-web/stage.py" "$web_input" "$tree/files" "${stage_args[@]}"
 	install -D -m 0755 "$project/integration/ram-web/03_mp716_ram_web" files/etc/board.d/03_mp716_ram_web
 fi
 include='include ./yunxm_mp716.mk'
@@ -82,9 +98,11 @@ CONFIG_BROKEN=y
 CONFIG_TARGET_ramips=y
 CONFIG_TARGET_ramips_mt76x8=y
 CONFIG_TARGET_ramips_mt76x8_DEVICE_yunxm_mp716=y
-CONFIG_TARGET_ROOTFS_INITRAMFS=y
 CONFIG_PACKAGE_mp716-sysupgrade=y
 CONFIG
+if [ "$lan_candidate" -eq 0 ]; then
+	echo CONFIG_TARGET_ROOTFS_INITRAMFS=y >> .config
+fi
 if [ "$serial_rx" -eq 1 ]; then
 	cat >> .config <<'CONFIG'
 # CONFIG_TARGET_ROOTFS_SQUASHFS is not set
@@ -94,7 +112,7 @@ CONFIG
 else
 	echo CONFIG_TARGET_ROOTFS_SQUASHFS=y >> .config
 fi
-if [ -n "$ram_web" ]; then
+if [ -n "$web_input" ]; then
 	cat >> .config <<'CONFIG'
 CONFIG_PACKAGE_uhttpd=y
 CONFIG_PACKAGE_rpcd=y
@@ -105,14 +123,17 @@ CONFIG_PACKAGE_ucode-mod-uci=y
 CONFIG
 fi
 make defconfig
-required_config=(CONFIG_TARGET_ramips_mt76x8_DEVICE_yunxm_mp716 CONFIG_TARGET_ROOTFS_INITRAMFS CONFIG_PACKAGE_mp716-sysupgrade)
+required_config=(CONFIG_TARGET_ramips_mt76x8_DEVICE_yunxm_mp716 CONFIG_PACKAGE_mp716-sysupgrade)
+if [ "$lan_candidate" -eq 0 ]; then
+	required_config+=(CONFIG_TARGET_ROOTFS_INITRAMFS)
+fi
 if [ "$serial_rx" -eq 1 ]; then
 	required_config+=(CONFIG_BUSYBOX_CUSTOM CONFIG_BUSYBOX_CONFIG_RX)
 	grep -Fxq '# CONFIG_TARGET_ROOTFS_SQUASHFS is not set' .config
 else
 	required_config+=(CONFIG_TARGET_ROOTFS_SQUASHFS)
 fi
-if [ -n "$ram_web" ]; then
+if [ -n "$web_input" ]; then
 	required_config+=(CONFIG_PACKAGE_uhttpd CONFIG_PACKAGE_rpcd CONFIG_PACKAGE_ucode
 		CONFIG_PACKAGE_ucode-mod-fs CONFIG_PACKAGE_ucode-mod-ubus CONFIG_PACKAGE_ucode-mod-uci)
 fi
@@ -128,6 +149,14 @@ target=bin/targets/ramips/mt76x8
 shopt -s nullglob
 sysupgrade=("$target"/*-yunxm_mp716-squashfs-sysupgrade.bin)
 initramfs=("$target"/*-yunxm_mp716-initramfs-kernel.bin)
+if [ -n "$web_input" ]; then
+	compilers=(build_dir/target-*/linux-ramips_mt76x8/linux-*/scripts/dtc/dtc)
+	[ "${#compilers[@]}" -eq 1 ] || { echo "Missing kernel device tree compiler." >&2; exit 2; }
+	linux_dir=${compilers[0]%/scripts/dtc/dtc}
+	"${compilers[0]}" -q -I dtb -O dts \
+		"$linux_dir/../image-mt7628an_yunxm_mp716.dtb" > "$output/board.dts"
+	python3 "$project/scripts/check-test-dts.py" "$output/board.dts" "$lan_candidate"
+fi
 if [ "$serial_rx" -eq 1 ]; then
 	[ "${#initramfs[@]}" -eq 1 ] && [ "${#sysupgrade[@]}" -eq 0 ] || {
 		echo "Expected only the MP716 initramfs image." >&2
@@ -138,21 +167,7 @@ if [ "$serial_rx" -eq 1 ]; then
 	staging_dir/host/bin/cpio -it < "${archives[0]}" > "$output/initramfs-files.txt"
 	entries=(usr/bin/rx sbin/sysupgrade usr/libexec/validate_firmware_image)
 	name=openwrt-ramips-mt76x8-yunxm_mp716-initramfs-rx-kernel.bin
-	if [ -n "$ram_web" ]; then
-		linux_dir=${archives[0]%/usr/initramfs_data.cpio}
-		"$linux_dir/scripts/dtc/dtc" -q -I dtb -O dts \
-			"$linux_dir/../image-mt7628an_yunxm_mp716.dtb" > "$output/board.dts"
-		python3 - "$output/board.dts" <<'PY'
-import re
-import sys
-from pathlib import Path
-
-board = Path(sys.argv[1]).read_text()
-for node, status in (("spi@b00", "disabled"), ("ethernet@10100000", "okay"), ("esw@10110000", "okay")):
-    match = re.search(rf"^\s*{node}\s*\{{([^{{}}]*)", board, re.MULTILINE)
-    if not match or f'status = "{status}";' not in match[1]:
-        raise SystemExit(f"Expected {node} status {status} in the RAM image")
-PY
+	if [ -n "$web_input" ]; then
 		entries+=(usr/sbin/uhttpd sbin/rpcd usr/bin/ucode
 			www/mp716/index.html www/cgi-bin/mp716 usr/share/mp716/httpd.uc
 			usr/share/rpcd/acl.d/mp716.json usr/sbin/mp716-package-verify
@@ -168,10 +183,11 @@ PY
 	cp "${initramfs[0]}" "$output/$name"
 	cp .config "$output/openwrt.config"
 	(cd "$output" && sha256sum "$name" > SHA256SUMS)
+	python3 "$project/scripts/record-test-build.py" "$output" "$pin" initramfs
 	exit 0
 fi
-[ "${#sysupgrade[@]}" -eq 1 ] && [ "${#initramfs[@]}" -eq 1 ] || {
-	echo "Expected one MP716 sysupgrade image and one MP716 initramfs image." >&2
+[ "${#sysupgrade[@]}" -eq 1 ] && [ "${#initramfs[@]}" -eq "$((1 - lan_candidate))" ] || {
+	echo "Unexpected set of MP716 target images." >&2
 	exit 2
 }
 [ "$(wc -c < "${sysupgrade[0]}")" -le 8060928 ] || {
@@ -199,12 +215,20 @@ unsquashfs=staging_dir/host/bin/unsquashfs4
 "$unsquashfs" -offset "$offset" -cat "${sysupgrade[0]}" etc/mp716-upgrade/device.profile |
 	cmp - "$profile"
 "$unsquashfs" -offset "$offset" -ls "${sysupgrade[0]}" > "$output/rootfs-files.txt"
-for entry in usr/sbin/mp716-upgraded usr/sbin/mp716-sysupgrade etc/rc.d/S95mp716-sysupgrade; do
+entries=(usr/sbin/mp716-upgraded usr/sbin/mp716-sysupgrade etc/rc.d/S95mp716-sysupgrade)
+if [ "$lan_candidate" -eq 1 ]; then
+	entries+=(etc/board.d/03_mp716_ram_web www/mp716/index.html www/cgi-bin/mp716 usr/share/mp716/httpd.uc)
+	if grep -Fxq 'squashfs-root/etc/mp716-upgrade/upgrade.pub' "$output/rootfs-files.txt"; then
+		echo "Unexpected test public key in the sysupgrade candidate." >&2
+		exit 2
+	fi
+fi
+for entry in "${entries[@]}"; do
 	grep -Fxq "squashfs-root/$entry" "$output/rootfs-files.txt"
 done
-cp "${sysupgrade[0]}" "${initramfs[0]}" "$output/"
+images=("${sysupgrade[@]}" "${initramfs[@]}")
+cp "${images[@]}" "$output/"
 cp .config "$output/openwrt.config"
-(
-	cd "$output"
-	sha256sum "$(basename "${sysupgrade[0]}")" "$(basename "${initramfs[0]}")" > SHA256SUMS
-)
+names=("${images[@]##*/}")
+(cd "$output" && sha256sum "${names[@]}" > SHA256SUMS)
+python3 "$project/scripts/record-test-build.py" "$output" "$pin" sysupgrade

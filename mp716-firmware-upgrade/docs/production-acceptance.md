@@ -1,32 +1,35 @@
 # 生产验收
 
-状态：未发布。编译没有执行，硬件测试没有执行。编译成功也不等于这台 MP716 可以刷写。
+状态为研发测试阶段。此阶段只验收固定源码构建、产物和静态检查。设备启动、物理网络和生产升级另行验收。
 
-固定源码是 OpenWrt `v25.12.6`，提交 `64900e756efa667774214f9c6b17c113222e01f7`。本机没有 gcc、make，工作区也没有检出这棵源码树，所以 initramfs 和 sysupgrade 测试固件都没有生成。
+固定源码是 OpenWrt `v25.12.6`，提交 `64900e756efa667774214f9c6b17c113222e01f7`。CI 对独立 checkout 执行固定提交校验，使用该版本的交叉工具链、内核及精简的 ramips/mt76x8 包配置。
 
-在 Linux 上使用上述提交的专用 checkout 和一个 MP716 设备配置。配置中的 `installed_custom_firmware` 必须等于计划打包的固件版本。以下命令会覆盖该 checkout 的 `.config`，输出 TEST 镜像、构建日志、SHA-256 和 sysupgrade 元数据。
+在 Linux 上使用上述提交的专用 checkout。以下命令会覆盖该 checkout 的 `.config`，输出 TEST 镜像、构建日志、SHA-256、设备树和构建报告。详细命令见 [项目 README](../README.md#构建测试镜像)。
 
 ```sh
-bash scripts/build-openwrt-test.sh /path/to/openwrt-test /path/to/device.profile /path/to/test-output
+bash scripts/build-openwrt-test.sh --lan-candidate web/dist /path/to/openwrt-test config/test-device.profile /path/to/test-output
 ```
 
 ## 容量
 
 mt76x8 子目标带有 `small_flash`，默认包包含 `kmod-mt7603` 和 `wpad-basic-mbedtls`。固件分区只有 7872 KiB，内存按现有资料是 64 MiB。这个组合装得下裁剪后的系统，装不下原厂 014 的全部网页、VPN、QoS 和云功能，也装不下完整 LuCI。TEST profile 先去掉未验证的无线包。是否满足生产功能，要等真实镜像体积出来后再判断。
 
-## 未执行的测试
+## 待验证清单
 
 | 项 | 结果 |
 |---|---|
 | RAM 启动 | 未执行 |
-| 网口 | 未执行。DTS 中以太网保持关闭 |
-| Wi-Fi | 未执行。DTS 中无线保持关闭，EEPROM 未测量 |
-| GPIO、按键和指示灯 | 未执行 |
+| 网口 | TODO 确认物理端口编号、PHY、原厂 LAN VLAN 1 与 WAN VLAN 2 的成员、MAC 地址取值和实际吞吐。测试镜像仅配置未标记的 `eth0` LAN |
+| Wi-Fi | TODO 核对 Factory 分区 EEPROM 的偏移、长度、射频校准和 MAC 地址，确认 MT7603 驱动后启用。当前 DTS 保持关闭 |
+| GPIO、按键和指示灯 | TODO 确认引脚与电平 |
 | 原厂必要功能 | 未执行 |
-| 串口恢复 | 未执行 |
+| 串口恢复 | TODO 核对 U-Boot 的 RAM 加载地址、内存报告、原厂备份恢复和重启 |
 | 固件升级 | 未执行 |
 | 断电和异常恢复 | 未执行 |
 | 重启后版本核对 | 未执行 |
+| 原厂网页首次迁移 | TODO 获取确切的 014 原厂升级文件，核对封装及原厂网页验证规则。原厂 `sysupgrade -T` 通过只验证板卡和镜像头 |
+
+工程已有的历史产物包括 Gitea [RAM 镜像构建 #10333](https://git.cloudlink.hk/cloud/openwrt/actions/runs/10333) 和离线重打包的 LAN 候选镜像。原厂 014 上的签名上传校验和 `sysupgrade -T` 已执行过，尚无自研镜像在 MP716 上启动的记录。本次源码构建的结果以各工作流产物内的 `build-report.json` 为准。
 
 ## 发布门
 
