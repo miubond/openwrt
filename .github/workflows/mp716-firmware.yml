@@ -1,0 +1,113 @@
+name: MP716 Firmware Package
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mp716-firmware-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    defaults:
+      run:
+        working-directory: mp716-firmware-upgrade
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Prepare OpenWrt build environment
+        run: |
+          if [ "$(df -Pk "$RUNNER_TEMP" | awk 'NR == 2 { print $4 }')" -lt $((18 * 1024 * 1024)) ]; then
+            sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet
+          fi
+          df -h "$RUNNER_TEMP"
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential bison flex gawk gcc-multilib g++-multilib gettext \
+            libelf-dev libncurses-dev libssl-dev python3-cryptography python3-setuptools \
+            rsync swig unzip zlib1g-dev
+          python3 -c 'import cryptography'
+          printf 'JOBS=%s\n' "$(nproc)" >> "$GITHUB_ENV"
+
+      - name: Host build and tests
+        run: |
+          set -euo pipefail
+          mkdir -p build/host/unit build/ci-logs
+          python3 scripts/build_host.py 2>&1 | tee build/ci-logs/host-build.log
+          ./build/host/test_device build/host/unit 2>&1 | tee build/ci-logs/fake-mtd.log
+          python3 tests/run_all.py 2>&1 | tee build/ci-logs/host-tests.log
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Build and verify LAN and RAM images
+        run: bash scripts/build-ci-images.sh
+
+      - name: Package and verify test container
+        run: bash scripts/package-ci-test.sh "$RUNNER_TEMP/mp716-test"
+
+      - name: Stage versioned MP716 release
+        id: release
+        run: |
+          set -euo pipefail
+          python3 scripts/stage-versioned-release.py --output build/publish --build-commit "$GITHUB_SHA" \
+            --image initramfs build/ram-images config/test-device.profile \
+            --image sysupgrade build/target-images build/target-device.profile \
+            --signed-test build/ci-release 2>&1 | tee build/ci-logs/stage-release.log
+          version=$(cat config/firmware.version)
+          (cd "build/publish/releases/$version/targets/ramips/mt76x8" && sha256sum -c sha256sums)
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Upload versioned MP716 release
+        id: release-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-${{ steps.release.outputs.version }}-UNVERIFIED-${{ github.sha }}
+          path: mp716-firmware-upgrade/build/publish/
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload signed test container
+        id: test-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716upd-${{ github.sha }}
+          path: ${{ runner.temp }}/mp716-test/
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Report build times and downloads
+        env:
+          RELEASE_URL: ${{ steps.release-artifact.outputs.artifact-url }}
+          TEST_URL: ${{ steps.test-artifact.outputs.artifact-url }}
+        run: |
+          {
+            echo '### MP716 · UNVERIFIED'
+            echo
+            grep -hE '^(MP716 toolchain cache |LAN sysupgrade elapsed:|RAM initramfs elapsed:)' \
+              build/ci-logs/sysupgrade.log build/ci-logs/initramfs.log | sed 's/^/- /'
+            echo
+            printf -- '- [Versioned release](%s)\n- [Signed test container](%s)\n' "$RELEASE_URL" "$TEST_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            mp716-firmware-upgrade/build/ci-logs/*.log
+            mp716-firmware-upgrade/build/ram-images/*.log
+            mp716-firmware-upgrade/build/target-images/*.log
+            mp716-firmware-upgrade/build/ci-release/*.json
+          if-no-files-found: ignore
