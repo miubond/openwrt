@@ -214,6 +214,10 @@ PY
 unsquashfs=staging_dir/host/bin/unsquashfs4
 "$unsquashfs" -offset "$offset" -cat "${sysupgrade[0]}" etc/mp716-upgrade/device.profile |
 	cmp - "$profile"
+for gate in flash-gate:closed platform:unconfirmed; do
+	"$unsquashfs" -offset "$offset" -cat "${sysupgrade[0]}" "etc/mp716-upgrade/${gate%:*}" |
+		grep -Fxq "${gate#*:}"
+done
 "$unsquashfs" -offset "$offset" -ls "${sysupgrade[0]}" > "$output/rootfs-files.txt"
 entries=(usr/sbin/mp716-upgraded usr/sbin/mp716-sysupgrade etc/rc.d/S95mp716-sysupgrade)
 if [ "$lan_candidate" -eq 1 ]; then

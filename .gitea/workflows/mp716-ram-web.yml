@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - codex/mp716-ram-web
-      - codex/mp716-firmware
   workflow_dispatch:
 
 jobs:
@@ -39,35 +38,43 @@ jobs:
         run: |
           set -euo pipefail
           project=mp716-ram-web-work/project/mp716-firmware-upgrade
-          cat > mp716-ram-web-work/device.profile <<'PROFILE'
-          product=MP716
-          hardware_revision=ci-lab
-          base_firmware=014
-          vendor_software_version=014
-          installed_custom_firmware=0.0.0
-          web_ui=1.0.0
-          upgrade_engine=1.0.0
-          PROFILE
-          npm ci --prefix "$project/web" --no-audit --no-fund
-          npm run --prefix "$project/web" build
+          npm ci --prefix "$project/web" --no-audit --no-fund 2>&1 | tee mp716-ram-web-output/npm-ci.log
+          npm run --prefix "$project/web" build 2>&1 | tee mp716-ram-web-output/vue-build.log
           bash "$project/scripts/build-openwrt-cached.sh" --ram-web \
-            "$project/web/dist" \
-            mp716-ram-web-work/device.profile mp716-ram-web-output
+            "$project/web/dist" "$project/config/test-device.profile" mp716-ram-web-output \
+            2>&1 | tee mp716-ram-web-output/compile.log
           (cd mp716-ram-web-output && sha256sum -c SHA256SUMS)
+
+      - name: Stage versioned MP716 release
+        id: release
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          project=mp716-ram-web-work/project/mp716-firmware-upgrade
+          python3 "$project/scripts/stage-versioned-release.py" --output mp716-ram-web-work/publish \
+            --build-commit "$SOURCE_COMMIT" \
+            --image initramfs mp716-ram-web-output "$project/config/test-device.profile" \
+            2>&1 | tee mp716-ram-web-output/stage-release.log
+          version=$(cat "$project/config/firmware.version")
+          (cd "mp716-ram-web-work/publish/releases/$version/targets/ramips/mt76x8" && sha256sum -c sha256sums)
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
 
       - name: Upload RAM image
         uses: actions/upload-artifact@v4
         with:
-          name: mp716-initramfs-ram-web-${{ github.sha }}
-          path: |
-            mp716-ram-web-output/*-initramfs-ram-web-kernel.bin
-            mp716-ram-web-output/SHA256SUMS
-            mp716-ram-web-output/initramfs-files.txt
-            mp716-ram-web-output/openwrt.config
-            mp716-ram-web-output/board.dts
-            mp716-ram-web-output/build-report.json
+          name: mp716-initramfs-${{ steps.release.outputs.version }}-UNVERIFIED-${{ github.sha }}
+          path: mp716-ram-web-work/publish/
           if-no-files-found: error
           compression-level: 0
+
+      - name: Upload RAM build failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-initramfs-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: mp716-ram-web-output/*.log
+          if-no-files-found: ignore
 
       - name: Clean build files
         if: always()

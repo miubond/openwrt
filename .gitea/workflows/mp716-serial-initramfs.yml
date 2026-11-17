@@ -51,26 +51,43 @@ jobs:
           upgrade_engine=1.0.0
           PROFILE
           bash mp716-serial-work/project/mp716-firmware-upgrade/scripts/build-openwrt-test.sh --serial-rx \
-            mp716-serial-work/openwrt-source mp716-serial-work/device.profile mp716-serial-output
+            mp716-serial-work/openwrt-source mp716-serial-work/device.profile mp716-serial-output \
+            2>&1 | tee mp716-serial-output/compile.log
           cd mp716-serial-output
           sha256sum -c SHA256SUMS
           printf '%s  %s\n' \
             9c7367233b2eb7af815eb32907b0a872d2a1a468cfb7ed160bdb7bb20e920c58 \
             openwrt-ramips-mt76x8-yunxm_mp716-squashfs-sysupgrade.bin > original-sysupgrade.sha256
 
+      - name: Stage versioned MP716 release
+        id: release
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          project=mp716-serial-work/project/mp716-firmware-upgrade
+          python3 "$project/scripts/stage-versioned-release.py" --output mp716-serial-work/publish \
+            --build-commit "$SOURCE_COMMIT" --image initramfs mp716-serial-output mp716-serial-work/device.profile \
+            2>&1 | tee mp716-serial-output/stage-release.log
+          version=$(cat "$project/config/firmware.version")
+          (cd "mp716-serial-work/publish/releases/$version/targets/ramips/mt76x8" && sha256sum -c sha256sums)
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
       - name: Upload serial initramfs
         uses: actions/upload-artifact@v4
         with:
-          name: mp716-initramfs-rx-${{ github.sha }}
-          path: |
-            mp716-serial-output/*-initramfs-rx-kernel.bin
-            mp716-serial-output/SHA256SUMS
-            mp716-serial-output/original-sysupgrade.sha256
-            mp716-serial-output/initramfs-files.txt
-            mp716-serial-output/openwrt.config
-            mp716-serial-output/build-report.json
+          name: mp716-initramfs-rx-${{ steps.release.outputs.version }}-UNVERIFIED-${{ github.sha }}
+          path: mp716-serial-work/publish/
           if-no-files-found: error
           compression-level: 0
+
+      - name: Upload serial build failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-serial-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: mp716-serial-output/*.log
+          if-no-files-found: ignore
 
       - name: Clean build files
         if: always()

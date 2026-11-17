@@ -1,5 +1,5 @@
 # 自托管 Gitea Runner，检出方式对齐 gim 的 deploy.yml。
-# 单 job：编译、测试、构建 MP716 目标镜像并打包测试用 .mp716upd。
+# 单 job：编译、测试、构建 MP716 两种目标镜像并整理版本化产物。
 # 不 sudo mkdir/chown，不拷贝到网站目录，不重启服务，不写路由器 Flash。
 # 生产签名私钥不在这个工作流里使用。
 
@@ -90,13 +90,13 @@ jobs:
 
       - name: Host build and tests
         run: |
-          set -e
+          set -euo pipefail
           PROJECT="${{ steps.repo.outputs.project }}"
           cd "$PROJECT"
-          python3 scripts/build_host.py
-          mkdir -p build/host/unit
-          ./build/host/test_device build/host/unit
-          python3 tests/run_all.py
+          mkdir -p build/host/unit build/ci-logs
+          python3 scripts/build_host.py 2>&1 | tee build/ci-logs/host-build.log
+          ./build/host/test_device build/host/unit 2>&1 | tee build/ci-logs/fake-mtd.log
+          python3 tests/run_all.py 2>&1 | tee build/ci-logs/host-tests.log
 
       - name: Cross compile MIPS32r2 when the toolchain is already installed
         run: |
@@ -122,23 +122,20 @@ jobs:
         if: ${{ github.event_name == 'push' || !inputs.build_only }}
         timeout-minutes: 300
         run: |
-          set -eu
+          set -euo pipefail
           cd "${{ steps.repo.outputs.project }}"
-          mkdir -p build/target-images
-          cat > build/target-device.profile <<'PROFILE'
-          product=MP716
-          hardware_revision=ci-lab
-          base_firmware=014
-          vendor_software_version=014
-          installed_custom_firmware=1.0.0
-          web_ui=1.0.0
-          upgrade_engine=1.0.0
-          PROFILE
-          npm ci --prefix web --no-audit --no-fund
-          npm run --prefix web build
+          mkdir -p build/target-images build/ram-images build/ci-logs
+          FIRMWARE_VERSION=$(cat config/firmware.version)
+          sed "s/^installed_custom_firmware=.*/installed_custom_firmware=$FIRMWARE_VERSION/" \
+            config/test-device.profile > build/target-device.profile
+          npm ci --prefix web --no-audit --no-fund 2>&1 | tee build/ci-logs/npm-ci.log
+          npm run --prefix web build 2>&1 | tee build/ci-logs/vue-build.log
           bash scripts/build-openwrt-cached.sh --lan-candidate web/dist \
-            build/target-device.profile build/target-images
+            build/target-device.profile build/target-images 2>&1 | tee build/ci-logs/sysupgrade.log
           (cd build/target-images && sha256sum -c SHA256SUMS)
+          bash scripts/build-openwrt-cached.sh --ram-web web/dist \
+            config/test-device.profile build/ram-images 2>&1 | tee build/ci-logs/initramfs.log
+          (cd build/ram-images && sha256sum -c SHA256SUMS)
           set -- build/target-images/*-yunxm_mp716-squashfs-sysupgrade.bin
           test "$#" -eq 1
           cp "$1" build/payload.bin
@@ -181,8 +178,8 @@ jobs:
             --private-key build/ci-release/ci-test.priv \
             --out build/ci-release/test.mp716upd \
             --hardware-revision ci-lab \
-            --firmware-version 1.0.0 \
-            --build-time 2026-11-13T00:00:00Z
+            --firmware-version "$(cat config/firmware.version)" \
+            --build-time 2026-11-13T00:00:00Z 2>&1 | tee build/ci-logs/pack-test-container.log
           python3 - <<'PY'
           from pathlib import Path
           from cryptography.hazmat.primitives import serialization
@@ -230,16 +227,42 @@ jobs:
                 build/ci-release/device-verify.json \
                 build/ci-release/vendor-audit.json \
                 "$ARTIFACT_DIR/"
-          if [ -d build/target-images ]; then
-            cp -R build/target-images "$ARTIFACT_DIR/"
-          fi
           echo "测试升级包已生成。这不是生产签名，也没有写入设备。"
+
+      - name: Stage versioned MP716 release
+        id: release
+        if: ${{ github.event_name == 'push' || !inputs.build_only }}
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cd "${{ steps.repo.outputs.project }}"
+          python3 scripts/stage-versioned-release.py --output build/publish --build-commit "$SOURCE_COMMIT" \
+            --image initramfs build/ram-images config/test-device.profile \
+            --image sysupgrade build/target-images build/target-device.profile \
+            --signed-test build/ci-release 2>&1 | tee build/ci-logs/stage-release.log
+          version=$(cat config/firmware.version)
+          (cd "build/publish/releases/$version/targets/ramips/mt76x8" && sha256sum -c sha256sums)
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Upload versioned MP716 release
+        if: ${{ github.event_name == 'push' || !inputs.build_only }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-${{ steps.release.outputs.version }}-UNVERIFIED-${{ github.sha }}
+          path: ${{ steps.repo.outputs.project }}/build/publish/
+          if-no-files-found: error
+          compression-level: 0
 
       - name: Upload test package
         uses: actions/upload-artifact@v4
         with:
           name: mp716upd-${{ github.sha }}
-          path: build/
+          path: |
+            build/test.mp716upd
+            build/test.mp716upd.sha256
+            build/ci-test.pub
+            build/*.json
           if-no-files-found: error
           compression-level: 0
 
@@ -249,6 +272,18 @@ jobs:
           echo "产物目录: ${{ github.workspace }}/build"
           sha256sum build/test.mp716upd
           echo "原厂 BIN 不在仓库中，vendor-audit.json 应为 BLOCKED。"
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.repo.outputs.project }}/build/ci-logs/*.log
+            ${{ steps.repo.outputs.project }}/build/ram-images/*.log
+            ${{ steps.repo.outputs.project }}/build/target-images/*.log
+            ${{ steps.repo.outputs.project }}/build/ci-release/*.json
+          if-no-files-found: ignore
 
       - name: Cleanup build directory
         if: always()
