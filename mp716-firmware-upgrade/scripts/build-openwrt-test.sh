@@ -102,6 +102,8 @@ CONFIG_PACKAGE_mp716-sysupgrade=y
 CONFIG
 if [ "$lan_candidate" -eq 0 ]; then
 	echo CONFIG_TARGET_ROOTFS_INITRAMFS=y >> .config
+else
+	echo '# CONFIG_TARGET_ROOTFS_INITRAMFS is not set' >> .config
 fi
 if [ "$serial_rx" -eq 1 ]; then
 	cat >> .config <<'CONFIG'
@@ -126,6 +128,9 @@ make defconfig
 required_config=(CONFIG_TARGET_ramips_mt76x8_DEVICE_yunxm_mp716 CONFIG_PACKAGE_mp716-sysupgrade)
 if [ "$lan_candidate" -eq 0 ]; then
 	required_config+=(CONFIG_TARGET_ROOTFS_INITRAMFS)
+elif ! grep -Fxq '# CONFIG_TARGET_ROOTFS_INITRAMFS is not set' .config; then
+	echo "LAN candidate requires initramfs to be disabled after make defconfig." >&2
+	exit 2
 fi
 if [ "$serial_rx" -eq 1 ]; then
 	required_config+=(CONFIG_BUSYBOX_CUSTOM CONFIG_BUSYBOX_CONFIG_RX)
