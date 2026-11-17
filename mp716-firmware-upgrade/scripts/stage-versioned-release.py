@@ -20,6 +20,7 @@ TARGET = "ramips/mt76x8"
 MODEL = "MP716"
 PROFILE = "yunxm_mp716"
 STATUS = "UNVERIFIED"
+HARDWARE_REPORT = "reports/mp716-hardware-compatibility.md"
 IMAGE_TYPES = {
     "initramfs": ("initramfs-kernel", "启动到 RAM，用于实验室启动测试"),
     "sysupgrade": ("squashfs-sysupgrade", "OpenWrt sysupgrade 格式候选，仅供实验室校验"),
@@ -164,9 +165,11 @@ def stage(output, images, build_commit, signed_test=None):
             "build_commit": build_commit, "target": TARGET,
             "device": MODEL, "device_profile": PROFILE, "supported_devices": ["yunxm,mp716"],
             "test_status": STATUS, "production_flash_allowed": False,
+            "hardware_compatibility_report": HARDWARE_REPORT,
         }
         metadata["images"] = [copy_image(target, kind, Path(source), Path(profile), openwrt_version, openwrt_commit)
                               for kind, source, profile in sorted(images)]
+        shutil.copyfile(PROJECT / "docs/mp716-hardware-compatibility.md", target / HARDWARE_REPORT)
         if signed_test is not None:
             sysupgrade = next(item for item in metadata["images"] if item["type"] == "sysupgrade")
             metadata["signed_test_package"] = copy_signed_test(target, signed_test, firmware_version, sysupgrade)

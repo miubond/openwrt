@@ -18,11 +18,11 @@ bash scripts/build-openwrt-test.sh --lan-candidate web/dist \
 
 RAM 镜像在另一份干净的同提交 checkout 中用 `--ram-web web/dist` 构建。它禁用 SPI 控制器并保留串口 XMODEM 接收。两种镜像都启用直连测试用的单一 LAN，预期地址为 `192.168.1.1`。连接测试时仅接隔离的电脑网线，物理口及 WAN VLAN 映射待确认。候选镜像不会预装 RAM 测试公钥。
 
-Gitea 在 `codex/mp716-firmware` 上自动构建 RAM 和候选镜像，并生成同一个版本下载包。独立 RAM 和串口工作流仍分别产出单镜像下载包。验收范围、实机证据和待验证项见 [构建报告与验收](docs/production-acceptance.md)。
+Gitea 的 `codex/mp716-firmware` 分支和 GitHub 的 `main` 分支使用同一套脚本构建 RAM 和 LAN 候选镜像，并生成同一个版本下载包。独立 RAM 和串口工作流分别产出单镜像下载包。实机证据和待验证项见 [硬件兼容性报告](docs/mp716-hardware-compatibility.md)。
 
 ### 版本下载包
 
-从完整构建的 Gitea Actions 产物中下载 `mp716-<固件版本>-UNVERIFIED-<提交>`。压缩包内的布局如下：
+从完整构建的 Actions 产物中下载 `mp716-<固件版本>-UNVERIFIED-<提交>`。压缩包内的布局如下：
 
 ```text
 releases/1.0.0/targets/ramips/mt76x8/
@@ -33,6 +33,7 @@ releases/1.0.0/targets/ramips/mt76x8/
   README.txt
   configs/{initramfs,sysupgrade}/
   reports/{initramfs,sysupgrade}/
+  reports/mp716-hardware-compatibility.md
   test-packages/
 ```
 
@@ -41,6 +42,8 @@ releases/1.0.0/targets/ramips/mt76x8/
 所有产物均标为 `UNVERIFIED`。initramfs 只用于 RAM 启动测试，sysupgrade 只作为候选，现有生产刷写门保持关闭。若 CI 失败，下载 `mp716-*-failure-*` 查阅日志与已生成的校验报告。
 
 两个工作流在同一台自托管 runner 上以文件锁依次使用同一个 OpenWrt checkout。默认缓存位于 runner 系统用户的 `~/.cache/mp716-firmware`，也可用 `MP716_OPENWRT_CACHE_DIR` 指向专用持久磁盘。OpenWrt 提交、主机工具版本或构建脚本变化会使用新的缓存。每次构建清理上一种镜像的目标目录、配置覆盖层和 Web 测试公钥，保留下载、主机工具及 MIPS 交叉工具链。首次或迁移到另一台 runner 时需要预热缓存。
+
+GitHub 托管 runner 在同一次任务内共享上述工具链缓存。Actions 摘要记录两种镜像的缓存状态和构建耗时。
 
 当前版本可以在开发机上独立生成 `.mp716upd`、验证签名、模拟写入，并在模拟失败后按操作者给出的离线副本恢复。它不会写真实路由器 Flash，也不会在失败时自动回滚。
 

@@ -79,6 +79,9 @@ class VersionedReleaseTests(unittest.TestCase):
         self.assertEqual(manifest["build_commit"], self.commit)
         self.assertEqual(manifest["test_status"], "UNVERIFIED")
         self.assertFalse(manifest["production_flash_allowed"])
+        hardware_report = manifest["hardware_compatibility_report"]
+        self.assertIn("UNVERIFIED", (target / hardware_report).read_text(encoding="utf-8"))
+        self.assertIn(f"  {hardware_report}\n", (target / "sha256sums").read_text(encoding="ascii"))
         self.assertEqual({item["type"] for item in manifest["images"]}, {"initramfs", "sysupgrade"})
         for item in manifest["images"]:
             self.assertIn(f"openwrt-{self.openwrt_version}-ramips-mt76x8-yunxm_mp716-", item["filename"])

@@ -1,36 +1,36 @@
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 //
-// Draft board file for a fork of OpenWrt v25.12.6.
-// Include the SoC from target/linux/ramips/dts/mt7628an.dtsi.
-// This is not the MediaTek EVB and not the Jotale JS76x8.
-// Their images must not be written to an MP716.
-// The partition addresses match the candidate map and still need a UART check.
-// The image profile is BROKEN until that check is recorded.
+// Use the MT7628AN evaluation board as the SPI NOR layout reference.
+// The MP716 has its own board identity and requires hardware validation.
 
 #include "mt7628an.dtsi"
 
 / {
 	compatible = "yunxm,mp716", "mediatek,mt7628an-soc";
-	model = "YUNXM MP716 TEST";
-	/* RAM is 64 MiB on the running vendor system. The size is not encoded
-	 * here until the bootloader memory report is confirmed over serial.
-	 * MAC address, switch ports, Wi-Fi EEPROM and GPIO are not measured.
+	model = "YUNXM MP716";
+	/* Use the SoC memory detection. The MP716 is specified with 64 MiB.
+	 * TODO: Confirm detected RAM and the serial console on MP716 hardware.
 	 */
 };
 
 &ethernet {
-	/* pending verification: PHY mode and port map */
+	/* TODO: Verify PHY wiring, switch port map and board MAC source. */
 	status = "disabled";
 };
 
 &wmac {
-	/* pending verification: do not copy another board's factory EEPROM */
+	/* TODO: Verify the MP716 Factory EEPROM layout and RF calibration. */
 	status = "disabled";
 };
 
 &gpio {
-	/* pending verification: button and LED pins */
+	/* TODO: Verify button and LED pin numbers and polarity. */
 	status = "disabled";
+};
+
+/* Inherit serial0 and the ttyS0,57600 console from mt7628an.dtsi. */
+&uartlite {
+	status = "okay";
 };
 
 &spi0 {
@@ -53,7 +53,7 @@
 			};
 
 			partition@30000 {
-				label = "u-boot-env";
+				label = "config";
 				reg = <0x30000 0x10000>;
 				read-only;
 			};
