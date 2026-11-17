@@ -124,11 +124,7 @@ jobs:
         run: |
           set -eu
           cd "${{ steps.repo.outputs.project }}"
-          mkdir -p build/openwrt-source build/target-images
-          PIN=$(cat config/openwrt.commit)
-          git -C build/openwrt-source init
-          git -C build/openwrt-source fetch --depth 1 https://github.com/openwrt/openwrt.git "$PIN"
-          git -C build/openwrt-source checkout --detach FETCH_HEAD
+          mkdir -p build/target-images
           cat > build/target-device.profile <<'PROFILE'
           product=MP716
           hardware_revision=ci-lab
@@ -140,8 +136,8 @@ jobs:
           PROFILE
           npm ci --prefix web --no-audit --no-fund
           npm run --prefix web build
-          bash scripts/build-openwrt-test.sh --lan-candidate web/dist \
-            build/openwrt-source build/target-device.profile build/target-images
+          bash scripts/build-openwrt-cached.sh --lan-candidate web/dist \
+            build/target-device.profile build/target-images
           (cd build/target-images && sha256sum -c SHA256SUMS)
           set -- build/target-images/*-yunxm_mp716-squashfs-sysupgrade.bin
           test "$#" -eq 1

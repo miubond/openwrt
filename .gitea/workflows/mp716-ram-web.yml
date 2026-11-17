@@ -22,18 +22,13 @@ jobs:
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
         run: |
           set -euo pipefail
-          mkdir -p mp716-ram-web-work/project mp716-ram-web-work/openwrt mp716-ram-web-output
+          mkdir -p mp716-ram-web-work/project mp716-ram-web-output
           git -C mp716-ram-web-work/project init
           AUTH=$(printf 'oauth2:%s' "$GIT_TOKEN" | base64 -w0)
           GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader \
             GIT_CONFIG_VALUE_0="Authorization: Basic $AUTH" \
             git -C mp716-ram-web-work/project fetch --depth 1 "$REPOSITORY_URL" "$SOURCE_COMMIT"
           git -C mp716-ram-web-work/project checkout --detach FETCH_HEAD
-          PIN=$(cat mp716-ram-web-work/project/mp716-firmware-upgrade/config/openwrt.commit)
-          git -C mp716-ram-web-work/openwrt init
-          git -C mp716-ram-web-work/openwrt fetch --depth 1 https://github.com/openwrt/openwrt.git \
-            "$PIN"
-          git -C mp716-ram-web-work/openwrt checkout --detach FETCH_HEAD
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -55,8 +50,8 @@ jobs:
           PROFILE
           npm ci --prefix "$project/web" --no-audit --no-fund
           npm run --prefix "$project/web" build
-          bash "$project/scripts/build-openwrt-test.sh" --ram-web \
-            "$project/web/dist" mp716-ram-web-work/openwrt \
+          bash "$project/scripts/build-openwrt-cached.sh" --ram-web \
+            "$project/web/dist" \
             mp716-ram-web-work/device.profile mp716-ram-web-output
           (cd mp716-ram-web-output && sha256sum -c SHA256SUMS)
 
