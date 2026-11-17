@@ -9,6 +9,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
@@ -40,6 +41,18 @@ def store_json(path, data):
 
 def read_json(path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def publish_directory(staged, destination):
+    # Windows file scanners can briefly hold an open handle during staging.
+    for delay in (0.05, 0.1, 0.2, 0.4, None):
+        try:
+            staged.rename(destination)
+            return
+        except PermissionError as error:
+            if delay is None or sys.platform != "win32" or error.winerror not in (5, 32, 33):
+                raise
+            time.sleep(delay)
 
 
 def expected_sha(checksums, filename):
@@ -137,7 +150,9 @@ def stage(output, images, build_commit, signed_test=None):
             "Expected one input per known image type")
     require(signed_test is None or "sysupgrade" in modes, "Signed test package requires sysupgrade")
 
+    output = output.resolve()
     destination = output / "releases" / firmware_version / "targets" / TARGET
+    require(destination.resolve().is_relative_to(output), "Release directory escapes requested output")
     require(not destination.exists(), f"Release directory already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=destination.parent) as temporary:
@@ -166,7 +181,7 @@ def stage(output, images, build_commit, signed_test=None):
         (target / "sha256sums").write_text("".join(
             f"{sha256(path)}  {path.relative_to(target).as_posix()}\n" for path in entries),
             encoding="ascii", newline="\n")
-        target.rename(destination)
+        publish_directory(target, destination)
     return destination
 
 
