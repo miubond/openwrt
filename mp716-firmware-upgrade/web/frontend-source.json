@@ -2,6 +2,7 @@
   "files": {
     ".env.openwrt": "b291ee4849e12994a325627f9c0334e544d22dd824340f67fcba676e03cc253a",
     ".gitea/workflows/deploy-frontend.yml": "e83e3fd151e193bfd35712ba2dbe50de9d2287d18be671589ecab1aaa1d8d1d3",
+    "NATIVE-WEB.md": "644b036d3ef75a3aae982abc3778ffed3092fcc6b43a0c3e745389767acbb249",
     "firmware/scripts/stage-web-overlay.mjs": "e5b3788988deafdc34a2819661635df5ee83b7e84db47fd8d147a73c76fecc57",
     "firmware/scripts/verify-production-bundle.mjs": "e011e3e3a3a62267dc134862bb22ecef26d7b1c0edf33a12d888b4e51e4291b7",
     "index.html": "38431de576690aba36a86dc496d078259e2ffb651fb366cabdb757417c8fb870",
@@ -154,5 +155,5 @@
   "source_commit": "5f30b41300ef92ef1bd7f6c420c08bd903af03b7",
   "source_dirty": false,
   "source_project": "openwrt_system",
-  "source_tree_sha256": "ef9635172f6e3d11da64851b5db7001dd2bce7f40cfecb6e366415cb052d559c"
+  "source_tree_sha256": "07750c680964c362def6138ccf3c4c1d78c362c36b14a4b77aa425ad60ece982"
 }
