@@ -1,4 +1,4 @@
-// RAM test also disables access to persistent SPI storage.
-&spi0 {
-	status = "disabled";
+// Wi-Fi reads calibration from Factory. Keep every RAM-test partition read-only.
+&firmware {
+	read-only;
 };

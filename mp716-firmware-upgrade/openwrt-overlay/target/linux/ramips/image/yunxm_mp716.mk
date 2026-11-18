@@ -11,7 +11,7 @@ define Device/yunxm_mp716
   SOC := mt7628an
   BROKEN := y
   DEFAULT := n
-  DEVICE_PACKAGES := mp716-sysupgrade -kmod-mt7603 -wpad-basic-mbedtls
+  DEVICE_PACKAGES := mp716-sysupgrade kmod-mt7603 wpad-basic-mbedtls
   SUPPORTED_DEVICES := yunxm,mp716
 endef
 TARGET_DEVICES += yunxm_mp716

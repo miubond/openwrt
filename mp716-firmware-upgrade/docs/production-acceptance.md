@@ -12,7 +12,7 @@ bash scripts/build-openwrt-test.sh --lan-candidate web/dist /path/to/openwrt-tes
 
 ## 容量
 
-mt76x8 子目标带有 `small_flash`，默认包包含 `kmod-mt7603` 和 `wpad-basic-mbedtls`。固件分区只有 7872 KiB，内存按现有资料是 64 MiB。这个组合装得下裁剪后的系统，装不下原厂 014 的全部网页、VPN、QoS 和云功能，也装不下完整 LuCI。TEST profile 先去掉未验证的无线包。是否满足生产功能，要等真实镜像体积出来后再判断。
+mt76x8 子目标带有 `small_flash`，MP716 TEST 配置包含 `kmod-mt7603` 和 `wpad-basic-mbedtls`。固件分区只有 7872 KiB，内存按现有资料是 64 MiB。包含无线驱动后的镜像仍需通过最终大小检查，实际运行内存和生产功能待实机验证。
 
 ## 待验证清单
 
@@ -20,7 +20,7 @@ mt76x8 子目标带有 `small_flash`，默认包包含 `kmod-mt7603` 和 `wpad-b
 |---|---|
 | RAM 启动 | 未执行 |
 | 网口 | TODO 确认物理端口编号、PHY、原厂 LAN VLAN 1 与 WAN VLAN 2 的成员、MAC 地址取值和实际吞吐。测试镜像仅配置未标记的 `eth0` LAN |
-| Wi-Fi | TODO 核对 Factory 分区 EEPROM 的偏移、长度、射频校准和 MAC 地址，确认 MT7603 驱动后启用。当前 DTS 保持关闭 |
+| Wi-Fi | 已配置 WMAC 和 MT7603 驱动，nvmem 读取 Factory 偏移 0 的 1024 字节。TODO 实机验证 EEPROM 读取、MAC、校准、AP 认证和连接稳定性 |
 | GPIO、按键和指示灯 | TODO 确认引脚与电平 |
 | 原厂必要功能 | 未执行 |
 | 串口恢复 | TODO 核对 U-Boot 的 RAM 加载地址、内存报告、原厂备份恢复和重启 |

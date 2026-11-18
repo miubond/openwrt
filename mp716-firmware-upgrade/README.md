@@ -16,7 +16,7 @@ bash scripts/build-openwrt-test.sh --lan-candidate web/dist \
     build/openwrt-source config/test-device.profile build/lan-candidate
 ```
 
-RAM 镜像在另一份干净的同提交 checkout 中用 `--ram-web web/dist` 构建。它禁用 SPI 控制器并保留串口 XMODEM 接收。两种镜像都启用直连测试用的单一 LAN，预期地址为 `192.168.1.1`。连接测试时仅接隔离的电脑网线，物理口及 WAN VLAN 映射待确认。候选镜像不会预装 RAM 测试公钥。
+RAM 镜像在另一份干净的同提交 checkout 中用 `--ram-web web/dist` 构建。它通过只读 SPI 分区读取无线校准数据，并保留串口 XMODEM 接收。两种镜像都启用直连测试用的单一 LAN，预期地址为 `192.168.1.1`，包含 MT7603 无线驱动和 WPA 软件包。无线 AP 需配置设备自己的 SSID、密码及区域，功能待实机验证。物理口及 WAN VLAN 映射待确认。候选镜像不会预装 RAM 测试公钥。
 
 Gitea 的 `codex/mp716-firmware` 分支和 GitHub 的 `main` 分支使用同一套脚本构建 RAM 和 LAN 候选镜像，并生成同一个版本下载包。独立 RAM 和串口工作流分别产出单镜像下载包。实机证据和待验证项见 [硬件兼容性报告](docs/mp716-hardware-compatibility.md)。
 

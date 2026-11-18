@@ -13,10 +13,10 @@
 | 项 | 已知资料和当前实现 | 待实机确认 |
 |---|---|---|
 | SoC 和 RAM | 原厂报告 MT7628、MIPS 24KEc。设备规格为 64 MiB RAM。候选镜像沿用上游内存探测。 | 捕获 U-Boot DRAM 输出和 OpenWrt `/proc/meminfo`，验证解压及运行空间。 |
-| SPI NOR | 原厂 `/proc/mtd` 报告整片 8 MiB、擦除块 64 KiB。候选 DTS 保护 Bootloader、Config、Factory，固件上限为 7,872 KiB。RAM Web 镜像禁用 SPI。 | 核对冷启动的 SPI JEDEC ID、实际分区和 MTD 只读标志。当前阶段仅做只读检查。 |
+| SPI NOR | 原厂 `/proc/mtd` 报告整片 8 MiB、擦除块 64 KiB。候选 DTS 保护 Bootloader、Config、Factory，固件上限为 7,872 KiB。RAM Web 镜像开放 SPI 读取校准数据，四个分区均标记只读。 | 核对冷启动的 SPI JEDEC ID、实际分区和 MTD 只读标志。当前阶段仅做只读检查。 |
 | Bootloader 与 UART | 项目资料记录 Ralink U-Boot 1.1.3 系列。DTS 继承 MT7628 的 UART0 和 `ttyS0,57600` Linux 控制台设置。 | 核对串口引脚、电平、实际波特率、U-Boot RAM 加载地址及菜单选项，用串口日志确认 RAM 启动。 |
 | 以太网 | 原厂 LAN 为 `eth0.1` / VLAN 1，WAN 为 `eth0.2` / VLAN 2。候选镜像启用片上 MAC 和交换机，以未打标签的 `eth0` 提供实验室直连 LAN。 | 逐口确认 PHY、端口号、VLAN 成员、隔离和 MAC 地址来源。当前镜像未配置原厂 WAN 端口映射。 |
-| 2.4 GHz Wi-Fi | 原厂接口为 `ra0`。候选 DTS 禁用 WMAC，并从镜像配置移除对应无线包。 | 从 MP716 的 Factory 数据确认 EEPROM 布局、MAC 和射频校准后，再做驱动及射频验证。 |
+| 2.4 GHz Wi-Fi | 原厂接口为 `ra0`。候选 DTS 启用 WMAC，使用 Factory 偏移 0 的 1024 字节 EEPROM，并包含 `kmod-mt7603` 和 `wpad-basic-mbedtls`。 | 验证驱动探测、MAC、射频校准、AP 启动、密码认证和管理页访问。驱动支持已配置，AP 仍需设备自己的 SSID、密钥和区域设置。 |
 | GPIO | 候选 DTS 禁用 GPIO，无板级按键或 LED 复用配置。 | 实测 GPIO 编号、极性、复用，以及按钮和指示灯行为。 |
 | Vue 管理后台 | 镜像包含 Vue 管理页面、HTTP 服务和签名校验模块。RAM Web 镜像只用于实验室验证。LAN 候选不内置 RAM 测试公钥。 | 在 MP716 上 RAM 启动后确认管理页可达，用独立测试包验证上传、签名检查和错误处理。 |
 | 升级和重启 | 构建阶段校验原生 sysupgrade 元数据、SHA-256 和测试容器签名，使用主机模拟验证暂存及重启核验。设备配置默认 `platform=unconfirmed`、`flash-gate=closed`。 | 从 RAM 启动后运行 `sysupgrade -T`。真机写入、恢复、重启和在线升级另行验收。 |
@@ -41,3 +41,9 @@
 - CI 的 `release-manifest.json` 记录固件版本、OpenWrt 版本、构建提交、设备型号、镜像大小、SHA-256 及 `UNVERIFIED` 状态。`reports/` 记录静态检查和设备兼容性。`sha256sums` 覆盖交付文件。
 
 源码中的 `docs/production-acceptance.md` 记录真机验收项和生产升级门。
+
+## 无线校准来源
+
+本地 MP716 的 Factory 分区备份与整片 Flash 的 `0x40000–0x50000` 区间一致。Factory 偏移 0 的小端标识是 `0x7628`，与固定 mt76 版本接受的标识一致。采用上游 MT7628AN EVB 的 1024 字节 nvmem EEPROM 描述。原厂配置备份另带的 512 字节 `mt7628.eeprom.bin` 标识为 `0x7620`，与 Factory 内容不同，当前设备树从 Factory 读取。[上游设备树](https://github.com/openwrt/openwrt/blob/v25.12.6/target/linux/ramips/dts/mt7628an_mediatek_mt7628an-eval-board.dts) [固定 mt76 EEPROM 实现](https://github.com/openwrt/mt76/blob/39c960c3ada558b4c2e7915772483d3731573d09/mt7603/eeprom.c)
+
+这是用于后续实机验证的配置依据。无线功率、校准效果及持续连接尚待测量。设备自己的 EEPROM、SSID 和密码由本地备份保管。

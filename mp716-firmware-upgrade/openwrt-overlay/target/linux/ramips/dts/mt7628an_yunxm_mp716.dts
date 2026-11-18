@@ -19,8 +19,12 @@
 };
 
 &wmac {
-	/* TODO: Verify the MP716 Factory EEPROM layout and RF calibration. */
-	status = "disabled";
+	/* Factory offset 0 has the MT7628 EEPROM ID in the MP716 backup.
+	 * TODO: Validate radio initialization, calibration and RF on hardware.
+	 */
+	status = "okay";
+	nvmem-cells = <&eeprom_factory_0>;
+	nvmem-cell-names = "eeprom";
 };
 
 &gpio {
@@ -62,9 +66,19 @@
 				label = "factory";
 				reg = <0x40000 0x10000>;
 				read-only;
+
+				nvmem-layout {
+					compatible = "fixed-layout";
+					#address-cells = <1>;
+					#size-cells = <1>;
+
+					eeprom_factory_0: eeprom@0 {
+						reg = <0x0 0x400>;
+					};
+				};
 			};
 
-			partition@50000 {
+			firmware: partition@50000 {
 				compatible = "denx,uimage";
 				label = "firmware";
 				reg = <0x50000 0x7b0000>;
