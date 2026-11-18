@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 
-// TODO: Verify physical switch ports, VLAN membership, and board MAC source.
-// Until then this profile exposes a single untagged LAN for direct lab access.
+// Stock 014 read-only switch audit confirms VID 1 LAN and VID 2 WAN (port 4).
+// 03_mp716_ram_web installs these VLANs using swconfig at first boot.
+// TODO: Validate the new driver and the front-panel LAN port numbering.
 &ethernet {
 	status = "okay";
 };

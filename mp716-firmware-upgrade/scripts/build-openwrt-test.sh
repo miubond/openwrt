@@ -61,6 +61,16 @@ PY
 [ "$tree" != "$project" ]
 cd "$tree"
 
+# The release pins packages in feeds.conf.default. Never follow a moving feed.
+packages_pin=093d551675b1119a06ef224d419905e8d6b2af1a
+grep -Fxq "src-git packages https://git.openwrt.org/feed/packages.git^$packages_pin" feeds.conf.default
+[ ! -e feeds.conf ] || { echo "Custom feed overrides are not allowed." >&2; exit 2; }
+./scripts/feeds update packages
+[ "$(git -C feeds/packages rev-parse HEAD)" = "$packages_pin" ] || {
+	echo "Unexpected packages feed commit." >&2; exit 2;
+}
+./scripts/feeds install miniupnpd-nftables
+
 overlay="$project/openwrt-overlay/target/linux/ramips"
 cp "$overlay/dts/mt7628an_yunxm_mp716.dts" target/linux/ramips/dts/
 cp "$overlay/image/yunxm_mp716.mk" target/linux/ramips/image/
@@ -129,7 +139,9 @@ CONFIG
 fi
 make defconfig
 required_config=(CONFIG_TARGET_ramips_mt76x8_DEVICE_yunxm_mp716 CONFIG_PACKAGE_mp716-sysupgrade
-	CONFIG_PACKAGE_kmod-mt7603 CONFIG_PACKAGE_wpad-basic-mbedtls)
+	CONFIG_PACKAGE_kmod-mt7603 CONFIG_PACKAGE_wpad-basic-mbedtls
+	CONFIG_PACKAGE_firewall4 CONFIG_PACKAGE_miniupnpd-nftables CONFIG_PACKAGE_swconfig
+	CONFIG_PACKAGE_dnsmasq)
 if [ "$lan_candidate" -eq 0 ]; then
 	required_config+=(CONFIG_TARGET_ROOTFS_INITRAMFS)
 elif ! grep -Fxq '# CONFIG_TARGET_ROOTFS_INITRAMFS is not set' .config; then
@@ -159,6 +171,8 @@ shopt -s nullglob
 sysupgrade=("$target"/*-yunxm_mp716-squashfs-sysupgrade.bin)
 initramfs=("$target"/*-yunxm_mp716-initramfs-kernel.bin)
 wireless_entries=(usr/sbin/wpad lib/firmware/mt7628_e1.bin lib/firmware/mt7628_e2.bin)
+network_entries=(sbin/swconfig sbin/fw4 usr/sbin/nft usr/sbin/dnsmasq
+	usr/sbin/miniupnpd etc/init.d/miniupnpd etc/config/firewall etc/config/upnpd)
 if [ -n "$web_input" ]; then
 	compilers=(build_dir/target-*/linux-ramips_mt76x8/linux-*/scripts/dtc/dtc)
 	[ "${#compilers[@]}" -eq 1 ] || { echo "Missing kernel device tree compiler." >&2; exit 2; }
@@ -175,7 +189,7 @@ if [ "$serial_rx" -eq 1 ]; then
 	archives=(build_dir/target-*/linux-ramips_mt76x8/linux-*/usr/initramfs_data.cpio)
 	[ "${#archives[@]}" -eq 1 ] || { echo "Missing MP716 initramfs CPIO archive." >&2; exit 2; }
 	staging_dir/host/bin/cpio -it < "${archives[0]}" > "$output/initramfs-files.txt"
-	entries=(usr/bin/rx sbin/sysupgrade usr/libexec/validate_firmware_image "${wireless_entries[@]}")
+	entries=(usr/bin/rx sbin/sysupgrade usr/libexec/validate_firmware_image "${wireless_entries[@]}" "${network_entries[@]}")
 	grep -Eq '^(\./)?lib/modules/[^/]+/mt7603e\.ko(\.(xz|zst|gz))?$' "$output/initramfs-files.txt"
 	name=openwrt-ramips-mt76x8-yunxm_mp716-initramfs-rx-kernel.bin
 	if [ -n "$web_input" ]; then
@@ -238,7 +252,7 @@ for gate in flash-gate:closed platform:unconfirmed; do
 		grep -Fxq "${gate#*:}"
 done
 "$unsquashfs" -offset "$offset" -ls "${sysupgrade[0]}" > "$output/rootfs-files.txt"
-entries=(usr/sbin/mp716-upgraded usr/sbin/mp716-sysupgrade etc/rc.d/S95mp716-sysupgrade "${wireless_entries[@]}")
+entries=(usr/sbin/mp716-upgraded usr/sbin/mp716-sysupgrade etc/rc.d/S95mp716-sysupgrade "${wireless_entries[@]}" "${network_entries[@]}")
 grep -Eq '^squashfs-root/lib/modules/[^/]+/mt7603e\.ko(\.(xz|zst|gz))?$' "$output/rootfs-files.txt"
 if [ "$lan_candidate" -eq 1 ]; then
 	entries+=(etc/board.d/03_mp716_ram_web www/mp716/index.html www/cgi-bin/mp716 usr/share/mp716/httpd.uc)

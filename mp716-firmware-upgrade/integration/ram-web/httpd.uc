@@ -3,6 +3,7 @@
 
 import { connect } from 'ubus';
 import { popen, stdin } from 'fs';
+import { cursor } from 'uci';
 
 function reply(status, body) {
 	printf('Status: %d %s\r\nContent-Type: application/json\r\n\r\n%J\n',
@@ -79,6 +80,24 @@ function main() {
 	}
 	if (method == 'GET' && path == '/cgi-bin/mp716/system/ping')
 		return ok({ latencyMs: 0 });
+	if (method == 'GET' && path == '/cgi-bin/mp716/network/status') {
+		let c = cursor();
+		let interfaces = {};
+		for (let name in ['lan', 'wan']) {
+			let status = ubus.call('network.interface.' + name, 'status', {});
+			interfaces[name] = {
+				available: status != null, up: status?.up == true,
+				protocol: status?.proto || c.get('network', name, 'proto'),
+				device: status?.l3_device || status?.device || '',
+				addresses: status?.['ipv4-address'] || [],
+				dns: status?.['dns-server'] || [],
+				mtu: int(c.get('network', name, 'mtu') || '1500'),
+			};
+		}
+		return ok({ interfaces: interfaces,
+			upnpEnabled: c.get('upnpd', 'config', 'enabled') == '1',
+			hardwareValidated: false, flashUpgradeEnabled: false });
+	}
 	if (method == 'GET' && path == '/cgi-bin/mp716/system/firmware')
 		return ok({ currentVersion: 'OpenWrt test', buildDate: '', hardware: 'MP716',
 			canUpgrade: false, flashUpgradeEnabled: false });

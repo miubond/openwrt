@@ -170,6 +170,8 @@ def stage(output, images, build_commit, signed_test=None):
         metadata["images"] = [copy_image(target, kind, Path(source), Path(profile), openwrt_version, openwrt_commit)
                               for kind, source, profile in sorted(images)]
         shutil.copyfile(PROJECT / "docs/mp716-hardware-compatibility.md", target / HARDWARE_REPORT)
+        shutil.copyfile(PROJECT / "docs/stock-014-network-migration.md",
+                        target / "reports/stock-014-network-migration.md")
         if signed_test is not None:
             sysupgrade = next(item for item in metadata["images"] if item["type"] == "sysupgrade")
             metadata["signed_test_package"] = copy_signed_test(target, signed_test, firmware_version, sysupgrade)

@@ -1,0 +1,22 @@
+#!/bin/sh
+# Only installed by an explicitly prepared private migration archive.
+set -eu
+. /lib/functions/system.sh
+[ "$(board_name)" = yunxm,mp716 ]
+directory=/etc/mp716-migration
+[ -s "$directory/migration.uci" ]
+[ -s "$directory/root-password.hash" ]
+[ "$(uci -q get network.lan.device)" = br-lan ]
+[ "$(uci -q get network.wan.device)" = eth0.2 ]
+[ -x /sbin/fw4 ] && [ -x /usr/sbin/miniupnpd ]
+/sbin/wifi config
+[ "$(uci -q get wireless.radio0)" = wifi-device ]
+uci -q batch < "$directory/migration.uci"
+read -r root_hash < "$directory/root-password.hash"
+temporary=$(mktemp /tmp/mp716-shadow.XXXXXX)
+trap 'rm -f "$temporary"' EXIT
+awk -F: -v OFS=: -v value="$root_hash" '$1=="root" {$2=value} {print}' /etc/shadow > "$temporary"
+grep -q '^root:' "$temporary"
+cat "$temporary" > /etc/shadow
+chmod 600 /etc/shadow
+rm -f "$directory/migration.uci" "$directory/root-password.hash"

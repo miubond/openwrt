@@ -19,10 +19,10 @@ mt76x8 子目标带有 `small_flash`，MP716 TEST 配置包含 `kmod-mt7603` 和
 | 项 | 结果 |
 |---|---|
 | RAM 启动 | 未执行 |
-| 网口 | TODO 确认物理端口编号、PHY、原厂 LAN VLAN 1 与 WAN VLAN 2 的成员、MAC 地址取值和实际吞吐。测试镜像仅配置未标记的 `eth0` LAN |
+| 网口 | 原厂已只读测量 VLAN 成员及 MAC 来源；1.0.2 候选配置 eth0.1 LAN、eth0.2 WAN（端口 4）。TODO 验证新驱动、每个物理端口、隔离及吞吐 |
 | Wi-Fi | 已配置 WMAC 和 MT7603 驱动，nvmem 读取 Factory 偏移 0 的 1024 字节。TODO 实机验证 EEPROM 读取、MAC、校准、AP 认证和连接稳定性 |
 | GPIO、按键和指示灯 | TODO 确认引脚与电平 |
-| 原厂必要功能 | 未执行 |
+| 原厂必要功能 | 已审计当前 DHCP WAN、UPnP 和关闭的可选服务，并生成本地私有迁移计划；候选运行、NAT、DNS、UPnP 和端到端上网未执行 |
 | 串口恢复 | TODO 核对 U-Boot 的 RAM 加载地址、内存报告、原厂备份恢复和重启 |
 | 固件升级 | 未执行 |
 | 断电和异常恢复 | 未执行 |

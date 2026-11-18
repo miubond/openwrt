@@ -2,8 +2,21 @@
 
 . /lib/functions.sh
 . /lib/functions/uci-defaults.sh
+. /lib/functions/system.sh
 
 [ "$(board_name)" = yunxm,mp716 ] || return 0
 board_config_update
-ucidef_set_interface_lan eth0
+# Stock 014 switch VLAN dump: VID 1 = 0,1,2,3,5,6; VID 2 = 4,6.
+# Port 6 is the tagged CPU port. Front-panel LAN1..LAN4 order is still TODO.
+ucidef_add_switch "switch0" \
+	"0:lan" "1:lan" "2:lan" "3:lan" "5:lan" "4:wan" "6t@eth0"
+ucidef_set_interface_lan "eth0.1"
+ucidef_set_interface_wan "eth0.2" "dhcp"
+base_mac=$(mtd_get_mac_binary factory 0x4)
+case "$base_mac" in
+	""|00:00:00:00:00:00|ff:ff:ff:ff:ff:ff) return 1 ;;
+esac
+# Measured stock addresses are Factory EEPROM MAC +2 (LAN), +3 (WAN).
+ucidef_set_interface_macaddr "lan" "$(macaddr_add "$base_mac" 2)"
+ucidef_set_interface_macaddr "wan" "$(macaddr_add "$base_mac" 3)"
 board_config_flush

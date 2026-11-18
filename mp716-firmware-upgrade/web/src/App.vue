@@ -7,11 +7,12 @@ const file = shallowRef(null)
 const report = shallowRef(null)
 const error = ref('')
 const busy = ref(false)
+const network = shallowRef(null)
 
-async function api(path, body, contentType) {
-  const headers = { 'Content-Type': contentType }
+async function api(path, body, contentType, method = 'POST') {
+  const headers = contentType ? { 'Content-Type': contentType } : {}
   if (token.value) headers.Authorization = `Bearer ${token.value}`
-  const response = await fetch(`/cgi-bin/mp716/${path}`, { method: 'POST', headers, body })
+  const response = await fetch(`/cgi-bin/mp716/${path}`, { method, headers, body })
   if (response.status === 401) token.value = ''
   const result = await response.json()
   if (!response.ok || result.ok !== true) throw new Error(result.message || '请求失败')
@@ -36,6 +37,7 @@ function login() {
   return submit(async () => {
     const session = await api('auth/login', body, 'application/json')
     token.value = session.token
+    network.value = await api('network/status', undefined, undefined, 'GET')
   })
 }
 
@@ -47,7 +49,14 @@ function logout() {
       token.value = ''
       file.value = null
       report.value = null
+      network.value = null
     }
+  })
+}
+
+function refreshNetwork() {
+  return submit(async () => {
+    network.value = await api('network/status', undefined, undefined, 'GET')
   })
 }
 
@@ -84,6 +93,20 @@ function verify() {
     </form>
 
     <template v-else>
+      <section aria-labelledby="network-heading">
+        <h2 id="network-heading">网络状态</h2>
+        <button type="button" class="secondary" :disabled="busy" @click="refreshNetwork">刷新状态</button>
+        <dl v-if="network">
+          <template v-for="(iface, name) in network.interfaces" :key="name">
+            <dt>{{ name.toUpperCase() }}</dt>
+            <dd>{{ iface.up ? '已连接' : '未连接' }} · {{ iface.device }} · {{ iface.protocol }}</dd>
+            <dt>{{ name.toUpperCase() }} IPv4</dt>
+            <dd>{{ iface.addresses.map(item => `${item.address}/${item.mask}`).join(', ') || '未获取' }}</dd>
+          </template>
+          <dt>UPnP 配置</dt><dd>{{ network.upnpEnabled ? '启用' : '关闭' }}</dd>
+        </dl>
+        <p class="muted">此处显示当前运行系统的状态，不能代表候选固件已经通过实机验收。</p>
+      </section>
       <form @submit.prevent="verify">
         <label for="package">签名固件包</label>
         <input id="package" type="file" accept=".mp716upd" required @change="pickFile">
