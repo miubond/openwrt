@@ -53,6 +53,7 @@ import type {
   WirelessClient,
 } from '../types'
 import { requestJson, failure } from '../http'
+import { readVerificationReport } from '../firmware-verification'
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/cgi-bin/mp716'
 
@@ -301,9 +302,10 @@ export class DeviceRouterAdapter implements RouterAPI {
         credentials: 'same-origin',
       })
       const result = await response.json()
-      if (!response.ok || result.ok !== true) return failure('VALIDATION', result.message || '固件校验失败')
-      if (result.data?.signature_checked !== true || result.data?.flash_write !== false) return failure('VALIDATION', '固件校验结果无效')
-      return { ok: true, data: { accepted: false, rollbackSec: 0, validated: true, flashWrite: false, message: '固件验签通过，未执行刷写' }, ts: Date.now() }
+      if (!response.ok || result.ok !== true) return failure('VALIDATION', result.message || '固件校验失败', result.details)
+      const report = readVerificationReport(result.data)
+      if (!report || report.ok !== true || report.signature_checked !== true || report.flash_write !== false) return failure('VALIDATION', '固件校验结果无效', result.data)
+      return { ok: true, data: { accepted: false, rollbackSec: 0, validated: true, flashWrite: false, message: '固件验签通过，未执行刷写', verificationReport: report }, ts: Date.now() }
     } catch {
       return failure('NETWORK', '无法连接固件校验接口')
     }

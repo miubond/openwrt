@@ -428,6 +428,15 @@ export interface ConfigApplyResult {
   validated?: boolean
   flashWrite?: boolean
   message?: string
+  verificationReport?: FirmwareVerificationReport
+}
+
+export interface FirmwareVerificationReport {
+  ok: boolean
+  code: number
+  signature_checked: boolean
+  flash_write: boolean
+  [key: string]: unknown
 }
 
 export interface QosCapability {
