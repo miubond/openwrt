@@ -223,6 +223,7 @@ export default {
   },
   upgrade: {
     verify: '上傳並校驗',
+    verifying: '正在上傳並校驗…',
     verifyOnly: '僅校驗韌體簽章，不會執行刷寫。',
     validationReport: '韌體校驗結果',
     signaturePassed: '簽章驗證通過',

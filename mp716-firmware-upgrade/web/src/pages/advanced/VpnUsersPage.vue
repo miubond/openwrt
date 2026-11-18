@@ -8,7 +8,9 @@ import UiSelect from '@/components/UiSelect.vue'
 import UiIcon from '@/components/UiIcon.vue'
 import UiModal from '@/components/UiModal.vue'
 import LoadingState from '@/components/LoadingState.vue'
-import { formatApiError, getRouterApi, unwrap } from '@/api'
+import ApplyBanner from '@/components/ApplyBanner.vue'
+import { useApplyConfirm } from '@/composables/useApplyConfirm'
+import { asApplyHandle, formatApiError, getRouterApi, unwrap } from '@/api'
 import type { VpnUser, VpnUserConfig } from '@/api'
 import { useToastStore } from '@/stores/toast'
 
@@ -16,6 +18,7 @@ const { t } = useI18n()
 const toast = useToastStore()
 const loading = ref(true)
 const saving = ref(false)
+const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
 const editorOpen = ref(false)
 const deleteIndex = ref(-1)
 const showPassword = ref(false)
@@ -94,7 +97,8 @@ async function persist(users: VpnUser[]) {
   saving.value = true
   try {
     const next = { ...config.value, users }
-    unwrap(await getRouterApi().updateVpnUsers(next))
+    const result = unwrap(await getRouterApi().updateVpnUsers(next))
+    if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     config.value = next
     editorOpen.value = false
     deleteIndex.value = -1
@@ -131,6 +135,7 @@ onMounted(() => void load())
 
 <template>
   <div class="users-page">
+    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else icon="vpn" :title="t('nav.vpnUsers')">
       <template #actions>

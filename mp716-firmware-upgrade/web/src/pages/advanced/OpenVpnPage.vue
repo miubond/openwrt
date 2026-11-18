@@ -15,7 +15,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm()
+const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const uploading = ref(false)
@@ -74,7 +74,8 @@ async function upload(kind: 'config' | 'cert') {
   }
   uploading.value = true
   try {
-    unwrap(await getRouterApi().uploadOpenVpn(file, kind))
+    const result = unwrap(await getRouterApi().uploadOpenVpn(file, kind))
+    if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     if (kind === 'config') form.value.configUploaded = true
     toast.success(kind === 'config' ? t('vpn.configUploaded') : t('vpn.certUploaded'))
   } catch (e) {
@@ -156,7 +157,7 @@ onMounted(() => void load())
                   <input class="name" :value="configName" readonly />
                   <button class="select" type="button" @click="configInput?.click()">{{ t('vpn.pickFile') }}</button>
                 </div>
-                <UiButton variant="secondary" :disabled="uploading || !configFile" @click="upload('config')">
+                <UiButton variant="secondary" :disabled="uploading || !!pending || !configFile" @click="upload('config')">
                   {{ t('vpn.upload') }}
                 </UiButton>
               </div>
@@ -169,7 +170,7 @@ onMounted(() => void load())
                   <input class="name" :value="certName" readonly />
                   <button class="select" type="button" @click="certInput?.click()">{{ t('vpn.pickFile') }}</button>
                 </div>
-                <UiButton variant="secondary" :disabled="uploading || !certFile" @click="upload('cert')">
+                <UiButton variant="secondary" :disabled="uploading || !!pending || !certFile" @click="upload('cert')">
                   {{ t('vpn.upload') }}
                 </UiButton>
               </div>

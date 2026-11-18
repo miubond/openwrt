@@ -71,6 +71,10 @@ const enabledOptions = computed(() => [
 ])
 
 const modeOptions = [
+  { value: '11b', label: '11B' },
+  { value: '11g', label: '11G' },
+  { value: '11n', label: '11N' },
+  { value: '11bg', label: '11BG' },
   { value: '11bgn', label: '11BGN' },
 ]
 

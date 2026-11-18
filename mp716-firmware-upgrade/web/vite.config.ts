@@ -33,7 +33,9 @@ const devCgiProxy = (target: string) => ({
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const isProd = mode === 'production' || mode === 'mp716-test'
+  const isNative = mode === 'openwrt'
+  const isProd = mode === 'production' || mode === 'mp716-test' || isNative
+  const apiEntry = isNative ? 'src/api/index.native.ts' : 'src/api/index.prod.ts'
   const proxyTarget = env.VITE_DEV_PROXY_TARGET || env.VITE_DEVICE_URL || 'http://192.168.199.1'
   return {
     base: env.VITE_BASE_PATH || (isProd ? '/mp716/' : '/'),
@@ -48,7 +50,7 @@ export default defineConfig(({ mode }) => {
               resolveId(id: string) {
                 const norm = id.replace(/\\/g, '/')
                 if (norm === '@/api' || norm.endsWith('/api/index.ts') || norm.endsWith('/api')) {
-                  return resolve(repoRoot, 'src/api/index.prod.ts')
+                  return resolve(repoRoot, apiEntry)
                 }
                 return null
               },
@@ -73,13 +75,14 @@ export default defineConfig(({ mode }) => {
           ? [
               {
                 find: resolve(repoRoot, 'src/api/index.ts'),
-                replacement: resolve(repoRoot, 'src/api/index.prod.ts'),
+                replacement: resolve(repoRoot, apiEntry),
               },
             ]
           : []),
       ],
     },
     build: {
+      outDir: isNative ? 'dist-openwrt' : 'dist',
       target: 'es2019',
       /** 单文件 CSS，减少 /www 小文件数量与 inode 占用 */
       cssCodeSplit: false,

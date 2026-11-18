@@ -1,0 +1,391 @@
+#!/usr/bin/env ucode
+'use strict';
+
+import { cursor } from 'uci';
+import { readfile, writefile } from 'fs';
+
+const handlers = {
+	wireless: wireless_handler,
+	hosts: hosts_handler,
+	firewall: firewall_handler,
+	diagnostic: diagnostic_handler,
+};
+
+function wifi_iface_name(c) {
+	let picked = null;
+	c.foreach('wireless', 'wifi-iface', function(s) {
+		if (s.mode == 'ap' && (s.device == 'radio0' || !picked))
+			picked = s['.name'];
+	});
+	if (!picked) {
+		c.foreach('wireless', 'wifi-iface', function(s) {
+			if (!picked)
+				picked = s['.name'];
+		});
+	}
+	return picked || 'default_radio0';
+}
+
+function resolve_ap_ifname(c) {
+	let configured = c.get('wireless', wifi_iface_name(c), 'ifname');
+	if (configured)
+		return configured;
+	let out = shell('ubus call network.wireless status 2>/dev/null');
+	if (out?.stdout) {
+		let st = json(out.stdout);
+		if (type(st) == 'object') {
+			for (let _radio in st) {
+				let ifaces = st[_radio]?.interfaces;
+				if (type(ifaces) != 'array')
+					continue;
+				for (let iface in ifaces) {
+					if (iface.ifname)
+						return iface.ifname;
+				}
+			}
+		}
+	}
+	for (let cand in ['phy0-ap0', 'wlan0', 'ath0'])
+		if (readfile('/sys/class/net/' + cand + '/operstate'))
+			return cand;
+	return 'wlan0';
+}
+
+function wifi_radio(c) {
+	let picked = 'radio0';
+	c.foreach('wireless', 'wifi-device', function(s) {
+		if (s.type == 'mac80211' || s['.name'] == 'radio0')
+			picked = s['.name'];
+	});
+	return picked;
+}
+
+function wireless_handler(req) {
+	let c = cursor();
+	let iface = wifi_iface_name(c);
+	let radio = wifi_radio(c);
+
+	if (req.method == 'GET' && req.action == 'wireless/status') {
+		let clients = wireless_clients();
+		let ssid = c.get('wireless', iface, 'ssid') || 'MP716-2G';
+		return {
+			iface: resolve_ap_ifname(c),
+			band: '2.4GHz',
+			enabled: (c.get('wireless', iface, 'disabled') || '0') != '1',
+			ssid: ssid,
+			channel: int(c.get('wireless', radio, 'channel') || 0) || 6,
+			txPower: int(c.get('wireless', radio, 'txpower') || 100),
+			clients: length(clients),
+			security: c.get('wireless', iface, 'encryption') || 'WPA2-PSK',
+		};
+	}
+
+	if (req.method == 'GET' && req.action == 'wireless/config') {
+		let enc = c.get('wireless', iface, 'encryption') || 'psk2';
+		return {
+			enabled: (c.get('wireless', iface, 'disabled') || '0') != '1',
+			ssid: c.get('wireless', iface, 'ssid') || '',
+			hidden: c.get('wireless', iface, 'hidden') == '1',
+			channel: c.get('wireless', radio, 'channel') || 'auto',
+			txPower: int(c.get('wireless', radio, 'txpower') || 100),
+			security: enc == 'none' ? 'none' : 'wpa2-psk',
+			password: '********',
+		};
+	}
+
+	if (req.method == 'POST' && req.action == 'wireless/config') {
+		let cfg = req.body?.config || {};
+		if (!cfg.ssid)
+			return { error: 'VALIDATION', message: 'SSID 不能为空' };
+		c.set('wireless', iface, 'ssid', cfg.ssid);
+		c.set('wireless', iface, 'disabled', cfg.enabled ? '0' : '1');
+		c.set('wireless', iface, 'hidden', cfg.hidden ? '1' : '0');
+		if (cfg.channel && cfg.channel != 'auto')
+			c.set('wireless', radio, 'channel', string(cfg.channel));
+		if (cfg.txPower)
+			c.set('wireless', radio, 'txpower', string(cfg.txPower));
+		if (cfg.security == 'none')
+			c.set('wireless', iface, 'encryption', 'none');
+		else {
+			c.set('wireless', iface, 'encryption', 'psk2');
+			if (cfg.password && cfg.password != '********')
+				c.set('wireless', iface, 'key', cfg.password);
+		}
+		c.commit('wireless');
+		shell('/etc/init.d/network reload');
+		return { accepted: true, rollbackSec: 45, taskId: 'wifi-' + time() };
+	}
+
+	if (req.action == 'wireless/clients')
+		return wireless_clients();
+
+	if (req.action == 'wireless/acl')
+		return wireless_acl(req);
+
+	return null;
+}
+
+function wireless_clients() {
+	let out = shell('/usr/sbin/mp716-wireless-clients 2>/dev/null');
+	if (out?.stdout)
+		return json(out.stdout) || [];
+	return assoclist_fallback();
+}
+
+function assoclist_fallback() {
+	let ifname = resolve_ap_ifname(cursor());
+	let out = shell('iwinfo ' + replace(ifname, /[^a-zA-Z0-9.:-]/g, '') + ' assoclist 2>/dev/null');
+	let lines = split(trim(out?.stdout || ''), /\n+/);
+	let list = [];
+	let c = cursor();
+	let ssid = c.get('wireless', wifi_iface_name(c), 'ssid') || '';
+	for (let line in lines) {
+		if (!match(line, /([0-9A-Fa-f:]{17})/))
+			continue;
+		let rssi = -65;
+		if (match(line, /(-\d+)\s*dBm/))
+			rssi = int(cap[1]);
+		push(list, {
+			mac: upper(cap[1]),
+			hostname: '',
+			ssid: ssid,
+			rssi: rssi,
+			txRateMbps: 0,
+			rxRateMbps: 0,
+			connectedSec: 0,
+		});
+	}
+	return list;
+}
+
+function wireless_acl(req) {
+	if (req.method == 'GET')
+		return json(readfile('/etc/mp716/wireless-acl.json') || '[]') || [];
+	if (req.method == 'POST') {
+		shell('mkdir -p /etc/mp716');
+		writefile('/etc/mp716/wireless-acl.json', sprintf("%J", req.body?.entries || []));
+		shell('/etc/init.d/mp716-acl reload 2>/dev/null');
+		return { accepted: true, rollbackSec: 30, taskId: 'wacl-' + time() };
+	}
+	return [];
+}
+
+function hosts_handler(req) {
+	if (req.action == 'hosts/connected' && req.method == 'GET')
+		return list_hosts();
+	if (req.action == 'hosts/disconnect' && req.method == 'POST') {
+		let id = replace(req.body?.deviceId || '', /[^a-zA-Z0-9:.-]/g, '');
+		if (!length(id))
+			return { error: 'VALIDATION', message: '非法终端标识' };
+		shell(sprintf("/usr/sbin/mp716-host-kick '%s'", replace(id, "'", "")));
+		return { disconnected: true };
+	}
+	return null;
+}
+
+function list_hosts() {
+	let by_mac = {};
+	let id = 1;
+
+	let leases = shell('cat /tmp/dhcp.leases 2>/dev/null')?.stdout || '';
+	for (let line in split(trim(leases), /\n+/)) {
+		let p = split(line, ' ');
+		if (length(p) < 4)
+			continue;
+		let mac = upper(p[1]);
+		by_mac[mac] = {
+			id: string(id++),
+			mac: mac,
+			ipv4: p[2],
+			hostname: p[3] || mac,
+			interface: 'lan',
+			wired: true,
+			online: true,
+			rxBytes: 0,
+			txBytes: 0,
+			lastSeen: p[0],
+		};
+	}
+
+	for (let wc in wireless_clients()) {
+		let mac = upper(wc.mac);
+		let wif = resolve_ap_ifname(cursor());
+		if (by_mac[mac]) {
+			by_mac[mac].wired = false;
+			by_mac[mac].interface = wif;
+		} else {
+			by_mac[mac] = {
+				id: string(id++),
+				mac: mac,
+				ipv4: wc.ipv4 || '',
+				hostname: wc.hostname || mac,
+				interface: wif,
+				wired: false,
+				online: true,
+				rxBytes: 0,
+				txBytes: 0,
+				lastSeen: string(time()),
+			};
+		}
+	}
+
+	let out = [];
+	for (let k in by_mac)
+		push(out, by_mac[k]);
+	return out;
+}
+
+function firewall_handler(req) {
+	let c = cursor();
+
+	if (req.action == 'firewall/rules' && req.method == 'GET') {
+		let rules = [];
+		c.foreach('firewall', 'rule', function(s) {
+			push(rules, {
+				id: s['.name'],
+				name: s.name || s['.name'],
+				enabled: s.enabled != '0',
+				src: s.src || '',
+				dest: s.dest || '',
+				proto: s.proto || 'tcp',
+				action: s.target || 'ACCEPT',
+			});
+		});
+		return rules;
+	}
+
+	if (req.action == 'firewall/rules' && req.method == 'POST') {
+		let rules = req.rules || req.body?.rules || [];
+		let existing = [];
+		c.foreach('firewall', 'rule', function(s) {
+			if (match(s['.name'], /^mp716_/))
+				push(existing, s['.name']);
+		});
+		for (let name in existing)
+			c.delete('firewall', name);
+		let idx = 0;
+		for (let r in rules) {
+			let name = 'mp716_rule_' + (idx++);
+			c.add('firewall', 'rule');
+			c.set('firewall', '@rule[-1]', 'name', name);
+			c.set('firewall', name, 'name', r.name || name);
+			c.set('firewall', name, 'enabled', r.enabled ? '1' : '0');
+			c.set('firewall', name, 'src', r.src || 'lan');
+			c.set('firewall', name, 'dest', r.dest || 'wan');
+			c.set('firewall', name, 'proto', r.proto || 'tcp');
+			c.set('firewall', name, 'target', r.action || 'ACCEPT');
+		}
+		c.commit('firewall');
+		shell('/etc/init.d/firewall reload');
+		return { accepted: true, rollbackSec: 30, taskId: 'fw-' + time() };
+	}
+
+	if (req.action == 'firewall/port-forwards' && req.method == 'GET') {
+		let rules = [];
+		c.foreach('firewall', 'redirect', function(s) {
+			push(rules, {
+				id: s['.name'],
+				name: s.name || s['.name'],
+				enabled: s.enabled != '0',
+				proto: s.proto || 'tcp',
+				extPort: int(s.src_dport || 0),
+				intIp: s.dest_ip || '',
+				intPort: int(s.dest_port || 0),
+			});
+		});
+		return rules;
+	}
+
+	if (req.action == 'firewall/port-forwards' && req.method == 'POST') {
+		let rules = req.rules || req.body?.rules || [];
+		let existing = [];
+		c.foreach('firewall', 'redirect', function(s) {
+			if (match(s['.name'], /^mp716_/))
+				push(existing, s['.name']);
+		});
+		for (let name in existing)
+			c.delete('firewall', name);
+		let idx = 0;
+		for (let r in rules) {
+			let name = 'mp716_pf_' + (idx++);
+			c.add('firewall', 'redirect');
+			c.set('firewall', '@redirect[-1]', 'name', name);
+			c.set('firewall', name, 'name', r.name || name);
+			c.set('firewall', name, 'enabled', r.enabled ? '1' : '0');
+			c.set('firewall', name, 'src', 'wan');
+			c.set('firewall', name, 'dest', 'lan');
+			c.set('firewall', name, 'proto', r.proto || 'tcp');
+			c.set('firewall', name, 'src_dport', string(r.extPort || 0));
+			c.set('firewall', name, 'dest_ip', r.intIp || '');
+			c.set('firewall', name, 'dest_port', string(r.intPort || 0));
+			c.set('firewall', name, 'target', 'DNAT');
+		}
+		c.commit('firewall');
+		shell('/etc/init.d/firewall reload');
+		return { accepted: true, rollbackSec: 30, taskId: 'pf-' + time() };
+	}
+
+	return null;
+}
+
+function diagnostic_handler(req) {
+	let target = replace(req.target || '127.0.0.1', /[^a-zA-Z0-9.:-]/g, '');
+	let t0 = time();
+	let cmd = (req.type == 'traceroute') ? ('traceroute -n -m 8 ' + target + ' 2>&1') :
+		(req.type == 'dns') ? ('nslookup ' + target + ' 2>&1') :
+		('ping -c ' + string(int(req.count || 4)) + ' -W 2 ' + target + ' 2>&1');
+	let out = shell(cmd);
+	return {
+		success: out?.exitcode == 0,
+		output: (out?.stdout || '') + (out?.stderr || ''),
+		durationMs: (time() - t0) * 1000,
+	};
+}
+
+/* rpcd exec 协议：argv[1]=list|call，call 时 argv[2]=方法名，payload 在 stdin */
+if (length(argv) < 1)
+	exit(0);
+
+if (arg(0) == 'list') {
+	let o = {};
+	for (let k in handlers)
+		o[k] = {};
+	print(json(o));
+	exit(0);
+}
+
+if (arg(0) == 'call') {
+	let req = json(readfile('/dev/stdin') || '{}');
+	let name = arg(1);
+	let fn = handlers[name];
+	if (!fn) {
+		print(json({ error: 'NOT_IMPLEMENTED', message: 'Method not found: ' + name }));
+		exit(0);
+	}
+	let res = fn(req);
+	if (type(res) == 'object' && res?.error)
+		print(json(res));
+	else
+		print(json(res ?? {}));
+	exit(0);
+}
+
+/* rpcd-mod-ucode 装载：返回 ubus 方法表（与 exec 双模） */
+return {
+	wireless: {
+		args: { action: '', method: '', body: {} },
+		call: (request) => wireless_handler(request?.args || request),
+	},
+	hosts: {
+		args: { action: '', method: '', body: {} },
+		call: (request) => hosts_handler(request?.args || request),
+	},
+	firewall: {
+		args: { action: '', method: '', rules: {}, body: {} },
+		call: (request) => firewall_handler(request?.args || request),
+	},
+	diagnostic: {
+		args: { type: '', target: '', count: 0 },
+		call: (request) => diagnostic_handler(request?.args || request),
+	},
+};

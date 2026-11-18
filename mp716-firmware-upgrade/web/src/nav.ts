@@ -79,7 +79,7 @@ export const primaryNav: PrimaryNavItem[] = [
   {
     key: 'advanced',
     labelKey: 'nav.advanced',
-    to: '/advanced/system/device',
+    to: '/advanced/vpn/pptpd',
     icon: 'advanced',
     sections: [
       {

@@ -1,9 +1,17 @@
 import { createRouterApi } from './create-router-api.prod'
 import type { RouterAPI } from './router-api'
 
-export type AdapterKind = 'device'
+export type AdapterKind = 'mock' | 'factory'
 
-export { currentSessionToken, setRouterApiTokenGetter } from './session'
+let tokenGetter: () => string | null = () => null
+
+export function setRouterApiTokenGetter(getter: () => string | null): void {
+  tokenGetter = getter
+}
+
+export function currentSessionToken(): string | null {
+  return tokenGetter()
+}
 
 export { createRouterApi }
 
@@ -14,7 +22,7 @@ export function getRouterApi(): RouterAPI {
 }
 
 export function getApiMode(): AdapterKind {
-  return 'device'
+  return 'factory'
 }
 
 export * from './router-api'

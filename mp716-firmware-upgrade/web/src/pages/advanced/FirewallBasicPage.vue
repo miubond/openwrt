@@ -15,7 +15,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm()
+const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const rows = ref<FirewallRule[]>([])

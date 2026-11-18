@@ -18,6 +18,7 @@ const { t } = useI18n()
 const modeOptions = [
   { value: 'dhcp', label: 'DHCP' },
   { value: 'static', label: 'STATIC' },
+  { value: 'pppoe', label: 'PPPOE' },
 ]
 
 const mobileProtoOptions = [{ value: 'dhcp', label: 'DHCP' }]
@@ -266,6 +267,16 @@ onMounted(() => void load())
                 @change="onWanModeChange('wired')"
               />
               <span>{{ t('dashboard.netType.wired') }}</span>
+            </label>
+            <label class="radio">
+              <input
+                type="radio"
+                name="wan-mode"
+                value="mobile"
+                :checked="form.wanMode === 'mobile'"
+                @change="onWanModeChange('mobile')"
+              />
+              <span>{{ t('dashboard.netType.mobile') }}</span>
             </label>
           </div>
         </UiField>

@@ -4,9 +4,8 @@ import { useI18n } from 'vue-i18n'
 import UiCard from '@/components/UiCard.vue'
 import UiButton from '@/components/UiButton.vue'
 import LoadingState from '@/components/LoadingState.vue'
-import { ApiCallError, formatApiError, getRouterApi, unwrap } from '@/api'
-import type { FirmwareInfo, FirmwareVerificationReport } from '@/api'
-import { readVerificationReport, isSignedVersionRejection } from '@/api/firmware-verification'
+import { formatApiError, getRouterApi, unwrap } from '@/api'
+import type { FirmwareInfo } from '@/api'
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
@@ -18,7 +17,6 @@ const info = ref<FirmwareInfo | null>(null)
 const file = ref<File | null>(null)
 const fileName = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
-const verification = ref<FirmwareVerificationReport | null>(null)
 
 function show(value?: string) {
   const raw = (value || '').trim()
@@ -44,7 +42,6 @@ function onFile(e: Event) {
   const next = (e.target as HTMLInputElement).files?.[0] ?? null
   file.value = next
   fileName.value = next?.name || ''
-  verification.value = null
 }
 
 async function doUpgrade() {
@@ -59,21 +56,17 @@ async function doUpgrade() {
     return
   }
   uploading.value = true
-  verification.value = null
   try {
     const result = unwrap(
       await getRouterApi().uploadFirmware(file.value, { keepSettings: keepSettings.value }),
     )
-    verification.value = result.verificationReport || null
     if (result.validated && result.flashWrite === false) {
       toast.success(result.message || t('upgrade.successValidateOnly'))
     } else {
       toast.success(result.message || t('upgrade.success'))
     }
   } catch (e) {
-    verification.value = readVerificationReport(e instanceof ApiCallError ? e.details : null)
-    if (isSignedVersionRejection(verification.value)) toast.warning(t('upgrade.signedVersionRejected'))
-    else toast.error(formatApiError(e, t))
+    toast.error(formatApiError(e, t))
   } finally {
     uploading.value = false
   }
@@ -109,12 +102,12 @@ onMounted(() => void load())
               <button class="select" type="button" @click="pickFile">{{ t('upgrade.pick') }}</button>
             </div>
             <UiButton variant="secondary" :disabled="uploading || !file" @click="doUpgrade">
-              {{ uploading ? t('upgrade.submitting') : t('upgrade.verify') }}
+              {{ uploading ? t('upgrade.submitting') : t('upgrade.submit') }}
             </UiButton>
           </div>
         </div>
 
-        <div v-if="info?.flashUpgradeEnabled" class="row keep-row">
+        <div class="row keep-row">
           <div class="label" />
           <label class="keep">
             <input v-model="keepSettings" type="checkbox" />
@@ -123,22 +116,7 @@ onMounted(() => void load())
         </div>
 
         <p v-if="info?.maxSizeLabel" class="hint">{{ t('upgrade.maxSize', { tip: info.maxSizeLabel }) }}</p>
-        <p class="warn">{{ t('upgrade.verifyOnly') }}</p>
-        <section v-if="verification" class="verification" :aria-label="t('upgrade.validationReport')">
-          <h3>{{ t('upgrade.validationReport') }}</h3>
-          <p :class="verification.signature_checked ? 'signature-pass' : 'warn'">
-            {{ verification.signature_checked ? t('upgrade.signaturePassed') : t('upgrade.signatureFailed') }}
-          </p>
-          <p v-if="!verification.ok" class="warn">
-            {{ isSignedVersionRejection(verification) ? t('upgrade.signedVersionRejected') : t('upgrade.checkRejected') }}
-          </p>
-          <p>{{ t('upgrade.resultCode') }}: {{ verification.code }}</p>
-          <p>{{ t('upgrade.flashWrite') }}: {{ String(verification.flash_write) }}</p>
-          <details>
-            <summary>{{ t('upgrade.rawReport') }}</summary>
-            <pre>{{ JSON.stringify(verification, null, 2) }}</pre>
-          </details>
-        </section>
+        <p class="warn">{{ t('upgrade.warnRun') }}</p>
       </div>
     </UiCard>
   </div>
@@ -148,12 +126,6 @@ onMounted(() => void load())
 .upgrade-form {
   max-width: 720px;
 }
-.verification { margin-top: 24px; border-top: 1px solid var(--color-border); padding-top: 16px; }
-.verification p { margin: 8px 0; }
-.verification .warn { margin-left: 0; }
-.signature-pass { color: var(--color-success, #15803d); }
-.verification pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-.verification summary { cursor: pointer; margin-top: 12px; }
 
 .row {
   display: grid;

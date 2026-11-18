@@ -223,6 +223,7 @@ export default {
   },
   upgrade: {
     verify: 'Upload and verify',
+    verifying: 'Uploading and verifying…',
     verifyOnly: 'Verifies the firmware signature without flashing.',
     validationReport: 'Firmware verification result',
     signaturePassed: 'Signature verified',

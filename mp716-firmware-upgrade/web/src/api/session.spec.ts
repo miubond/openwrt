@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { createRouterApi } from './create-router-api.prod'
-import { setRouterApiTokenGetter } from './index.prod'
+import { createRouterApi } from './create-native-api'
+import { setRouterApiTokenGetter } from './session'
 
 afterEach(() => {
   setRouterApiTokenGetter(() => null)

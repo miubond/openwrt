@@ -1,0 +1,168 @@
+# MP716 管理端前端 — 构建与静态部署
+# 风格对齐 customer_service_web_system/.gitea/workflows/deploy-frontend.yml
+#
+# feature/* / dev → 测试环境 /www1/wwwroot/test_environment/openwrt_mp716
+# main           → 生产环境 /www1/wwwroot/production_environment/openwrt_mp716
+#
+# 产物：dist/（Vite base=/，VITE_ROUTER_ADAPTER=factory）
+# 不依赖 mp716-rpc、httpd.uc 或 OpenWrt 25.12 镜像构建
+
+name: MP716 Frontend Build & Deploy
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+      - feature/**
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "部署目标（默认按分支：非 main=测试，main=生产）"
+        required: false
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - test
+          - prod
+      build_only:
+        description: "仅构建，不部署"
+        type: boolean
+        default: false
+
+concurrency:
+  group: openwrt-mp716-frontend-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_name != 'main' }}
+
+env:
+  CI_CACHE_ROOT: /www1/cache/openwrt-mp716-ci
+  NODE_VERSION_HINT: "20"
+  TEST_DEPLOY_DIR: /www1/wwwroot/test_environment/openwrt_mp716
+  PROD_DEPLOY_DIR: /www1/wwwroot/production_environment/openwrt_mp716
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy Frontend
+    runs-on: self-hosted
+
+    steps:
+      - name: Build and deploy
+        env:
+          GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # --- 部署目标 ---
+          TARGET="${{ github.event.inputs.target || 'auto' }}"
+          BUILD_ONLY="${{ github.event.inputs.build_only || 'false' }}"
+          case "$TARGET" in
+            test)
+              DEPLOY_DIR="$TEST_DEPLOY_DIR"
+              ;;
+            prod)
+              DEPLOY_DIR="$PROD_DEPLOY_DIR"
+              ;;
+            *)
+              if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+                DEPLOY_DIR="$PROD_DEPLOY_DIR"
+              else
+                DEPLOY_DIR="$TEST_DEPLOY_DIR"
+              fi
+              ;;
+          esac
+
+          echo "==> branch=${GITHUB_REF} deploy_dir=$DEPLOY_DIR build_only=$BUILD_ONLY"
+
+          # --- checkout（Gitea 自托管：oauth clone + worktree）---
+          WORK="${CI_CACHE_ROOT}/runs/${GITHUB_RUN_ID}"
+          REPO_DIR="$WORK/repo"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+
+          REPO="${{ github.server_url }}/${{ github.repository }}.git"
+          case "$REPO" in
+            https://*) CLONE_URL="https://oauth2:${GIT_TOKEN}@${REPO#https://}" ;;
+            http://*)  CLONE_URL="http://oauth2:${GIT_TOKEN}@${REPO#http://}" ;;
+            *)         CLONE_URL="$REPO" ;;
+          esac
+
+          CACHE="${CI_CACHE_ROOT}/repo-cache"
+          if [ ! -d "$CACHE/.git" ]; then
+            echo "==> bootstrap repo-cache"
+            git -c protocol.version=2 clone --filter=blob:none "$CLONE_URL" "$CACHE"
+          fi
+          git -C "$CACHE" remote set-url origin "$CLONE_URL"
+          git -C "$CACHE" fetch --prune origin "+refs/heads/*:refs/remotes/origin/*"
+          git -C "$CACHE" checkout -f "${{ github.sha }}"
+          git -C "$CACHE" worktree add --force "$REPO_DIR" "${{ github.sha }}"
+
+          cd "$REPO_DIR"
+
+          # --- 工程结构校验 ---
+          test -f package.json
+          test -d src
+          test -f src/api/adapters/factory-cgi-adapter.ts
+          test ! -f src/api/index.ts || ! grep -q httpd.uc src/api/index.ts
+          echo "✅ MP716 Web-only 工程结构校验通过"
+
+          # --- Node / npm 缓存 ---
+          export CI=true
+          export NODE_OPTIONS=--max-old-space-size=4096
+          node -v
+          npm -v
+
+          mkdir -p "$CI_CACHE_ROOT"/{npm,vite}
+          npm config set cache "$CI_CACHE_ROOT/npm"
+
+          mkdir -p node_modules
+          rm -rf node_modules/.vite
+          ln -sfn "$CI_CACHE_ROOT/vite" node_modules/.vite
+
+          echo "==> npm ci"
+          npm ci --prefer-offline
+
+          echo "==> typecheck + unit tests"
+          npm run typecheck
+          npm run test
+
+          echo "==> production build (factory CGI adapter)"
+          set -a
+          # shellcheck disable=SC1091
+          [ -f .env.production ] && . ./.env.production
+          set +a
+          export VITE_ROUTER_ADAPTER=factory
+          unset VITE_API_BASE || true
+          export VITE_BASE_PATH=/
+          echo "==> VITE_ROUTER_ADAPTER=$VITE_ROUTER_ADAPTER VITE_BASE_PATH=$VITE_BASE_PATH"
+          npm run build
+          node firmware/scripts/stage-web-overlay.mjs
+
+          BUILD_DIR="dist"
+          if [ ! -f "$BUILD_DIR/index.html" ]; then
+            echo "error: missing $BUILD_DIR/index.html"
+            exit 1
+          fi
+
+          du -sh "$BUILD_DIR" firmware/web-overlay/www
+
+          if [ "$BUILD_ONLY" = "true" ]; then
+            STAGE="$CI_CACHE_ROOT/artifacts/${GITHUB_RUN_ID}"
+            rm -rf "$STAGE"
+            mkdir -p "$STAGE"
+            cp -a "$BUILD_DIR"/. "$STAGE/"
+            echo "✅ build-only artifact: $STAGE"
+            git -C "$CACHE" worktree remove "$REPO_DIR" --force 2>/dev/null || true
+            rm -rf "$WORK"
+            exit 0
+          fi
+
+          echo "==> deploy -> $DEPLOY_DIR"
+          mkdir -p "$DEPLOY_DIR"
+          # 宝塔 .user.ini 不可删
+          find "$DEPLOY_DIR" -mindepth 1 -maxdepth 1 ! -name '.user.ini' -exec rm -rf {} +
+          cp -a "$BUILD_DIR"/. "$DEPLOY_DIR/"
+          echo "🎉 MP716 前端部署完成 -> $DEPLOY_DIR"
+
+          git -C "$CACHE" worktree remove "$REPO_DIR" --force 2>/dev/null || true
+          rm -rf "$WORK"

@@ -211,9 +211,13 @@ export class DeviceRouterAdapter implements RouterAPI {
   updateOpenVpn(config: OpenVpnConfig) {
     return this.call<ConfigApplyResult>('vpn/openvpn', { config })
   }
-  uploadOpenVpn(file: File, kind: 'config' | 'cert') {
-    return this.call<ConfigApplyResult>('vpn/openvpn/upload', { filename: file.name, kind, size: file.size })
+  async uploadOpenVpn(file: File, kind: 'config' | 'cert') {
+    if (file.size > 256 * 1024) return failure('VALIDATION', 'OpenVPN 文件不能大于 256 KiB')
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    const raw = Array.from(bytes, n => String.fromCharCode(n)).join('')
+    return this.call<ConfigApplyResult>('vpn/openvpn/upload', { filename: file.name, kind, contentBase64: btoa(raw) })
   }
+
   getWirelessClients() {
     return this.call<WirelessClient[]>('wireless/clients')
   }
@@ -337,8 +341,14 @@ export class DeviceRouterAdapter implements RouterAPI {
   downloadBackup() {
     return this.call<BackupDownload>('system/backup/download', {})
   }
-  restoreConfig(file: Blob) {
-    return this.uploadBlob<ConfigApplyResult>('system/restore', file)
+  async restoreConfig(file: Blob) {
+    if (file.size > 2 * 1024 * 1024) return failure('VALIDATION', '配置文件不能大于 2 MiB')
+    try {
+      const backup: unknown = JSON.parse(await file.text())
+      return this.call<ConfigApplyResult>('system/restore', { backup })
+    } catch {
+      return failure('VALIDATION', '请选择自研 OpenWrt 后台导出的配置备份')
+    }
   }
   getConfigTaskStatus(taskId: string) {
     return this.call<ConfigTaskStatus>(`system/config-task/${encodeURIComponent(taskId)}`)

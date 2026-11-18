@@ -119,7 +119,7 @@ const router = createRouter({
         {
           path: 'advanced/system/upgrade',
           name: 'sys-upgrade',
-          component: () => import('@/pages/system/UpgradePage.vue'),
+          component: import.meta.env.VITE_ROUTER_ADAPTER === 'device' ? () => import('@/pages/system/UpgradeNativePage.vue') : () => import('@/pages/system/UpgradePage.vue'),
           meta: { title: '固件升级' },
         },
         {
@@ -131,7 +131,7 @@ const router = createRouter({
         {
           path: 'advanced/system/config',
           name: 'sys-config',
-          component: () => import('@/pages/system/BackupPage.vue'),
+          component: import.meta.env.VITE_ROUTER_ADAPTER === 'device' ? () => import('@/pages/system/BackupNativePage.vue') : () => import('@/pages/system/BackupPage.vue'),
           meta: { title: '系统配置' },
         },
         {
@@ -155,7 +155,7 @@ const router = createRouter({
         {
           path: 'advanced/system/log',
           name: 'sys-log',
-          component: () => import('@/pages/LogsPage.vue'),
+          component: import.meta.env.VITE_ROUTER_ADAPTER === 'device' ? () => import('@/pages/LogsNativePage.vue') : () => import('@/pages/LogsPage.vue'),
           meta: { title: '系统日志' },
         },
         {
@@ -224,16 +224,6 @@ const router = createRouter({
 
 const authBypass =
   import.meta.env.DEV && import.meta.env.VITE_AUTH_BYPASS === '1'
-
-// Keep the complete navigation while reflecting the installed firmware's capabilities.
-for (const record of router.getRoutes()) {
-  const unsupported = record.path.startsWith('/advanced/vpn/') || record.path.startsWith('/advanced/tool/') ||
-    ['/advanced/system/reset', '/advanced/system/config', '/advanced/system/reboot',
-      '/advanced/system/sche-reboot', '/advanced/system/time', '/advanced/system/admin'].includes(record.path)
-  if (unsupported && record.components) {
-    record.components.default = () => import('@/pages/UnavailablePage.vue')
-  }
-}
 
 router.beforeEach(async (to) => {
   const auth = useAuthStore()

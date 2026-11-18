@@ -223,6 +223,7 @@ export default {
   },
   upgrade: {
     verify: '上传并校验',
+    verifying: '正在上传并校验…',
     verifyOnly: '仅校验固件签名，不会执行刷写。',
     validationReport: '固件校验结果',
     signaturePassed: '签名验证通过',
