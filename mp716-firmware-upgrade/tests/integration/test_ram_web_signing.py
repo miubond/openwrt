@@ -36,6 +36,7 @@ class RamWebSigningTests(unittest.TestCase):
 
             for name, options, expected in (
                 ("ci-ram", ["--test-public-key", keys / "upgrade.pub"], 0),
+                ("ci-lan", ["--test-public-key", keys / "upgrade.pub"], 0),
                 ("standalone-ram", [], 10),
                 ("lan", ["--no-test-key"], None),
             ):

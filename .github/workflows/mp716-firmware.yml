@@ -2,7 +2,7 @@ name: MP716 Firmware Package
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/mp716-versioned-artifacts]
   workflow_dispatch:
 
 permissions:
@@ -42,6 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/host/unit build/ci-logs
+          bash -n scripts/build-ci-images.sh scripts/build-openwrt-cached.sh scripts/build-openwrt-test.sh scripts/package-ci-test.sh
           python3 scripts/build_host.py 2>&1 | tee build/ci-logs/host-build.log
           ./build/host/test_device build/host/unit 2>&1 | tee build/ci-logs/fake-mtd.log
           python3 tests/run_all.py 2>&1 | tee build/ci-logs/host-tests.log
@@ -49,6 +50,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+
+      - name: Restore shared OpenWrt build cache
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/mp716-firmware/*/validated
+            ~/.cache/mp716-firmware/*/openwrt/dl
+            ~/.cache/mp716-firmware/*/openwrt/build_dir/host
+            ~/.cache/mp716-firmware/*/openwrt/build_dir/toolchain-*
+            ~/.cache/mp716-firmware/*/openwrt/staging_dir/host
+            ~/.cache/mp716-firmware/*/openwrt/staging_dir/toolchain-*
+          key: ${{ runner.os }}-${{ runner.arch }}-mp716-toolchain-v2-${{ hashFiles('mp716-firmware-upgrade/config/openwrt.commit', 'mp716-firmware-upgrade/scripts/build-openwrt-test.sh', 'mp716-firmware-upgrade/scripts/build-openwrt-cached.sh') }}
 
       - name: Build and verify LAN and RAM images
         run: bash scripts/build-ci-images.sh
@@ -61,7 +74,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/stage-versioned-release.py --output build/publish --build-commit "$GITHUB_SHA" \
-            --image initramfs build/ram-images config/test-device.profile \
+            --image initramfs build/ram-images build/ram-device.profile \
             --image sysupgrade build/target-images build/target-device.profile \
             --signed-test build/ci-release 2>&1 | tee build/ci-logs/stage-release.log
           version=$(cat config/firmware.version)

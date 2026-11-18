@@ -133,9 +133,16 @@ function iface_status(bus, c, name) {
 		rxBytes: device_status.statistics?.rx_bytes || 0, txBytes: device_status.statistics?.tx_bytes || 0,
 		rxRateBps: 0, txRateBps: 0, dhcpEnabled: c.get('dhcp', 'lan', 'ignore') != '1' };
 };
-function firmware_version() {
-	let m = match(readfile('/etc/mp716-upgrade/device.profile') || '', /installed_custom_firmware=([^\n]+)/);
-	return m ? m[1] : '1.0.2';
+export function firmware_version() {
+	for (let path in ['/rom/etc/mp716-build.version','/etc/mp716-build.version']) {
+		let version = trim(readfile(path) || '');
+		if (match(version, /^[0-9]+\.[0-9]+\.[0-9]+$/)) return version;
+	}
+	for (let path in ['/rom/etc/mp716-upgrade/device.profile','/etc/mp716-upgrade/device.profile']) {
+		let m = match(readfile(path) || '', /installed_custom_firmware=([^\n]+)/);
+		if (m) return m[1];
+	}
+	return 'unknown';
 };
 function system_info(bus, c) {
 	let info = bus.call('system', 'info', {}) || {};
@@ -313,7 +320,7 @@ export function route_admin(bus, method, path, body, token) {
 	let c = cursor();
 	if (method == 'GET') {
 		if (path == 'system/info') return { data:system_info(bus,c) };
-		if (path == 'system/device') return { data:{ productName:'MP716',productModel:'MP716',softwareVersion:firmware_version(),webuiVersion:'1.0.2-full.1',lanMac:iface_status(bus,c,'lan').mac,wanIp:iface_status(bus,c,'wan').ipv4 } };
+		if (path == 'system/device') return { data:{ productName:'MP716',productModel:'MP716',softwareVersion:firmware_version(),webuiVersion:firmware_version()+'-full.1',lanMac:iface_status(bus,c,'lan').mac,wanIp:iface_status(bus,c,'wan').ipv4 } };
 		if (path == 'system/status') { let info=system_info(bus,c), clients=hosts(bus,c); return { data:{ cpuPercent:min(100,int(info.cpuLoad[0]*100)),memoryPercent:info.memTotalKb?int(100-info.memFreeKb*100/info.memTotalKb):0,uptimeSec:info.uptimeSec,interfaces:[iface_status(bus,c,'lan'),iface_status(bus,c,'wan')],wirelessClients:length(filter(clients,(x)=>x.wired==false)),wiredClients:length(filter(clients,(x)=>x.wired==true)) } }; }
 		if (path == 'network/wan/status') return { data:iface_status(bus,c,'wan') };
 		if (path == 'network/lan/status') { let value=iface_status(bus,c,'lan');value.clientCount=length(hosts(bus,c));return { data:value }; }

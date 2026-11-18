@@ -1,6 +1,7 @@
 """Install the device Web snapshot and the public test key into an OpenWrt overlay."""
 
 import argparse
+import re
 import shutil
 from pathlib import Path, PurePosixPath
 from zipfile import ZipFile
@@ -67,8 +68,12 @@ def stage(
     init.chmod(0o755)
     defaults = root / "etc/uci-defaults/98-mp716-admin"
     defaults.parent.mkdir(parents=True, exist_ok=True)
-    defaults.write_text("#!/bin/sh\n/etc/init.d/mp716-admin enable\n", encoding="ascii")
+    defaults.write_text("#!/bin/sh\n/etc/init.d/mp716-admin enable\n/etc/init.d/mp716-admin start\n", encoding="ascii")
     defaults.chmod(0o755)
+    version = Path(__file__).resolve().parents[2].joinpath("config/firmware.version").read_text(encoding="ascii").strip()
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        raise SystemExit("Invalid firmware build version")
+    (root / "etc/mp716-build.version").write_text(version + "\n", encoding="ascii")
 
 
 if __name__ == "__main__":

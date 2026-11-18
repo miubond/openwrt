@@ -4,7 +4,7 @@
 import { connect } from 'ubus';
 import { popen, stdin } from 'fs';
 import { cursor } from 'uci';
-import { route_admin } from '/usr/share/mp716/admin.uc';
+import { route_admin, firmware_version } from '/usr/share/mp716/admin.uc';
 
 function reply(status, body) {
 	printf('Status: %d %s\r\nContent-Type: application/json\r\n\r\n%J\n',
@@ -100,7 +100,7 @@ function main() {
 			hardwareValidated: false, flashUpgradeEnabled: false });
 	}
 	if (method == 'GET' && path == '/cgi-bin/mp716/system/firmware')
-		return ok({ currentVersion: '1.0.2', buildDate: '', hardware: 'MP716',
+		return ok({ currentVersion: firmware_version(), buildDate: '', hardware: 'MP716',
 			canUpgrade: false, flashUpgradeEnabled: false, maxBytes: 8060928, maxSizeLabel: '8M', validationOnly: true });
 	if (method == 'POST' && path == '/cgi-bin/mp716/system/firmware-package/verify')
 		return verify();

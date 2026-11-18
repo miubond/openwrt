@@ -142,7 +142,7 @@ jobs:
           set -euo pipefail
           cd "${{ steps.repo.outputs.project }}"
           python3 scripts/stage-versioned-release.py --output build/publish --build-commit "$SOURCE_COMMIT" \
-            --image initramfs build/ram-images config/test-device.profile \
+            --image initramfs build/ram-images build/ram-device.profile \
             --image sysupgrade build/target-images build/target-device.profile \
             --signed-test build/ci-release 2>&1 | tee build/ci-logs/stage-release.log
           version=$(cat config/firmware.version)

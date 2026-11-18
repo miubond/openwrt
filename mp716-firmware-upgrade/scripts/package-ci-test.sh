@@ -17,8 +17,9 @@ verify_report() {
 if [ -d build/ram-images ]; then
   trap 'rm -f build/ci-release/ci-test.priv' EXIT
   if [ ! -f build/payload.bin ] || [ ! -f build/ci-release/ci-test.priv ] ||
-     ! cmp -s build/ram-images/ram-upgrade.pub build/ci-release/upgrade.pub; then
-    echo "Missing CI payload or signing key pair matching the compiled RAM image." >&2
+     ! cmp -s build/ram-images/ram-upgrade.pub build/ci-release/upgrade.pub ||
+     ! cmp -s build/target-images/sysupgrade-upgrade.pub build/ci-release/upgrade.pub; then
+    echo "Missing CI payload or signing key pair matching both compiled images." >&2
     exit 2
   fi
 else
@@ -38,13 +39,14 @@ python3 packer/mp716_fwpack.py pack \
   --out build/ci-release/test.mp716upd \
   --hardware-revision ci-lab \
   --firmware-version "$(cat config/firmware.version)" \
+  --web-ui "$(cat config/firmware.version)" \
   --build-time 2026-11-13T00:00:00Z 2>&1 | tee build/ci-logs/pack-test-container.log
 python3 - <<'PY'
 from pathlib import Path
 Path("build/ci-release/device.profile").write_text(
     "product=MP716\nhardware_revision=ci-lab\nbase_firmware=014\n"
     "vendor_software_version=014\ninstalled_custom_firmware=\n"
-    "web_ui=1.0.0\nupgrade_engine=1.0.0\n",
+    f"web_ui={Path('config/firmware.version').read_text().strip()}\nupgrade_engine=1.0.0\n",
     encoding="utf-8")
 PY
 verify_report build/ci-release/verify.json \

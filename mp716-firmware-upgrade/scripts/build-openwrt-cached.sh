@@ -76,7 +76,7 @@ if [ -f "$tree/.config" ]; then
 	make -C "$tree" clean
 fi
 # Drop generated profile files and host-side package state. In particular,
-# never allow the previous RAM profile's public key into the LAN image.
+# never carry a previous build's public key into a new image.
 rm -rf -- "$tree/files" "$tree/package/mp716-sysupgrade" \
 	"$tree/bin/targets/ramips/mt76x8" "$tree/build_dir/hostpkg" "$tree/staging_dir/hostpkg"
 git -C "$tree" restore -- target/linux/ramips/image/mt76x8.mk
