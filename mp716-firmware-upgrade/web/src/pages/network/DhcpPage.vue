@@ -37,7 +37,7 @@ const form = reactive({
   enabled: true,
   startIp: '192.168.199.1',
   endIp: '192.168.199.254',
-  leasetime: '7200',
+  leasetime: '7200' as string | number,
 })
 const minIp = ref('')
 const maxIp = ref('')
@@ -81,7 +81,7 @@ function toDhcpConfig(): DhcpConfig {
     enabled: form.enabled,
     start: Number(startIp.split('.').pop()) || 0,
     limit: poolLimitFromIps(startIp, endIp),
-    leasetime: form.leasetime.trim(),
+    leasetime: String(form.leasetime).trim(),
     gateway: '',
     dns: [],
     leases: [],

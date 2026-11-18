@@ -123,13 +123,15 @@ function iface_status(bus, c, name) {
 	let device = status.l3_device || status.device || '';
 	let ip = (status['ipv4-address'] || [])[0];
 	let device_status = device ? bus.call('network.device', 'status', { name: device }) || {} : {};
+	let actual_mtu = match(device,/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$/)
+		? int(trim(readfile('/sys/class/net/' + device + '/mtu') || '')) : 0;
 	let gateway = '';
 	for (let route in status.route || []) if (route.target == '0.0.0.0') gateway = route.nexthop;
 	return { name: name, label: uc(name), up: status.up == true, connected: status.up == true,
 		proto: status.proto || c.get('network', name, 'proto') || '', ipv4: ip?.address || '',
 		netmask: ip ? netmask(ip.mask) : '', gateway: gateway, dns: status['dns-server'] || [],
 		mac: device_status.macaddr || trim(readfile('/sys/class/net/' + device + '/address') || ''),
-		mtu: device_status.mtu || int(c.get('network', name, 'mtu') || 1500), uptimeSec: status.uptime || 0,
+		mtu: actual_mtu || device_status.mtu || int(c.get('network', name, 'mtu') || 1500), uptimeSec: status.uptime || 0,
 		rxBytes: device_status.statistics?.rx_bytes || 0, txBytes: device_status.statistics?.tx_bytes || 0,
 		rxRateBps: 0, txRateBps: 0, dhcpEnabled: c.get('dhcp', 'lan', 'ignore') != '1' };
 };
@@ -177,7 +179,7 @@ function dhcp_config(c) {
 		startIp: base + start, endIp: base + (start + count - 1), minIp: base + '1', maxIp: base + '254', staticBindings: bindings };
 };
 function updates(c, path, cfg) {
-	let writes = [], packages, kind;
+	let writes = [], sections = [], packages, kind;
 	function set(pkg, section, option, value) { push(writes, [pkg, section, option, value]); }
 	if (path == 'network/wan/config') {
 		packages = ['network']; kind = 'network';
@@ -189,6 +191,22 @@ function updates(c, path, cfg) {
 		if (cfg.macaddr && !unicast(cfg.macaddr)) die('MAC 地址无效');
 		if (!text(cfg.hostname || '', 63)) die('主机名无效');
 		set('network','wan','proto',cfg.proto); set('network','wan','mtu',string(mtu));
+		if (cfg.proto == 'dhcp' || cfg.proto == 'static') {
+			// Modern netifd applies link MTU on the device section. Keep the
+			// interface value for API compatibility and back up both in one task.
+			let device = c.get('network','wan','device'), matches = [];
+			if (type(device) != 'string' || !match(device,/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$/) || device == c.get('network','lan','device'))
+				die('WAN 设备无效或与 LAN 共享');
+			c.foreach('network','device',(s) => { if (s.name == device) push(matches,s['.name']); });
+			if (length(matches) > 1) die('WAN 设备配置重复');
+			let section = matches[0] || 'mp716_wan_device';
+			if (!length(matches)) {
+				if (c.get('network',section) != null) die('WAN 设备配置名称冲突');
+				push(sections,['network',section,'device']);
+				set('network',section,'name',device);
+			}
+			set('network',section,'mtu',string(mtu));
+		}
 		if (cfg.hostname) set('network','wan','hostname',cfg.hostname);
 		if (cfg.macaddr) set('network','wan','macaddr',lc(cfg.macaddr));
 		if (type(cfg.dns) != 'array' || length(cfg.dns) > 3) die('DNS 地址无效');
@@ -274,14 +292,15 @@ function updates(c, path, cfg) {
 		set('wireless',radio(c),'beacon_int',string(cfg.beacon));
 		set('wireless',radio(c),'rts',string(cfg.rtsThreshold)); set('wireless',radio(c),'frag',string(cfg.fragThreshold)); set('wireless',ap(c),'wmm',cfg.wmm?'1':'0');
 	} else die('配置入口无效');
-	return { writes:writes, packages:packages, kind:kind };
+	return { writes:writes, sections:sections, packages:packages, kind:kind };
 };
 function apply_config(c, path, cfg, token, timeout) {
 	let plan = updates(c,path,cfg); // Validate everything before changing UCI or creating a task.
 	let changed = filter(plan.writes, (w) => sprintf('%J',c.get(w[0],w[1],w[2])) != sprintf('%J',w[3]));
-	if (!length(changed)) return { accepted:true,rollbackSec:0 };
+	if (!length(changed) && !length(plan.sections)) return { accepted:true,rollbackSec:0 };
 	let task = begin(token,plan.packages,plan.kind,timeout);
 	try {
+		for (let s in plan.sections) if (!c.set(s[0],s[1],s[2])) die('无法创建 WAN 设备配置');
 		for (let w in changed) {
 			let success = w[3] == null ? c.delete(w[0],w[1],w[2]) : c.set(w[0],w[1],w[2],w[3]);
 			if (!success && w[3] != null) die('无法写入配置');

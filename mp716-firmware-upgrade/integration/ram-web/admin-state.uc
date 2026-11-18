@@ -53,7 +53,9 @@ function finish(t, state, message) {
 	return task_view(t);
 };
 export function reload(kind) {
-	if (kind == 'network') command('(sleep 1; /etc/init.d/network reload) >/tmp/mp716-admin/reload.log 2>&1 &');
+	// The init script also resets the hardware switch. These tasks only change
+	// interface settings; let netifd apply them without reinitializing VLAN links.
+	if (kind == 'network') command('(sleep 1; /bin/ubus call network reload) >/tmp/mp716-admin/reload.log 2>&1 &');
 	else if (kind == 'wireless') command('(sleep 1; /sbin/wifi reload) >/tmp/mp716-admin/reload.log 2>&1 &');
 	else if (kind == 'dhcp') command('(sleep 1; /etc/init.d/dnsmasq reload) >/tmp/mp716-admin/reload.log 2>&1 &');
 };
