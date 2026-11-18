@@ -172,6 +172,8 @@ def stage(output, images, build_commit, signed_test=None):
         shutil.copyfile(PROJECT / "docs/mp716-hardware-compatibility.md", target / HARDWARE_REPORT)
         shutil.copyfile(PROJECT / "docs/stock-014-network-migration.md",
                         target / "reports/stock-014-network-migration.md")
+        shutil.copyfile(PROJECT / "docs/mp716-1.0.2-device-test.md",
+                        target / "reports/mp716-1.0.2-device-test.md")
         if signed_test is not None:
             sysupgrade = next(item for item in metadata["images"] if item["type"] == "sysupgrade")
             metadata["signed_test_package"] = copy_signed_test(target, signed_test, firmware_version, sysupgrade)

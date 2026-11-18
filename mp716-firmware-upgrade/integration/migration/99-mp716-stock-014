@@ -1,6 +1,6 @@
 #!/bin/sh
 # Only installed by an explicitly prepared private migration archive.
-set -eu
+set -e
 . /lib/functions/system.sh
 [ "$(board_name)" = yunxm,mp716 ]
 directory=/etc/mp716-migration
@@ -10,8 +10,15 @@ directory=/etc/mp716-migration
 [ "$(uci -q get network.wan.device)" = eth0.2 ]
 [ -x /sbin/fw4 ] && [ -x /usr/sbin/miniupnpd ]
 [ "$(uci -q get firewall.@rule[1].name)" = Allow-Ping ]
-/sbin/wifi config
-[ "$(uci -q get wireless.radio0)" = wifi-device ]
+# Restore wired access and credentials even if radio detection is delayed.
+# This is the MP716 DT node path, independent of a transient phy index.
+/sbin/wifi config || :
+if [ "$(uci -q get wireless.radio0)" != wifi-device ]; then
+	uci set wireless.radio0=wifi-device
+	uci set wireless.radio0.type=mac80211
+	uci set wireless.radio0.path=platform/10300000.wmac
+	uci set wireless.radio0.band=2g
+fi
 uci -q batch < "$directory/migration.uci"
 read -r root_hash < "$directory/root-password.hash"
 temporary=$(mktemp /tmp/mp716-shadow.XXXXXX)
