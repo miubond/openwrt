@@ -73,7 +73,7 @@ async function upload() {
 
 <template>
   <div class="stack">
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <UiCard :title="t('sysBackup.downloadTitle')">
       <div class="down-btn">
         <button :disabled="downloading" @click="download">{{ t('sysBackup.downloadBtn') }}</button>

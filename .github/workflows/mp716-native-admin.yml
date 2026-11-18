@@ -1,0 +1,118 @@
+name: MP716 Native Admin Tests
+
+on:
+  push:
+    branches: [main, 'codex/**']
+    paths:
+      - 'mp716-firmware-upgrade/integration/ram-web/**'
+      - 'mp716-firmware-upgrade/integration/openwrt-package/**'
+      - 'mp716-firmware-upgrade/device/**'
+      - 'mp716-firmware-upgrade/shared/**'
+      - 'mp716-firmware-upgrade/cgi/**'
+      - 'mp716-firmware-upgrade/packer/**'
+      - 'mp716-firmware-upgrade/config/**'
+      - 'mp716-firmware-upgrade/tests/**'
+      - 'mp716-firmware-upgrade/scripts/build_host.py'
+      - '.github/workflows/mp716-native-admin.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mp716-native-admin-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Host regression and Linux helper
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+        working-directory: mp716-firmware-upgrade
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: mp716-firmware-upgrade/packer/requirements.txt
+      - name: Prepare host-only checks
+        run: |
+          set -euo pipefail
+          mkdir -p build/native-admin build/native-admin-logs build/host/unit
+          python3 -m pip install -r packer/requirements.txt 2>&1 | tee build/native-admin-logs/python-deps.log
+          gcc --version | tee build/native-admin-logs/gcc-version.log
+          while IFS= read -r -d '' native_script; do
+            bash -n "$native_script" || exit 1
+          done < <(find integration/ram-web -type f \( -name '*.sh' -o -name '*.init' \) -print0) \
+            2>&1 | tee build/native-admin-logs/shell-syntax.log
+      - name: Compile complete Linux DHCP probe without running it
+        run: |
+          set -euo pipefail
+          # Do not define MP716_DHCP_CODEC_TEST: compile and link the actual
+          # AF_PACKET, ioctl, signal and monotonic-time Linux implementation.
+          gcc -std=c99 -O2 -Wall -Wextra -Werror -Wpedantic \
+            integration/ram-web/dhcp-discover.c -o build/native-admin/mp716-dhcp-discover \
+            2>&1 | tee build/native-admin-logs/linux-helper-build.log
+          file build/native-admin/mp716-dhcp-discover | tee build/native-admin-logs/linux-helper-file.log
+      - name: Test DHCP packets with sanitizers and no network I/O
+        run: |
+          set -euo pipefail
+          gcc -std=c99 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            tests/native/dhcp-probe-test.c -o build/native-admin/dhcp-probe-packets \
+            2>&1 | tee build/native-admin-logs/packet-test-build.log
+          ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1 \
+            ./build/native-admin/dhcp-probe-packets 2>&1 | tee build/native-admin-logs/packet-tests.log
+      - name: Build and test existing signed package engine on the host
+        run: |
+          set -euo pipefail
+          python3 scripts/build_host.py 2>&1 | tee build/native-admin-logs/host-build.log
+          ./build/host/test_device build/host/unit 2>&1 | tee build/native-admin-logs/fake-mtd.log
+          python3 tests/run_all.py 2>&1 | tee build/native-admin-logs/host-tests.log
+      - name: Preserve native backend logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-native-admin-backend-logs-${{ github.sha }}
+          path: mp716-firmware-upgrade/build/native-admin-logs/
+          if-no-files-found: warn
+
+  frontend:
+    name: Canonical native page tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+        working-directory: mp716-firmware-upgrade
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mp716-firmware-upgrade/web/package-lock.json
+      - name: Check generated frontend and native page interactions
+        run: |
+          set -euo pipefail
+          mkdir -p build/native-admin-web-logs
+          python3 scripts/sync-web-reference.py 2>&1 | tee build/native-admin-web-logs/source.log
+          npm ci --prefix web --no-audit --no-fund 2>&1 | tee build/native-admin-web-logs/npm-ci.log
+          npm test --prefix web 2>&1 | tee build/native-admin-web-logs/page-tests.log
+          npm run --prefix web build:openwrt 2>&1 | tee build/native-admin-web-logs/build.log
+          python3 web/tests/test-native-web-package.py 2>&1 | tee build/native-admin-web-logs/package-tests.log
+      - name: Preserve native page logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-native-admin-frontend-logs-${{ github.sha }}
+          path: mp716-firmware-upgrade/build/native-admin-web-logs/
+          if-no-files-found: warn

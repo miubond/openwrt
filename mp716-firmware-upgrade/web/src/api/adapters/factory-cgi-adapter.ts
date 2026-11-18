@@ -819,7 +819,7 @@ function samePayload(current: Record<string, unknown>, payload: Record<string, u
 const APPLIED: ConfigApplyResult = { accepted: true, rollbackSec: 0 }
 const RESTORE_MAX_BYTES = 2 * 1024 * 1024
 
-const HWMODE_BY_MODE: Record<WifiMode, number> = {
+const HWMODE_BY_MODE: Partial<Record<WifiMode, number>> = {
   '11bg': 0,
   '11b': 1,
   '11g': 4,
@@ -1488,6 +1488,7 @@ export class FactoryCgiAdapter implements RouterAPI {
     }
     const mode = config.mode || '11bgn'
     const hwmode = HWMODE_BY_MODE[mode]
+    if (hwmode === undefined) return failure('VALIDATION', '当前原厂不支持此无线模式')
     const bandwidthChoice = hwmode === 6 || hwmode === 9 || hwmode === 8
     let band = num(body.band) ?? 1
     if (bandwidthChoice) {

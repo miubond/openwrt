@@ -44,8 +44,10 @@ const showShell = computed(() => !bootFailed.value || ready.value)
 const wanLinkUp = computed(() => Boolean(wan.value?.up))
 /** 物理 WAN 口（HYID 108 port_arr） */
 const physicalWanUp = computed(
-  () => physicalPorts.value.find((p) => p.role === 'wan')?.linkUp ?? wanLinkUp.value,
+  () => physicalPorts.value.find((p) => p.role === 'wan' && p.mappingVerified !== false)?.linkUp ?? wanLinkUp.value,
 )
+const physicalMappingVerified = computed(() => physicalPorts.value.length > 0 && physicalPorts.value.every(p => p.mappingVerified !== false))
+const unverifiedPhysicalPorts = computed(() => physicalPorts.value.some(p => p.mappingVerified === false))
 const staListCount = computed(() => devices.value.length)
 const portPlaceholders = [
   { id: 'lan1', label: 'LAN1', role: 'lan' as const },
@@ -54,7 +56,7 @@ const portPlaceholders = [
   { id: 'lan4', label: 'LAN4', role: 'lan' as const },
   { id: 'wan', label: 'WAN', role: 'wan' as const },
 ]
-const displayedPorts = computed(() =>
+const displayedPorts = computed<PhysicalPortStatus[]>(() =>
   physicalPorts.value.length ? physicalPorts.value : portPlaceholders.map((p) => ({ ...p, linkUp: false, speedMbps: 0 })),
 )
 
@@ -101,7 +103,7 @@ async function load(quiet = false) {
     if (seq !== loadSeq) return
     const info = unwrap(res)
     const st: SystemStatus = {
-      cpuPercent: 0,
+      cpuPercent: import.meta.env.VITE_ROUTER_ADAPTER === 'device' ? null : 0,
       memoryPercent: 0,
       uptimeSec: info.uptimeSec,
       interfaces: [],
@@ -339,7 +341,7 @@ onUnmounted(() => {
                 v-for="p in displayedPorts"
                 :key="p.id"
                 class="port"
-                :class="[p.role, { up: physicalPorts.length ? p.linkUp : false }]"
+                :class="[p.mappingVerified === false ? 'unknown' : p.role, { up: physicalPorts.length ? p.linkUp : false }]"
               >
                 <div class="port-ico"><UiIcon name="port" :size="18" /></div>
                 <strong>{{ p.label }}</strong>
@@ -348,12 +350,13 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="legend">
-              <span><i class="lan" /> {{ t('dashboard.legendLan') }}</span>
-              <span><i class="wan" /> {{ t('dashboard.legendWan') }}</span>
+              <span v-if="!unverifiedPhysicalPorts"><i class="lan" /> {{ t('dashboard.legendLan') }}</span>
+              <span v-if="!unverifiedPhysicalPorts"><i class="wan" /> {{ t('dashboard.legendWan') }}</span>
+              <span v-else>{{ t('dashboard.physicalMappingUnverified') }}</span>
               <span><i class="down" /> {{ t('dashboard.legendDown') }}</span>
             </div>
             <div class="ports-warn-slot">
-              <p v-if="physicalPorts.length && physicalWanUp !== wanLinkUp" class="ports-warn">
+              <p v-if="physicalMappingVerified && physicalWanUp !== wanLinkUp" class="ports-warn">
                 {{ t('dashboard.wanStateMismatch') }}
               </p>
             </div>

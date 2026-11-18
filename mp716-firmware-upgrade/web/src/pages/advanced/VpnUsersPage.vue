@@ -135,7 +135,7 @@ onMounted(() => void load())
 
 <template>
   <div class="users-page">
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else icon="vpn" :title="t('nav.vpnUsers')">
       <template #actions>

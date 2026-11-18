@@ -88,5 +88,6 @@ export function asApplyHandle(result: ConfigApplyResult): ApplyHandle {
   return {
     applyId: result.taskId || `task-${Date.now()}`,
     timeoutSec: result.rollbackSec || 60,
+    phase: result.phase,
   }
 }

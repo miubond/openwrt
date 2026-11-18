@@ -122,7 +122,7 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else :subtitle="t('sysTime.subtitle')">
       <div class="settings-form">

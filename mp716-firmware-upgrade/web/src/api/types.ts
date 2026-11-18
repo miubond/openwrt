@@ -49,6 +49,7 @@ export interface SystemInfo {
   deviceNumber?: string
   uptimeSec: number
   localTime: string
+  timezone?: string
   cpuLoad: number[]
   memTotalKb: number
   memFreeKb: number
@@ -69,7 +70,8 @@ export interface InterfaceStatus {
 }
 
 export interface SystemStatus {
-  cpuPercent: number
+  cpuPercent: number | null
+  cpuSampled?: boolean
   memoryPercent: number
   uptimeSec: number
   interfaces: InterfaceStatus[]
@@ -190,7 +192,12 @@ export interface WifiAdvancedConfig {
   wmm: number
 }
 
-export interface L2tpClientConfig {
+export interface NativeServiceInfo {
+  serviceAvailable?: boolean
+  serviceMessage?: string
+}
+
+export interface L2tpClientConfig extends NativeServiceInfo {
   enabled: boolean
   status: number
   address: string
@@ -213,7 +220,7 @@ export interface VpnOnlineUser {
   joinedAt: string
 }
 
-export interface OpenVpnConfig {
+export interface OpenVpnConfig extends NativeServiceInfo {
   enabled: boolean
   /** 1 连接成功，0 连接失败，其他为未连接 */
   status: number
@@ -247,7 +254,7 @@ export interface VpnUserConfig {
   l2tpEnd: string
 }
 
-export interface VpnServerConfig {
+export interface VpnServerConfig extends NativeServiceInfo {
   enabled: boolean
   startIp: string
   endIp: string
@@ -270,7 +277,7 @@ export interface PptpStaticRoute {
 }
 
 /** 原厂 PPTP 客户端。状态和地址只读，保存时不覆盖。 */
-export interface PptpClientConfig {
+export interface PptpClientConfig extends NativeServiceInfo {
   enabled: boolean
   /** 0 未连接，其他值表示已连接 */
   status: number
@@ -306,6 +313,7 @@ export interface WifiStatus {
 
 /** HYID 108 port_arr：物理网口，与逻辑 wan/lan 接口分离 */
 export interface PhysicalPortStatus {
+  mappingVerified?: boolean
   id: string
   label: string
   role: 'lan' | 'wan'
@@ -320,8 +328,9 @@ export type WifiSecurity =
   | 'wpa-wpa2-psk'
   | 'wpa3-sae'
   | 'wpa2-wpa3'
+  | 'unsupported'
 
-export type WifiMode = '11b' | '11g' | '11n' | '11bg' | '11bgn'
+export type WifiMode = '11b' | '11g' | '11n' | '11bg' | '11bgn' | '11gn'
 export type WifiCipher = 'tkip' | 'aes' | 'tkipaes'
 export type WifiHtMode = 'AUTO' | 'HT20' | 'HT40'
 export type WifiTxPowerPercent = 100 | 75 | 50 | 25 | 12 | 0
@@ -335,6 +344,8 @@ export interface WifiConfig {
   /** 发射功率百分比 */
   txPower: number
   security: WifiSecurity
+  rawEncryption?: string
+  supportedModes?: WifiMode[]
   password?: string
   cipher?: WifiCipher
   mode?: WifiMode
@@ -347,7 +358,12 @@ export interface WifiConfig {
 }
 
 /** 配置确认句柄（前端 ApplyBanner） */
+export type ConfigTaskPhase = 'prepared' | 'applying' | 'applied' | 'rolling_back' | 'failed'
+
 export interface ApplyHandle {
+  phase?: ConfigTaskPhase
+  state?: ConfigTaskStatus['state']
+  message?: string
   applyId: string
   timeoutSec: number
 }
@@ -422,6 +438,7 @@ export interface BackupResult {
 }
 
 export interface ConfigApplyResult {
+  phase?: ConfigTaskPhase
   accepted: boolean
   rollbackSec: number
   taskId?: string
@@ -506,6 +523,10 @@ export interface QuickSettingState {
 }
 
 export interface QuickSettingApplyResult {
+  phase?: ConfigTaskPhase
+  taskId?: string
+  rollbackSec?: number
+  accepted?: boolean
   progressSec: number
   reconnect: boolean
   reconnectIp: string
@@ -570,6 +591,8 @@ export interface SystemTimeConfig {
 }
 
 export interface ScheRebootConfig {
+  localTime?: string
+  timezone?: string
   /** 0 关闭，1 倒计时，2 指定时间重启 */
   mode: number
   remainHour: number
@@ -626,6 +649,9 @@ export interface FirmwareV2Status {
 }
 
 export interface ConfigTaskStatus {
+  phase?: ConfigTaskPhase
+  applyError?: string
+  rollbackError?: string
   taskId: string
   state: 'pending' | 'confirmed' | 'rolled_back' | 'failed'
   message?: string

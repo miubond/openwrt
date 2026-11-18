@@ -1,17 +1,23 @@
-import { onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { asApplyHandle, formatApiError, getRouterApi, unwrap } from '@/api'
-import type { ApplyHandle, ConfigApplyResult } from '@/api'
+import type { ApplyHandle, ConfigApplyResult, ConfigTaskStatus } from '@/api'
 import { useToastStore } from '@/stores/toast'
 
-/** The device owns rollback deadlines; a local countdown never confirms a task. */
+/** The device owns both service-application results and rollback deadlines. */
 export function useApplyConfirm(onRollback?: () => void) {
   const pending = ref<ApplyHandle | null>(null)
   const remaining = ref(0)
-  const applying = ref(false)
+  const requesting = ref(false)
+  const applying = computed(() => requesting.value || ['prepared', 'applying', 'rolling_back'].includes(pending.value?.phase || ''))
+  const canConfirm = computed(() => Boolean(pending.value) && !applying.value && pending.value?.state !== 'failed'
+    && (pending.value?.phase == null || pending.value.phase === 'applied'))
   let timer: number | undefined
   let generation = 0
-  let polling = false
+  let operation = 0
+  let pollingGeneration: number | undefined
+  let rollbackRequested = false
+  let lastFailure = ''
   const { t } = useI18n()
   const toast = useToastStore()
 
@@ -21,70 +27,89 @@ export function useApplyConfirm(onRollback?: () => void) {
   }
   function finish() {
     ++generation
+    ++operation
     clearTimer()
     pending.value = null
     remaining.value = 0
+    requesting.value = false
+  }
+  function consume(status: ConfigTaskStatus): void {
+    if (!pending.value) return
+    if (status.taskId && status.taskId !== pending.value.applyId) throw new Error('设备返回了其他配置任务')
+    remaining.value = Math.max(0, status.remainingSec || 0)
+    pending.value = { ...pending.value, state: status.state, phase: status.phase,
+      message: status.rollbackError || status.applyError || status.message }
+    if (status.state === 'confirmed') {
+      finish()
+      toast.success(t('apply.confirmed'))
+    } else if (status.state === 'rolled_back') {
+      const cancelled = rollbackRequested
+      finish()
+      if (cancelled) toast.info(t('apply.cancelled'))
+      else toast.warning(t('apply.timeoutRollback'))
+      onRollback?.()
+    } else if (status.state === 'failed' || status.phase === 'failed') {
+      const message = pending.value.message || t('apply.failedDesc')
+      if (message !== lastFailure) toast.error(message)
+      lastFailure = message
+      // Keep the task and its snapshot. The user may retry rollback.
+    } else lastFailure = ''
   }
   async function begin(handle: ApplyHandle | ConfigApplyResult) {
     const normalized = 'applyId' in handle ? handle : asApplyHandle(handle)
     if (!normalized.applyId || normalized.timeoutSec <= 0) return
     clearTimer()
     const current = ++generation
+    ++operation
     pending.value = normalized
     remaining.value = normalized.timeoutSec
+    requesting.value = false
+    rollbackRequested = false
+    lastFailure = ''
     timer = window.setInterval(async () => {
-      if (current !== generation || polling || applying.value) return
+      if (current !== generation || pollingGeneration === current || requesting.value) return
+      const revision = operation
       remaining.value = Math.max(0, remaining.value - 1)
-      polling = true
+      pollingGeneration = current
       try {
         const res = await getRouterApi().getConfigTaskStatus(normalized.applyId)
-        if (current !== generation || !res.ok) return
-        remaining.value = Math.max(0, res.data.remainingSec)
-        if (res.data.state === 'confirmed') finish()
-        else if (res.data.state === 'rolled_back') {
-          finish()
-          toast.warning(t('apply.timeoutRollback'))
-          onRollback?.()
-        } else if (res.data.state === 'failed') {
-          // A failed server task does not establish that rollback succeeded.
-          clearTimer()
-          toast.error(res.data.message || t('errors.internal'))
-        }
+        if (current !== generation || revision !== operation || !res.ok) return
+        consume(res.data)
       } catch {
         // A dropped connection is expected after changing LAN/Wi-Fi settings.
-        // Keep the task visible until its actual device state can be read.
-      } finally { polling = false }
+        // Keep the task until the actual device result becomes available.
+      } finally { if (pollingGeneration === current) pollingGeneration = undefined }
     }, 1000)
   }
   async function confirm() {
-    if (!pending.value || applying.value) return
+    if (!pending.value || !canConfirm.value) return
     const current = generation, id = pending.value.applyId
-    applying.value = true
+    ++operation
+    requesting.value = true
     try {
       const status = unwrap(await getRouterApi().confirmConfigTask(id))
       if (current !== generation) return
-      if (status.state !== 'confirmed') throw new Error(status.message || '配置未能确认')
-      finish()
-      toast.success(t('apply.confirmed'))
+      consume(status)
+      if (status.state !== 'confirmed' && status.state !== 'failed')
+        toast.warning(status.message || t('apply.inProgressDesc'))
     } catch (e) { if (current === generation) toast.error(formatApiError(e, t)) }
-    finally { applying.value = false }
+    finally { if (current === generation) requesting.value = false }
   }
   async function cancel() {
-    if (!pending.value || applying.value) return
+    if (!pending.value || requesting.value || pending.value.phase === 'rolling_back') return
     const current = generation, id = pending.value.applyId
-    applying.value = true
+    ++operation
+    requesting.value = true
     try {
       const api = getRouterApi()
       if (!api.cancelConfigTask) throw new Error('当前接口不支持撤销配置')
       const status = unwrap(await api.cancelConfigTask(id))
       if (current !== generation) return
-      if (status.state !== 'rolled_back') throw new Error(status.message || '配置未能恢复')
-      finish()
-      toast.info(t('apply.cancelled'))
-      onRollback?.()
+      rollbackRequested = true
+      consume(status)
     } catch (e) { if (current === generation) toast.error(formatApiError(e, t)) }
-    finally { applying.value = false }
+    finally { if (current === generation) requesting.value = false }
   }
-  onUnmounted(() => { ++generation; clearTimer() })
-  return { pending, remaining, applying, begin, confirm, cancel }
+  onUnmounted(() => { ++generation; ++operation; clearTimer() })
+  return { pending, remaining, applying, canConfirm, begin, confirm, cancel }
 }

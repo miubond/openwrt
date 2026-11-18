@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import type { ConfigTaskPhase } from '@/api/types'
 
 defineProps<{
   remaining: number
   applying?: boolean
+  phase?: ConfigTaskPhase
+  message?: string
 }>()
 defineEmits<{ confirm: []; cancel: [] }>()
 
@@ -13,12 +16,12 @@ const { t } = useI18n()
 <template>
   <div class="banner" role="alert">
     <div class="text">
-      <strong>{{ t('apply.waitingTitle') }}</strong>
-      <p>{{ t('apply.waitingDesc', { n: remaining }) }}</p>
+      <strong>{{ t(phase === 'failed' ? 'apply.failedTitle' : phase === 'rolling_back' ? 'apply.rollingBackTitle' : phase === 'prepared' || phase === 'applying' ? 'apply.inProgressTitle' : 'apply.waitingTitle') }}</strong>
+      <p>{{ message || t(phase === 'failed' ? 'apply.failedDesc' : phase === 'rolling_back' ? 'apply.rollingBackDesc' : phase === 'prepared' || phase === 'applying' ? 'apply.inProgressDesc' : 'apply.waitingDesc', { n: remaining }) }}</p>
     </div>
     <div class="actions">
       <button type="button" class="sec" :disabled="applying" @click="$emit('cancel')">{{ t('apply.rollback') }}</button>
-      <button type="button" class="pri" :disabled="applying" @click="$emit('confirm')">{{ t('apply.keep') }}</button>
+      <button type="button" class="pri" :disabled="applying || (phase != null && phase !== 'applied')" @click="$emit('confirm')">{{ t('apply.keep') }}</button>
     </div>
   </div>
 </template>

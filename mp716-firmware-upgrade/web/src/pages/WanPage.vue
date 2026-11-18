@@ -14,6 +14,7 @@ import { useToastStore } from '@/stores/toast'
 import { isIpv4 } from '@/utils/validate'
 
 const { t } = useI18n()
+const isNative = import.meta.env.VITE_ROUTER_ADAPTER === 'device'
 
 const modeOptions = [
   { value: 'dhcp', label: 'DHCP' },
@@ -248,7 +249,7 @@ onMounted(() => void load())
 
     <ApplyBanner
       v-if="pending"
-      :remaining="remaining"
+      :remaining="remaining" :phase="pending?.phase" :message="pending?.message"
       :applying="applying"
       @confirm="confirm"
       @cancel="cancel"
@@ -273,10 +274,11 @@ onMounted(() => void load())
                 type="radio"
                 name="wan-mode"
                 value="mobile"
+                :disabled="isNative"
                 :checked="form.wanMode === 'mobile'"
                 @change="onWanModeChange('mobile')"
               />
-              <span>{{ t('dashboard.netType.mobile') }}</span>
+              <span>{{ t('dashboard.netType.mobile') }}<small v-if="isNative"> — {{ t('wan.nativeWiredOnly') }}</small></span>
             </label>
           </div>
         </UiField>

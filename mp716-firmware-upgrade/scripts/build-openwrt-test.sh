@@ -71,6 +71,11 @@ grep -Fxq "src-git packages https://git.openwrt.org/feed/packages.git^$packages_
 	echo "Unexpected packages feed commit." >&2; exit 2;
 }
 ./scripts/feeds install miniupnpd-nftables
+if [ -n "$web_input" ]; then
+	./scripts/feeds install pptpd xl2tpd openvpn-mbedtls strongswan-isakmp
+	python3 "$project/scripts/prepare-native-services.py" "$tree"
+	export MP716_DISABLED_SERVICES='pptpd xl2tpd openvpn ipsec'
+fi
 
 overlay="$project/openwrt-overlay/target/linux/ramips"
 cp "$overlay/dts/mt7628an_yunxm_mp716.dts" target/linux/ramips/dts/
@@ -138,6 +143,22 @@ CONFIG_PACKAGE_ucode=y
 CONFIG_PACKAGE_ucode-mod-fs=y
 CONFIG_PACKAGE_ucode-mod-ubus=y
 CONFIG_PACKAGE_ucode-mod-uci=y
+CONFIG_BUSYBOX_CUSTOM=y
+CONFIG_BUSYBOX_CONFIG_SETSID=y
+CONFIG_BUSYBOX_CONFIG_TIMEOUT=y
+CONFIG_BUSYBOX_CONFIG_PING=y
+CONFIG_BUSYBOX_CONFIG_FEATURE_FANCY_PING=y
+CONFIG_BUSYBOX_CONFIG_TRACEROUTE=y
+CONFIG_BUSYBOX_CONFIG_NSLOOKUP=y
+CONFIG_PACKAGE_ppp-mod-pptp=y
+CONFIG_PACKAGE_ppp-mod-pppoe=y
+CONFIG_PACKAGE_pptpd=y
+CONFIG_PACKAGE_xl2tpd=y
+CONFIG_PACKAGE_openvpn-mbedtls=y
+CONFIG_PACKAGE_strongswan-isakmp=y
+CONFIG_PACKAGE_strongswan-mod-kdf=y
+CONFIG_PACKAGE_strongswan-mod-sha2=y
+CONFIG_PACKAGE_kmod-nft-xfrm=y
 CONFIG
 fi
 make defconfig
@@ -159,7 +180,10 @@ else
 fi
 if [ -n "$web_input" ]; then
 	required_config+=(CONFIG_PACKAGE_uhttpd CONFIG_PACKAGE_rpcd CONFIG_PACKAGE_ucode
-		CONFIG_PACKAGE_ucode-mod-fs CONFIG_PACKAGE_ucode-mod-ubus CONFIG_PACKAGE_ucode-mod-uci)
+		CONFIG_PACKAGE_ucode-mod-fs CONFIG_PACKAGE_ucode-mod-ubus CONFIG_PACKAGE_ucode-mod-uci
+		CONFIG_BUSYBOX_CONFIG_SETSID CONFIG_BUSYBOX_CONFIG_TIMEOUT CONFIG_BUSYBOX_CONFIG_TRACEROUTE
+		CONFIG_PACKAGE_ppp-mod-pptp CONFIG_PACKAGE_pptpd CONFIG_PACKAGE_xl2tpd CONFIG_PACKAGE_openvpn-mbedtls
+		CONFIG_PACKAGE_strongswan-isakmp CONFIG_PACKAGE_kmod-nft-xfrm)
 fi
 for required in "${required_config[@]}"; do
 	grep -Fxq "$required=y" .config || { echo "Missing build configuration: $required" >&2; exit 2; }
@@ -199,6 +223,9 @@ if [ "$serial_rx" -eq 1 ]; then
 		entries+=(usr/sbin/uhttpd sbin/rpcd usr/bin/ucode
 			www/mp716/index.html www/cgi-bin/mp716 usr/share/mp716/httpd.uc
 			usr/share/mp716/admin.uc usr/share/mp716/admin-state.uc usr/share/mp716/admin-tick.uc
+			usr/share/mp716/dispatch.uc usr/share/mp716/capabilities.uc usr/share/mp716/native-routes.json
+			usr/share/mp716/system-admin.uc usr/share/mp716/system-apply.uc usr/share/mp716/diagnostics.uc
+			usr/share/mp716/vpn.uc usr/share/mp716/vpn-runtime.uc etc/init.d/mp716-vpn usr/sbin/mp716-dhcp-discover
 			etc/init.d/mp716-admin etc/uci-defaults/98-mp716-admin etc/mp716-build.version
 			usr/share/rpcd/acl.d/mp716.json usr/sbin/mp716-package-verify
 			usr/sbin/mp716-upgraded etc/mp716-upgrade/upgrade.pub etc/board.d/03_mp716_ram_web)

@@ -58,7 +58,7 @@ onMounted(() => void load())
 <template>
   <div>
     <p class="page-desc">{{ t('lan.pageDesc') }}</p>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <template v-else>
     <UiCard>

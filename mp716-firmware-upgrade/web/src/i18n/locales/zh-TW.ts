@@ -87,6 +87,9 @@ export default {
     required: '{label}不能為空',
     macFormat: 'MAC 格式應為 XX:XX:XX:XX:XX:XX',
     detect: {
+      nativeHostFormat: '請輸入 IPv4 位址或 DNS 主機名稱，不包含協定、路徑或連接埠',
+      nativeHostMaxLen: '主機名稱不能超過 253 個字元',
+      nativeSourceFormat: '指定來源位址須為本機 IPv4 位址',
       hostRequired: 'IP位址或域名不能為空!',
       hostFormat: 'IP位址或域名格式不正確,正確格式為xxx.yyy.zzz(例如baidu.com,www.baidu.com)!',
       hostMaxLen: 'IP位址或域名不能大於63個字元!',
@@ -101,6 +104,7 @@ export default {
     },
   },
   toolDetect: {
+    sourceAutoHint: '留空時自動選擇來源位址',
     host: 'IP位址或域名',
     source: '指定源位址Ping',
     pingCount: 'Ping包次數',
@@ -272,6 +276,7 @@ export default {
     dryRunValidateOk: '離線驗證通過；真實 Flash 升級未啟用',
   },
   dashboard: {
+    physicalMappingUnverified: '連接埠角色待驗證；P0–P4 為交換器編號',
     topology: '網路拓撲',
     runningOk: '目前網路運行正常',
     diagnose: '網路診斷',
@@ -354,6 +359,12 @@ export default {
     limited: '此功能受硬體／韌體能力限制，目前版本僅提供入口預留。',
   },
   apply: {
+    inProgressTitle: '正在套用設定',
+    inProgressDesc: '裝置正在套用服務，完成後才能確認。',
+    rollingBackTitle: '正在還原設定',
+    rollingBackDesc: '請等待裝置完成還原；以裝置回傳結果為準。',
+    failedTitle: '設定操作失敗',
+    failedDesc: '尚未確認還原成功，請重試回復並檢查裝置。',
     pending: '有未套用的設定變更',
     discard: '放棄',
     applyNow: '套用變更',
@@ -394,6 +405,10 @@ export default {
     sectionNetwork: '網路資訊',
   },
   wifiBasic: {
+    keepCurrentMode: '保留目前 {mode}',
+    keepCurrentEncryption: '保留目前加密（{encryption}）',
+    preserveEncryptionHint: '目前加密方式可保留原設定；修改密碼前請選擇受支援的加密方式。',
+    nativeModeHint: '無線模式依裝置支援清單顯示；11B 尚未開放。',
     title: '2.4G 基礎設定',
     enabled: '無線開關',
     ssid: 'SSID',
@@ -542,6 +557,7 @@ export default {
     secondaryDns: '備用 DNS',
   },
   wan: {
+    nativeWiredOnly: '目前原生韌體僅適配有線 WAN，行動網路模組尚未驗收。',
     desc: '本頁面用於設定多種連線 Internet 方式的參數。',
     help: '頁面說明',
     helpBody:
@@ -664,6 +680,7 @@ export default {
     connectedHours: '{h} 小時 {m} 分',
   },
   vpn: {
+    serviceUnavailable: '目前韌體尚未安裝此 VPN 服務。可儲存關閉狀態的設定，啟用服務需要配套韌體。',
     addUser: '新增使用者',
     editUser: '編輯使用者',
     deleteUserTitle: '刪除這個使用者？',

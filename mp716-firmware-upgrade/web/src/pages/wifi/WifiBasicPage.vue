@@ -14,11 +14,14 @@ import { useApplyConfirm } from '@/composables/useApplyConfirm'
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
+const isNative = import.meta.env.VITE_ROUTER_ADAPTER === 'device'
 const toast = useToastStore()
 const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const showPassword = ref(false)
+const loadedMode = ref<WifiBasicForm['mode']>('11bgn')
+const loadedEncryption = ref('')
 
 const form = reactive<WifiBasicForm>({
   enabled: true,
@@ -70,13 +73,20 @@ const enabledOptions = computed(() => [
   { value: '0', label: t('common.disabled') },
 ])
 
-const modeOptions = [
+const availableModeOptions = [
   { value: '11b', label: '11B' },
   { value: '11g', label: '11G' },
   { value: '11n', label: '11N' },
   { value: '11bg', label: '11BG' },
   { value: '11bgn', label: '11BGN' },
 ]
+const modeOptions = computed(() => {
+  if (!isNative) return availableModeOptions
+  const supported = form.supportedModes || ['11bgn']
+  const options = availableModeOptions.filter(option => supported.includes(option.value as WifiBasicForm['mode']))
+  if (!options.some(option => option.value === loadedMode.value)) options.push({ value: loadedMode.value, label: t('wifiBasic.keepCurrentMode', { mode: loadedMode.value.toUpperCase() }) })
+  return options
+})
 
 const htmodeOptions = [
   { value: 'AUTO', label: 'AUTO' },
@@ -102,17 +112,24 @@ const txpowerOptions = [
   { value: 0, label: '0%' },
 ]
 
-const encryptionOptions = computed(() => [
+const encryptionOptions = computed(() => {
+  const options = [
   { value: 'wpapsk', label: 'WPAPSK' },
   { value: 'wpa2psk', label: 'WPA2PSK' },
   { value: 'wpapskwpa2psk', label: 'WPAPSKWPA2PSK' },
   { value: 'none', label: t('common.disabled') },
-])
+  ]
+  if (isNative && loadedEncryption.value && !options.some(option => option.value === loadedEncryption.value)) options.push({ value: loadedEncryption.value, label: t('wifiBasic.keepCurrentEncryption', { encryption: form.rawEncryption || loadedEncryption.value }) })
+  return options
+})
+const preserveEncryption = computed(() => isNative && ['unsupported', 'sae', 'psk2+sae'].includes(form.encryption))
 
 async function load() {
   loading.value = true
   try {
     Object.assign(form, wifiConfigToForm(unwrap(await getRouterApi().getWifiConfig())))
+    loadedMode.value = form.mode
+    loadedEncryption.value = form.encryption
   } catch (e) {
     toast.error(formatApiError(e, t))
   } finally {
@@ -129,7 +146,7 @@ async function save() {
     toast.error(t('wifiBasic.errMaxClients'))
     return
   }
-  if (form.enabled && form.encryption !== 'none' && form.password.length < 8) {
+  if (form.enabled && form.encryption !== 'none' && !preserveEncryption.value && form.password.length < 8) {
     toast.error(t('wifiBasic.errPassword'))
     return
   }
@@ -150,7 +167,7 @@ onMounted(() => void load())
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else :title="t('wifiBasic.title')">
       <div class="settings-form">
@@ -175,10 +192,11 @@ onMounted(() => void load())
 
         <UiField layout="horizontal" :label="t('wifiBasic.mode')">
           <UiSelect v-model="form.mode" :options="modeOptions" />
+          <small v-if="isNative">{{ t('wifiBasic.nativeModeHint') }}</small>
         </UiField>
 
         <UiField
-          v-if="form.mode === '11n' || form.mode === '11bgn'"
+          v-if="form.mode === '11n' || form.mode === '11bgn' || form.mode === '11gn'"
           layout="horizontal"
           :label="t('wifiBasic.bandwidth')"
         >
@@ -199,10 +217,11 @@ onMounted(() => void load())
 
         <UiField layout="horizontal" :label="t('wifiBasic.encryption')">
           <UiSelect v-model="form.encryption" :options="encryptionOptions" />
+          <small v-if="preserveEncryption">{{ t('wifiBasic.preserveEncryptionHint') }}</small>
         </UiField>
 
         <UiField
-          v-if="form.encryption !== 'none' && form.encryption !== 'sae'"
+          v-if="form.encryption !== 'none' && form.encryption !== 'sae' && !preserveEncryption"
           layout="horizontal"
           :label="t('wifiBasic.cipher')"
         >

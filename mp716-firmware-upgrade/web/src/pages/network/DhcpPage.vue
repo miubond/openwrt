@@ -202,7 +202,7 @@ onMounted(() => void load())
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <template v-else>
       <UiCard class="mb">

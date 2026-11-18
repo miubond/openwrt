@@ -8,6 +8,7 @@ import FormActions from '@/components/FormActions.vue'
 import UiSelect from '@/components/UiSelect.vue'
 import ApplyBanner from '@/components/ApplyBanner.vue'
 import LoadingState from '@/components/LoadingState.vue'
+import NativeServiceNotice from '@/components/NativeServiceNotice.vue'
 import { asApplyHandle, formatApiError, getRouterApi, unwrap } from '@/api'
 import type { VpnServerConfig } from '@/api'
 import { useApplyConfirm } from '@/composables/useApplyConfirm'
@@ -24,7 +25,7 @@ const showAdvanced = ref(true)
 
 const mppeOptions = computed(() => [
   { value: 0, label: t('vpn.mppeRequired') },
-  { value: 1, label: t('vpn.mppeOptional') },
+  ...(import.meta.env.VITE_ROUTER_ADAPTER !== 'device' ? [{ value: 1, label: t('vpn.mppeOptional') }] : []),
   { value: 2, label: t('vpn.mppeNone') },
 ])
 
@@ -103,10 +104,11 @@ onMounted(() => void load())
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else>
       <div class="settings-form">
+        <NativeServiceNotice :available="form.serviceAvailable" :message="form.serviceMessage" />
         <UiFormRow :label="serverSettingLabel">
           <label class="switch">
             <input v-model="form.enabled" type="checkbox" />

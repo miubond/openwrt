@@ -1,8 +1,10 @@
-import type { WifiConfig, WifiSecurity, WifiTxPowerPercent } from './types'
+import type { WifiConfig, WifiMode, WifiSecurity, WifiTxPowerPercent } from './types'
 
 /** UI 加密选项 → 契约 security */
 export function encryptionToSecurity(encryption: string): WifiSecurity {
   switch (encryption) {
+    case 'unsupported':
+      return 'unsupported'
     case 'none':
       return 'none'
     case 'wpapsk':
@@ -23,6 +25,8 @@ export function encryptionToSecurity(encryption: string): WifiSecurity {
 
 export function securityToEncryption(security: WifiSecurity): string {
   switch (security) {
+    case 'unsupported':
+      return 'unsupported'
     case 'none':
       return 'none'
     case 'wpa-psk':
@@ -48,7 +52,9 @@ export interface WifiBasicForm {
   cipher: 'tkip' | 'aes' | 'tkipaes'
   channel: number | 'auto'
   htmode: 'AUTO' | 'HT20' | 'HT40'
-  mode: '11b' | '11g' | '11n' | '11bg' | '11bgn'
+  mode: WifiMode
+  supportedModes?: WifiMode[]
+  rawEncryption?: string
   txpowerPercent: WifiTxPowerPercent
   maxClients: number
   isolate: boolean
@@ -67,6 +73,8 @@ export function wifiConfigToForm(cfg: WifiConfig): WifiBasicForm {
     channel: cfg.channel,
     htmode: cfg.htmode || 'AUTO',
     mode: cfg.mode || '11bgn',
+    supportedModes: cfg.supportedModes,
+    rawEncryption: cfg.rawEncryption,
     txpowerPercent: (cfg.txpowerPercent ?? cfg.txPower ?? 100) as WifiTxPowerPercent,
     maxClients: cfg.maxClients ?? 32,
     isolate: Boolean(cfg.isolate),

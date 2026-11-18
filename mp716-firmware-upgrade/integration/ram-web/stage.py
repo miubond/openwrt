@@ -60,15 +60,26 @@ def stage(
     gateway.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("httpd.uc"), gateway)
     gateway.chmod(0o644)
-    for name in ("admin.uc", "admin-state.uc", "admin-tick.uc"):
+    for name in ("admin.uc", "admin-state.uc", "admin-tick.uc", "apply-task.uc", "network-values.uc", "system-values.uc", "dispatch.uc", "capabilities.uc", "native-routes.json",
+                 "system-admin.uc", "system-apply.uc", "diagnostics.uc", "diagnostic-worker.sh",
+                 "vpn.uc", "vpn-config.uc", "vpn-runtime.uc", "vpn-render.uc", "vpn-hook.uc", "vpn-services.uc", "vpn-health.uc",
+                 "vpn-ppp-up.sh", "vpn-ppp-down.sh", "vpn-openvpn-up.sh", "vpn-openvpn-down.sh"):
         shutil.copyfile(Path(__file__).with_name(name), gateway.with_name(name))
+        gateway.with_name(name).chmod(0o755 if name.endswith(".sh") else 0o644)
+    vpn_init = root / "etc/init.d/mp716-vpn"
+    vpn_init.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(Path(__file__).with_name("mp716-vpn.init"), vpn_init)
+    vpn_init.chmod(0o755)
+    keep = root / "lib/upgrade/keep.d/mp716-admin"
+    keep.parent.mkdir(parents=True, exist_ok=True)
+    keep.write_text("/etc/mp716-admin/\n/etc/mp716-vpn/\n",encoding="ascii")
     init = root / "etc/init.d/mp716-admin"
     init.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("mp716-admin.init"), init)
     init.chmod(0o755)
     defaults = root / "etc/uci-defaults/98-mp716-admin"
     defaults.parent.mkdir(parents=True, exist_ok=True)
-    defaults.write_text("#!/bin/sh\n/etc/init.d/mp716-admin enable\n/etc/init.d/mp716-admin start\n", encoding="ascii")
+    defaults.write_text("#!/bin/sh\n/etc/init.d/mp716-admin enable\n/etc/init.d/mp716-vpn enable\n/etc/init.d/mp716-admin start\n/etc/init.d/mp716-vpn start\n", encoding="ascii")
     defaults.chmod(0o755)
     version = Path(__file__).resolve().parents[2].joinpath("config/firmware.version").read_text(encoding="ascii").strip()
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
