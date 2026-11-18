@@ -16,7 +16,7 @@ DESTINATION = PROJECT / 'web'
 DIRECTORIES = ('src', 'public', 'tests/unit')
 FILES = ('package.json','package-lock.json','index.html','vite.config.ts',
          'tsconfig.json','tsconfig.app.json','tsconfig.node.json',
-         '.env.openwrt','native-web-contract.json','scripts/package-native-web.py',
+         '.env.openwrt','NATIVE-WEB.md','native-web-contract.json','scripts/package-native-web.py',
          'tests/test-native-web-package.py',
          'firmware/scripts/stage-web-overlay.mjs',
          'firmware/scripts/verify-production-bundle.mjs',
@@ -79,7 +79,9 @@ def export(source):
         'Edit and commit that project, then run `python3 scripts/sync-web-reference.py --source <path>` '
         'from mp716-firmware-upgrade. Do not hand-edit this snapshot.\n\n'
         'Native build: `npm run build:openwrt -- --outDir dist`. '
-        'The Web-only workflow creates a standalone ZIP without compiling OpenWrt or accessing a router.\n',encoding='utf-8')
+        'The Web-only workflow creates a standalone ZIP without compiling OpenWrt or accessing a router.\n\n'
+        'Compatibility and validation limits: see `NATIVE-WEB.md`. Full native VPN/system/diagnostic '
+        'services are still being integrated; do not overwrite the current router UI with this UNVERIFIED bundle.\n',encoding='utf-8')
     return verify()
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Path);a=p.parse_args()

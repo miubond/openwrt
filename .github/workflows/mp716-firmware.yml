@@ -3,11 +3,12 @@ name: MP716 Firmware Package
 on:
   push:
     branches: [main, codex/mp716-versioned-artifacts]
-    paths-ignore:
-      - 'mp716-firmware-upgrade/web/**'
-      - 'mp716-firmware-upgrade/docs/**'
-      - 'mp716-firmware-upgrade/scripts/sync-web-reference.py'
-      - '.github/workflows/mp716-web.yml'
+    paths:
+      - 'mp716-firmware-upgrade/**'
+      - '!mp716-firmware-upgrade/web/**'
+      - '!mp716-firmware-upgrade/docs/**'
+      - '!mp716-firmware-upgrade/scripts/sync-web-reference.py'
+      - '.github/workflows/mp716-firmware.yml'
   workflow_dispatch:
 
 permissions:

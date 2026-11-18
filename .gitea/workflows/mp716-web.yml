@@ -1,0 +1,59 @@
+name: MP716 Web Package
+
+on:
+  push:
+    branches: [main, codex/mp716-firmware, codex/mp716-versioned-artifacts]
+    paths:
+      - 'mp716-firmware-upgrade/web/**'
+      - 'mp716-firmware-upgrade/scripts/sync-web-reference.py'
+      - '.gitea/workflows/mp716-web.yml'
+  workflow_dispatch:
+
+jobs:
+  web:
+    runs-on: self-hosted
+    timeout-minutes: 15
+    steps:
+      - name: Checkout canonical frontend snapshot
+        env:
+          GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_COMMIT: ${{ github.sha }}
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          mkdir -p mp716-web-work/project mp716-web-output/logs
+          git -C mp716-web-work/project init
+          AUTH=$(printf 'oauth2:%s' "$GIT_TOKEN" | base64 -w0)
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader \
+            GIT_CONFIG_VALUE_0="Authorization: Basic $AUTH" \
+            git -C mp716-web-work/project fetch --depth 1 "$REPOSITORY_URL" "$SOURCE_COMMIT"
+          git -C mp716-web-work/project checkout --detach FETCH_HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build Web without building firmware
+        run: |
+          set -euo pipefail
+          project=mp716-web-work/project/mp716-firmware-upgrade
+          python3 "$project/scripts/sync-web-reference.py" 2>&1 | tee mp716-web-output/logs/source.log
+          npm ci --prefix "$project/web" --no-audit --no-fund 2>&1 | tee mp716-web-output/logs/npm-ci.log
+          npm test --prefix "$project/web" 2>&1 | tee mp716-web-output/logs/tests.log
+          npm run --prefix "$project/web" build:openwrt 2>&1 | tee mp716-web-output/logs/build.log
+          python3 "$project/web/tests/test-native-web-package.py" 2>&1 | tee mp716-web-output/logs/package-tests.log
+          source_commit=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_commit"])' "$project/web/frontend-source.json")
+          python3 "$project/web/scripts/package-native-web.py" --build-commit "$source_commit" \
+            --output mp716-web-output/release 2>&1 | tee mp716-web-output/logs/package.log
+          (cd mp716-web-output/release && sha256sum -c *.sha256)
+          cp "$project/web/frontend-source.json" mp716-web-output/release/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mp716-web-UNVERIFIED-${{ github.sha }}
+          path: mp716-web-output/release/
+          if-no-files-found: error
+      - name: Keep Web logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-web-logs-${{ github.sha }}
+          path: mp716-web-output/logs/
+          if-no-files-found: warn
