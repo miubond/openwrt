@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - codex/mp716-ram-web
+    paths-ignore:
+      - 'mp716-firmware-upgrade/web/**'
+      - 'mp716-firmware-upgrade/docs/**'
   workflow_dispatch:
 
 jobs:
@@ -39,7 +42,8 @@ jobs:
           set -euo pipefail
           project=mp716-ram-web-work/project/mp716-firmware-upgrade
           npm ci --prefix "$project/web" --no-audit --no-fund 2>&1 | tee mp716-ram-web-output/npm-ci.log
-          npm run --prefix "$project/web" build 2>&1 | tee mp716-ram-web-output/vue-build.log
+          python3 "$project/scripts/sync-web-reference.py"
+          npm run --prefix "$project/web" build:openwrt -- --outDir dist 2>&1 | tee mp716-ram-web-output/vue-build.log
           bash "$project/scripts/build-openwrt-cached.sh" --ram-web \
             "$project/web/dist" "$project/config/test-device.profile" mp716-ram-web-output \
             2>&1 | tee mp716-ram-web-output/compile.log

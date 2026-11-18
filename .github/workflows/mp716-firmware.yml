@@ -3,6 +3,11 @@ name: MP716 Firmware Package
 on:
   push:
     branches: [main, codex/mp716-versioned-artifacts]
+    paths-ignore:
+      - 'mp716-firmware-upgrade/web/**'
+      - 'mp716-firmware-upgrade/docs/**'
+      - 'mp716-firmware-upgrade/scripts/sync-web-reference.py'
+      - '.github/workflows/mp716-web.yml'
   workflow_dispatch:
 
 permissions:
@@ -46,6 +51,9 @@ jobs:
           python3 scripts/build_host.py 2>&1 | tee build/ci-logs/host-build.log
           ./build/host/test_device build/host/unit 2>&1 | tee build/ci-logs/fake-mtd.log
           python3 tests/run_all.py 2>&1 | tee build/ci-logs/host-tests.log
+
+      - name: Verify canonical frontend snapshot
+        run: python3 scripts/sync-web-reference.py
 
       - uses: actions/setup-node@v4
         with:

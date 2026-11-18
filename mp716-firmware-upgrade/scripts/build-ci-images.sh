@@ -8,7 +8,7 @@ sed -e "s/^installed_custom_firmware=.*/installed_custom_firmware=$FIRMWARE_VERS
 sed "s/^web_ui=.*/web_ui=$FIRMWARE_VERSION/" config/test-device.profile > build/ram-device.profile
 npm ci --prefix web --no-audit --no-fund 2>&1 | tee build/ci-logs/npm-ci.log
 npm test --prefix web 2>&1 | tee build/ci-logs/vue-tests.log
-npm run --prefix web build 2>&1 | tee build/ci-logs/vue-build.log
+npm run --prefix web build:openwrt -- --outDir dist 2>&1 | tee build/ci-logs/vue-build.log
 python3 scripts/prepare-ci-test-key.py
 trap 'rm -f build/ci-release/ci-test.priv' EXIT
 TIMEFORMAT='LAN sysupgrade elapsed: %3R s'

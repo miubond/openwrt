@@ -1,0 +1,66 @@
+name: MP716 Web Package
+
+on:
+  push:
+    branches: [main, codex/mp716-versioned-artifacts]
+    paths:
+      - 'mp716-firmware-upgrade/web/**'
+      - 'mp716-firmware-upgrade/scripts/sync-web-reference.py'
+      - '.github/workflows/mp716-web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mp716-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: mp716-firmware-upgrade
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mp716-firmware-upgrade/web/package-lock.json
+      - name: Verify canonical frontend snapshot
+        run: |
+          mkdir -p build/web-logs
+          python3 scripts/sync-web-reference.py 2>&1 | tee build/web-logs/source.log
+      - name: Test and build native Web only
+        run: |
+          set -euo pipefail
+          npm ci --prefix web --no-audit --no-fund 2>&1 | tee build/web-logs/npm-ci.log
+          npm test --prefix web 2>&1 | tee build/web-logs/tests.log
+          npm run --prefix web build:openwrt 2>&1 | tee build/web-logs/build.log
+          python3 web/tests/test-native-web-package.py 2>&1 | tee build/web-logs/package-tests.log
+      - name: Package static assets with source provenance
+        run: |
+          set -euo pipefail
+          source_commit=$(python3 -c 'import json; print(json.load(open("web/frontend-source.json"))["source_commit"])')
+          python3 web/scripts/package-native-web.py --build-commit "$source_commit" \
+            --output build/web-release 2>&1 | tee build/web-logs/package.log
+          (cd build/web-release && sha256sum -c *.sha256)
+          cp web/frontend-source.json build/web-release/
+          printf 'Independent static Web package; UNVERIFIED; firmware_included=false; no router access.\n' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mp716-web-UNVERIFIED-${{ github.sha }}
+          path: mp716-firmware-upgrade/build/web-release/
+          if-no-files-found: error
+      - name: Keep Web build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-web-logs-${{ github.sha }}
+          path: mp716-firmware-upgrade/build/web-logs/
+          if-no-files-found: warn

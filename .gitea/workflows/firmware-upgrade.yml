@@ -14,6 +14,9 @@ on:
     branches:
       - feature/lz
       - codex/mp716-firmware
+    paths-ignore:
+      - 'mp716-firmware-upgrade/web/**'
+      - 'mp716-firmware-upgrade/docs/**'
   workflow_dispatch:
     inputs:
       build_only:
