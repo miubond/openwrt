@@ -4,6 +4,10 @@ import { readfile, writefile, mkdir, chmod, rename, unlink, rmdir, stat, popen }
 export const STATE = '/etc/mp716-admin';
 const RUNTIME = '/tmp/mp716-admin';
 const PENDING = STATE + '/pending.json';
+const PACKAGES = /^(network|wireless|dhcp|system|firewall|upnpd|mp716_system|mp716_vpn|pptpd|xl2tp|ipsec|openvpn)$/;
+function snapshot_path(path) {
+	return path == '/etc/shadow' || match(path,/^\/etc\/mp716-vpn\/(client\.ovpn|ca\.pem|client\.crt|client\.key|ta\.key|auth)$/);
+}
 
 export function command(text) {
 	let p = popen(text, 'r');
@@ -48,6 +52,9 @@ export function pending() { return load(PENDING); };
 function finish(t, state, message) {
 	t.state = state; t.message = message;
 	delete t.files;
+	delete t.modes;
+	delete t.absent;
+	delete t.extraSnapshots;
 	store(task_file(t.id), t);
 	unlink(PENDING);
 	return task_view(t);
@@ -58,13 +65,27 @@ export function reload(kind) {
 	if (kind == 'network') command('(sleep 1; /bin/ubus call network reload) >/tmp/mp716-admin/reload.log 2>&1 &');
 	else if (kind == 'wireless') command('(sleep 1; /sbin/wifi reload) >/tmp/mp716-admin/reload.log 2>&1 &');
 	else if (kind == 'dhcp') command('(sleep 1; /etc/init.d/dnsmasq reload) >/tmp/mp716-admin/reload.log 2>&1 &');
+	else if (kind == 'system') command('(sleep 1; /usr/bin/ucode /usr/share/mp716/system-apply.uc) >/tmp/mp716-admin/reload.log 2>&1 &');
+	else if (kind == 'vpn') command('(sleep 1; /etc/init.d/mp716-vpn reload) >/tmp/mp716-admin/reload.log 2>&1 &');
+	else if (kind == 'firewall') command('(sleep 1; /etc/init.d/firewall reload) >/tmp/mp716-admin/reload.log 2>&1 &');
+	else if (kind == 'all') {
+		reload('network'); reload('wireless'); reload('dhcp'); reload('system'); reload('vpn'); reload('firewall');
+	}
 };
 export function rollback(t) {
 	for (let name, data in t.files) {
-		if (!match(name, /^(network|wireless|dhcp)$/)) die('无效配置备份');
+		if (!match(name, PACKAGES)) die('无效配置备份');
+		if (index(t.absent || [],name)>=0) { unlink('/etc/config/'+name); continue; }
 		if (writefile('/etc/config/' + name + '.mp716-new', data) == null) die('无法恢复配置');
-		chmod('/etc/config/' + name + '.mp716-new', 0600);
+		chmod('/etc/config/' + name + '.mp716-new', t.modes ? t.modes[name] : 0600);
 		if (!rename('/etc/config/' + name + '.mp716-new', '/etc/config/' + name)) die('无法恢复配置');
+	}
+	for (let path, row in t.extraSnapshots || {}) {
+		if (!snapshot_path(path)) die('无效配置备份路径');
+		if (!row.exists) { unlink(path); continue; }
+		if (writefile(path+'.mp716-new',row.data)==null) die('无法恢复配置文件');
+		chmod(path+'.mp716-new',row.mode);
+		if (!rename(path+'.mp716-new',path)) die('无法恢复配置文件');
 	}
 	let result = finish(t, 'rolled_back', '配置已恢复');
 	reload(t.reload);
@@ -75,14 +96,25 @@ export function expire() {
 	if (t && (t.boot != boot_id() || uptime() >= t.deadline)) return rollback(t);
 	return null;
 };
-export function begin(owner, packages, kind, timeout) {
+export function begin(owner, packages, kind, timeout, extra_paths) {
 	if (pending()) die('已有配置等待确认');
 	let random = readfile('/proc/sys/kernel/random/uuid');
 	let id = replace(trim(random || ''), /-/g, '');
 	if (!match(id, /^[a-f0-9]{32}$/)) die('无法创建配置任务');
 	let t = { id: id, owner: owner, boot: boot_id(), state: 'pending', deadline: uptime() + timeout,
-		reload: kind, files: {} };
-	for (let name in packages) t.files[name] = readfile('/etc/config/' + name) || '';
+		reload: kind, files: {}, modes: {}, absent: [], extraSnapshots: {} };
+	for (let name in packages) {
+		if (!match(name,PACKAGES)) die('无效配置包');
+		let path='/etc/config/'+name, info=stat(path);
+		if (!info) push(t.absent,name);
+		t.files[name] = readfile(path) || '';
+		t.modes[name] = info ? info.mode & 0777 : 0600;
+	}
+	for (let path in extra_paths || []) {
+		if (!snapshot_path(path)) die('无效配置备份路径');
+		let info=stat(path);
+		t.extraSnapshots[path]={exists:!!info,data:readfile(path)||'',mode:info?info.mode & 0777:0600};
+	}
 	store(PENDING, t);
 	store(task_file(id), { id: id, owner: owner, state: 'pending', deadline: t.deadline });
 	return t;
