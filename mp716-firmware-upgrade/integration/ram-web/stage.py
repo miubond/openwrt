@@ -59,6 +59,16 @@ def stage(
     gateway.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("httpd.uc"), gateway)
     gateway.chmod(0o644)
+    for name in ("admin.uc", "admin-state.uc", "admin-tick.uc"):
+        shutil.copyfile(Path(__file__).with_name(name), gateway.with_name(name))
+    init = root / "etc/init.d/mp716-admin"
+    init.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(Path(__file__).with_name("mp716-admin.init"), init)
+    init.chmod(0o755)
+    defaults = root / "etc/uci-defaults/98-mp716-admin"
+    defaults.parent.mkdir(parents=True, exist_ok=True)
+    defaults.write_text("#!/bin/sh\n/etc/init.d/mp716-admin enable\n", encoding="ascii")
+    defaults.chmod(0o755)
 
 
 if __name__ == "__main__":

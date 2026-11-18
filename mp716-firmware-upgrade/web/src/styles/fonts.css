@@ -1,0 +1,36 @@
+/**
+ * 字体对齐 duoduoyun admin：
+ * HarmonyOS Sans SC 优先，Noto Sans SC / PingFang / YaHei 回退。
+ */
+:root {
+  --font-family-app:
+    'HarmonyOS Sans SC', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', '微软雅黑', system-ui,
+    sans-serif;
+  --font-family-mono: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  --font-family: var(--font-family-app);
+  --font-family-system: var(--font-family-app);
+}
+
+html,
+body,
+#app {
+  font-family: var(--font-family-system) !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+optgroup,
+select,
+textarea {
+  font-family: var(--font-family-system) !important;
+}
+
+code,
+pre,
+.font-mono {
+  font-family: var(--font-family-mono) !important;
+}

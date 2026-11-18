@@ -1,12 +1,61 @@
 <!doctype html>
 <html lang="zh-CN">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MP716 固件管理</title>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5"
+    />
+    <meta name="color-scheme" content="light" />
+    <title>MP716 网络管理系统</title>
+    <script>
+      ;(function () {
+        try {
+          var t = localStorage.getItem('mp716.theme')
+          if (t !== 'dark' && t !== 'light') t = 'light'
+          document.documentElement.dataset.theme = t
+          document.documentElement.classList.toggle('dark', t === 'dark')
+          document.documentElement.style.colorScheme = t
+          var meta = document.querySelector('meta[name="color-scheme"]')
+          if (meta) meta.setAttribute('content', t)
+
+          var l = localStorage.getItem('mp716.locale')
+          if (l !== 'en' && l !== 'zh-TW' && l !== 'zh-CN') l = 'zh-CN'
+          document.documentElement.lang = l
+        } catch (e) {}
+      })()
+    </script>
+    <!-- mp716:cdn-fonts:start — 仅 dev；生产构建会移除此段，使用 fonts.css 系统回退 -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/harmonyos-sans-sc-webfont-splitted@1.1.0/dist/Regular.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/harmonyos-sans-sc-webfont-splitted@1.1.0/dist/Medium.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/harmonyos-sans-sc-webfont-splitted@1.1.0/dist/Bold.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5.2.5/chinese-simplified-400.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5.2.5/chinese-simplified-500.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5.2.5/chinese-simplified-600.css"
+    />
+    <!-- mp716:cdn-fonts:end -->
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

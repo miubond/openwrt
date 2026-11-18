@@ -1,10 +1,41 @@
 {
-  "name": "mp716-firmware-web",
-  "version": "0.1.0",
+  "name": "mp716-web",
   "private": true,
+  "version": "1.0.2",
   "type": "module",
-  "engines": { "node": "^20.19.0 || >=22.12.0" },
-  "scripts": { "build": "vite build" },
-  "dependencies": { "vue": "3.5.45" },
-  "devDependencies": { "@vitejs/plugin-vue": "6.0.10", "vite": "8.3.8" }
+  "scripts": {
+    "dev": "vite --mode development",
+    "build": "vue-tsc -b && vite build --config vite.config.ts --mode production",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc -b --pretty false",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.72.0",
+    "pinia": "^4.1.0",
+    "vue": "^3.5.44",
+    "vue-i18n": "^11.4.18",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/node": "^24.19.2",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "@vue/test-utils": "^2.5.1",
+    "@vue/tsconfig": "^0.9.1",
+    "eslint": "^10.14.0",
+    "jsdom": "^31.0.0",
+    "playwright": "^1.65.0",
+    "sass": "^1.108.2",
+    "tailwindcss": "^4.3.5",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0",
+    "vue-tsc": "^3.3.14"
+  }
 }

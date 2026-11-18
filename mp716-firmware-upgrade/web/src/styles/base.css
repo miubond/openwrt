@@ -1,0 +1,244 @@
+@import './tokens.css';
+@import './fonts.css';
+@import './typography.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  color: var(--color-text);
+  background: var(--color-bg);
+  overflow-x: hidden;
+}
+
+#app {
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+/* 全局滚动条：细滑块、无三角按钮；默认淡显，悬停更清晰 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-muted) 20%, transparent) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button:start:decrement,
+*::-webkit-scrollbar-button:end:increment,
+*::-webkit-scrollbar-button:vertical:start:decrement,
+*::-webkit-scrollbar-button:vertical:end:increment,
+*::-webkit-scrollbar-button:horizontal:start:decrement,
+*::-webkit-scrollbar-button:horizontal:end:increment {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--color-muted) 35%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--color-muted) 55%, transparent);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--color-muted) 75%, transparent);
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+p {
+  margin: 0 0 12px;
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+}
+
+.pill.ok {
+  background: var(--color-success-soft);
+  color: #00801c;
+}
+
+.pill.off {
+  background: var(--color-bg-muted);
+  color: var(--color-muted);
+}
+
+.pill.warn {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.table th {
+  color: var(--color-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  background: var(--color-table-head);
+}
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.table-wrap .table {
+  min-width: 520px;
+}
+
+.table tr:hover td {
+  background: var(--color-row-hover);
+}
+
+.table tr.active td {
+  background: var(--color-primary-soft);
+}
+
+.table td {
+  color: var(--color-text);
+}
+
+.link-btn {
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  padding: 0;
+  margin-right: 12px;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+}
+
+.link-btn.danger {
+  color: var(--color-danger);
+}
+
+@media (max-width: 1100px) {
+  .grid-3,
+  .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .grid-2,
+  .grid-3,
+  .grid-4 {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .table th,
+  .table td {
+    padding: 10px 8px;
+    font-size: var(--fs-sm);
+  }
+}
+
+/* H5 / 小屏：避免 iOS 输入框聚焦自动放大 */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, var(--fs-base));
+  }
+
+  .table th,
+  .table td {
+    padding: 10px 8px;
+    font-size: var(--fs-xs);
+  }
+}

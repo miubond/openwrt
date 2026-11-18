@@ -4,6 +4,7 @@
 import { connect } from 'ubus';
 import { popen, stdin } from 'fs';
 import { cursor } from 'uci';
+import { route_admin } from '/usr/share/mp716/admin.uc';
 
 function reply(status, body) {
 	printf('Status: %d %s\r\nContent-Type: application/json\r\n\r\n%J\n',
@@ -99,10 +100,23 @@ function main() {
 			hardwareValidated: false, flashUpgradeEnabled: false });
 	}
 	if (method == 'GET' && path == '/cgi-bin/mp716/system/firmware')
-		return ok({ currentVersion: 'OpenWrt test', buildDate: '', hardware: 'MP716',
-			canUpgrade: false, flashUpgradeEnabled: false });
+		return ok({ currentVersion: '1.0.2', buildDate: '', hardware: 'MP716',
+			canUpgrade: false, flashUpgradeEnabled: false, maxBytes: 8060928, maxSizeLabel: '8M', validationOnly: true });
 	if (method == 'POST' && path == '/cgi-bin/mp716/system/firmware-package/verify')
 		return verify();
+	let body = {};
+	if (method == 'POST') {
+		let size = int(getenv('CONTENT_LENGTH') || '0');
+		if (size < 0 || size > 16384) return fail(400, 'VALIDATION', '请求内容过大');
+		try { body = size ? json(stdin.read(size)) : {}; }
+		catch (e) { return fail(400, 'VALIDATION', '无效的 JSON 请求'); }
+		if (type(body) != 'object') return fail(400, 'VALIDATION', '无效的请求对象');
+	}
+	try {
+		let result = route_admin(ubus, method, substr(path, length('/cgi-bin/mp716/')), body, token);
+		if (result?.error) return fail(result.error == 'DEVICE_BUSY' ? 409 : 400, result.error, result.message);
+		if (result != null) return ok(result.data);
+	} catch (e) { return fail(500, 'INTERNAL', '设备接口执行失败', { reason: e.message || string(e) }); }
 	return fail(404, 'NOT_IMPLEMENTED', '此接口在测试固件中不可用');
 }
 

@@ -1,0 +1,77 @@
+:root {
+  --color-header: #0a1f44;
+  --color-header-deep: #071633;
+  --color-primary: #1677ff;
+  --color-primary-hover: #0f66e0;
+  --color-primary-soft: #e8f3ff;
+  --color-bg: #f5f7fa;
+  --color-bg-soft: #f7f8fa;
+  --color-bg-muted: #f2f3f5;
+  --color-surface: #ffffff;
+  --color-title: #1f2329;
+  --color-text: #4e5969;
+  --color-muted: #86909c;
+  --color-border: #e5e6eb;
+  --color-success: #00b42a;
+  --color-success-soft: #e8ffea;
+  --color-warning: #ff7d00;
+  --color-warning-soft: #fff7e8;
+  --color-danger: #f53f3f;
+  --color-danger-soft: #ffece8;
+  --color-wan: #1677ff;
+  --color-lan: #00b42a;
+  --color-table-head: #fafbfc;
+  --color-row-hover: #f7faff;
+  --color-skel: #e8ebf0;
+  --color-skel-highlight: #f4f6f8;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 16px rgba(15, 23, 42, 0.04);
+  --shadow-menu: 0 8px 24px rgba(15, 23, 42, 0.12);
+  --radius: 10px;
+  --radius-sm: 6px;
+  --font:
+    'HarmonyOS Sans SC', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', '微软雅黑', system-ui,
+    sans-serif;
+  --header-height: 64px;
+  --subnav-width: 220px;
+  --layout-max-width: 1400px;
+  --z-modal: 300;
+  --z-toast: 400;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --touch-min: 44px;
+  --bp-tablet: 960px;
+  --bp-mobile: 640px;
+}
+
+html.dark,
+html[data-theme='dark'] {
+  --color-header: #0b1220;
+  --color-header-deep: #060b16;
+  --color-primary: #3b82f6;
+  --color-primary-hover: #60a5fa;
+  --color-primary-soft: rgba(59, 130, 246, 0.18);
+  --color-bg: #0b1220;
+  --color-bg-soft: #111827;
+  --color-bg-muted: #1f2937;
+  --color-surface: #111827;
+  --color-title: #f3f4f6;
+  --color-text: #d1d5db;
+  --color-muted: #9ca3af;
+  --color-border: #243044;
+  --color-success: #22c55e;
+  --color-success-soft: rgba(34, 197, 94, 0.16);
+  --color-warning: #f59e0b;
+  --color-warning-soft: rgba(245, 158, 11, 0.16);
+  --color-danger: #f87171;
+  --color-danger-soft: rgba(248, 113, 113, 0.16);
+  --color-wan: #60a5fa;
+  --color-lan: #34d399;
+  --color-table-head: #0f172a;
+  --color-row-hover: rgba(59, 130, 246, 0.1);
+  --color-skel: #1a2333;
+  --color-skel-highlight: #2a3548;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-menu: 0 10px 28px rgba(0, 0, 0, 0.45);
+}

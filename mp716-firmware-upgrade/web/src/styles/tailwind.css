@@ -1,0 +1,36 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Tailwind 颜色映射到 tokens.css 中的语义变量，
+ * 以便 html.dark 切换时自动生效。
+ */
+@theme inline {
+  --font-sans:
+    'HarmonyOS Sans SC', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', '微软雅黑', system-ui,
+    sans-serif;
+  --font-mono: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+
+  --color-brand: var(--color-primary);
+  --color-brand-hover: var(--color-primary-hover);
+  --color-brand-soft: var(--color-primary-soft);
+  --color-page: var(--color-bg);
+  --color-ink: var(--color-title);
+  --color-body: var(--color-text);
+  --color-subtle: var(--color-muted);
+  --color-line: var(--color-border);
+  --color-ok: var(--color-success);
+  --color-ok-soft: var(--color-success-soft);
+  --color-warn: var(--color-warning);
+  --color-danger: var(--color-danger);
+  --color-panel: var(--color-surface);
+}
