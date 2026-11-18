@@ -17,7 +17,7 @@ import { useToastStore } from '@/stores/toast'
 const { t } = useI18n()
 const toast = useToastStore()
 const isNative = import.meta.env.VITE_ROUTER_ADAPTER === 'device'
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const uploading = ref(false)
@@ -79,7 +79,7 @@ async function upload(kind: 'config' | 'cert') {
     const result = unwrap(await getRouterApi().uploadOpenVpn(file, kind))
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     if (kind === 'config') form.value.configUploaded = true
-    toast.success(kind === 'config' ? t('vpn.configUploaded') : t('vpn.certUploaded'))
+    notifySaved(result, kind === 'config' ? 'vpn.configUploaded' : 'vpn.certUploaded')
   } catch (e) {
     toast.error(formatApiError(e, t))
   } finally {
@@ -91,7 +91,7 @@ async function save() {
   saving.value = true
   try {
     const result = unwrap(await getRouterApi().updateOpenVpn({ ...form.value }))
-    toast.success(t('vpn.openVpnApplied'))
+    notifySaved(result, 'vpn.openVpnApplied')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {

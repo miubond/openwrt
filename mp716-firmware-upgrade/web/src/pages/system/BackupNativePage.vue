@@ -10,7 +10,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm()
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm()
 const uploading = ref(false)
 const fileName = ref('')
 const file = ref<File | null>(null)
@@ -59,7 +59,7 @@ async function upload() {
   try {
     const result = unwrap(await getRouterApi().restoreConfig(file.value))
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
-    toast.success(t('sysBackup.importOk'))
+    notifySaved(result, 'sysBackup.importOk')
     file.value = null
     fileName.value = ''
     if (fileInput.value) fileInput.value.value = ''

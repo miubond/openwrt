@@ -4,6 +4,14 @@
 
 2026-11-18 更新：经设备所有者明确授权，GitHub #44236439754 的 1.0.2 sysupgrade 镜像已在这一台 MP716 上写入并重启，确认 Linux 6.12.112、`yunxm,mp716` 和版本配置 1.0.2。原 Wi-Fi 名称/密码、管理地址 192.168.199.1 和管理员密码已迁移。有线、Wi-Fi 的后台、DNS、经 WAN/NAT 的公网访问实测通过，Bootloader/Config/Factory 读回与刷前逐字节一致。该记录是单机基础启动与网络测试，不改变全部镜像的 UNVERIFIED 或生产在线升级关闭状态；RAM 启动、恢复、GPIO、逐口编号和长期稳定性仍待验收。详见 [单机测试记录](mp716-1.0.2-device-test.md)。
 
+## 1.0.5 软件候选与验证边界
+
+1.0.5 集成以 `D:\goweb\src\openwrt_system` 为主源码的 Web 0.2.0，增加原生系统、VPN、诊断服务及异步配置应用/确认/回滚。现机仍运行 1.0.3；本轮仅在 `/tmp` 的独立配置夹具内测试。网络重载、无线重载、VPN 守护进程、时钟设置、重启和恢复出厂命令均不对生产环境执行。旧主机缺少 BusyBox timeout 时，真实 worker 测试使用只允许私有假服务的临时兼容脚本；该脚本不进入固件，不能用其结果宣称候选镜像的 timeout 已完成实机验收。
+
+固件包含 PPTP/L2TP、OpenVPN TUN 与 L2TP/IPSec 的依赖和默认关闭的托管服务；还须分别验证真实 PPP、XFRM、证书、远端认证及隧道互通。未检测到可验证的蜂窝调制解调器，因此不声明支持 4G/APN。新配置的 11B、原厂私有无线参数、可选 MPPE 和 OpenVPN TAP 不作为已实现功能。交换机外壳端口顺序仍未确认。
+
+同次 CI 的 LAN 与 RAM 候选均内置该次一次性测试签名的公钥，用于离线包验证；私钥不交付。保留原签名格式，`platform=unconfirmed`、`flash-gate=closed`，网页只开放上传并校验。编译通过、接口夹具通过与固件启动/网络/恢复验收分别记录，不能互相替代。
+
 ## 源码和独立机型
 
 - 上游为 OpenWrt 官方 `v25.12.6`，固定提交 `64900e756efa667774214f9c6b17c113222e01f7`。目标为 `ramips/mt76x8`，Linux 内核和 SoC 定义取自该提交。[官方标签](https://github.com/openwrt/openwrt/tree/v25.12.6)
@@ -20,7 +28,7 @@
 | 以太网 | 原厂只读审计确认 LAN `eth0.1` / VLAN 1，成员 0、1、2、3、5、CPU 6；WAN `eth0.2` / VLAN 2，成员 4、CPU 6，CPU 带标签。1.0.2 候选按此生成 swconfig，LAN/WAN MAC 为 Factory 偏移 4 的基础 MAC 加 2/3。 | 验证新内核驱动、VLAN 隔离、DHCP WAN、实际吞吐；逐口对应外壳 LAN1–LAN4 标签。原厂已测记录不等于候选驱动验证。 |
 | 2.4 GHz Wi-Fi | 原厂接口为 `ra0`。候选 DTS 启用 WMAC，使用 Factory 偏移 0 的 1024 字节 EEPROM，并包含 `kmod-mt7603` 和 `wpad-basic-mbedtls`。 | 验证驱动探测、MAC、射频校准、AP 启动、密码认证和管理页访问。驱动支持已配置，AP 仍需设备自己的 SSID、密钥和区域设置。 |
 | GPIO | 候选 DTS 禁用 GPIO，无板级按键或 LED 复用配置。 | 实测 GPIO 编号、极性、复用，以及按钮和指示灯行为。 |
-| Vue 管理后台 | 镜像包含 Vue 管理页面、HTTP 服务和签名校验模块。RAM Web 镜像只用于实验室验证。LAN 候选不内置 RAM 测试公钥。 | 在 MP716 上 RAM 启动后确认管理页可达，用独立测试包验证上传、签名检查和错误处理。 |
+| Vue 管理后台 | 镜像包含完整 Vue 管理页面、HTTP 服务和签名校验模块。同次 CI 的 LAN/RAM 镜像使用相同的一次性测试公钥。 | 分别验证新镜像启动、页面可达、原生接口、上传签名和错误处理；已有版本的结果不能代替新镜像验收。 |
 | 升级和重启 | 构建阶段校验原生 sysupgrade 元数据、SHA-256 和测试容器签名，使用主机模拟验证暂存及重启核验。设备配置默认 `platform=unconfirmed`、`flash-gate=closed`。 | 从 RAM 启动后运行 `sysupgrade -T`。真机写入、恢复、重启和在线升级另行验收。 |
 
 ## Flash 边界

@@ -333,7 +333,7 @@ export class DeviceRouterAdapter implements RouterAPI {
     return this.call<ConfigApplyResult>('system/logs', { enabled })
   }
   clearSyslog() {
-    return this.call<null>('system/logs/clear')
+    return this.call<null>('system/logs/clear', {})
   }
   backupConfig() {
     return this.call<BackupResult>('system/backup', {})

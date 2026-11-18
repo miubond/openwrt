@@ -28,7 +28,7 @@ function poolLimitFromIps(startIp: string, endIp: string): number {
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const savingStatic = ref(false)
@@ -98,7 +98,7 @@ async function save() {
   saving.value = true
   try {
     const result = unwrap(await getRouterApi().updateDhcpConfig(toDhcpConfig()))
-    toast.success(t('common.configApplied'))
+    notifySaved(result, 'common.configApplied')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load(true)
   } catch (e) {
@@ -163,7 +163,7 @@ async function commitStatic(next: StaticDhcpBinding[]) {
     const result = unwrap(await getRouterApi().updateDhcpStaticBindings(next))
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     staticBindings.value = next
-    toast.success(t('dhcp.staticSaved'))
+    notifySaved(result, 'dhcp.staticSaved')
     closeAdd()
   } catch (e) {
     toast.error(formatApiError(e, t))

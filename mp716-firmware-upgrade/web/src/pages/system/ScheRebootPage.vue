@@ -15,7 +15,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const clock = ref(0)
@@ -157,7 +157,7 @@ async function save() {
   saving.value = true
   try {
     const result = unwrap(await getRouterApi().updateScheReboot({ ...form }))
-    toast.success(t('sysScheReboot.applied'))
+    notifySaved(result, 'sysScheReboot.applied')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {

@@ -359,6 +359,8 @@ export default {
     limited: '此功能受硬體／韌體能力限制，目前版本僅提供入口預留。',
   },
   apply: {
+    savedApplying: '設定已儲存，正在套用；請等待裝置確認結果。',
+    savedAwaitingConfirm: '設定已套用，請確認保留；確認前仍可能自動還原。',
     inProgressTitle: '正在套用設定',
     inProgressDesc: '裝置正在套用服務，完成後才能確認。',
     rollingBackTitle: '正在還原設定',

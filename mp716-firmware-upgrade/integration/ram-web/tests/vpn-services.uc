@@ -1,6 +1,6 @@
 // Dependency/ownership/procd readiness checks with synthetic process records.
 import { defaults, VPN_KINDS } from '../vpn-config.uc';
-import { service_requirements, validate_service_ownership, vpn_service_health } from '../vpn-services.uc';
+import { service_requirements, missing_service_dependencies, validate_service_ownership, vpn_service_health } from '../vpn-services.uc';
 let passed=[];
 function models(){let m={};for(let name in VPN_KINDS)m[name]=defaults(name);return m;}
 function assert(ok,name){if(!ok)die(name);push(passed,name);}
@@ -8,9 +8,13 @@ function rejects(name,fn){let failed=false;try{fn();}catch(e){failed=true;}asser
 let m=models();
 assert(!length(service_requirements(m)),'disabled_models_need_no_daemon');
 m.pptp.enabled=true;
-assert(index(service_requirements(m),'/usr/sbin/pppd')>=0 && index(service_requirements(m),'/lib/netifd/proto/pptp.sh')>=0,'client_requires_pppd_and_netifd_proto');
+assert(index(service_requirements(m),'/usr/sbin/pppd')>=0 && index(service_requirements(m),'/lib/netifd/proto/ppp.sh')>=0 && index(service_requirements(m),'/lib/netifd/proto/pptp.sh')<0,'client_uses_pinned_ppp_protocol_path');
+assert(!length(missing_service_dependencies(m,()=>true,pattern=>pattern=='/usr/lib/pppd/*/pptp.so'?['/usr/lib/pppd/2.5.2/pptp.so']:[])),'versioned_pptp_plugin_satisfies_dependencies');
+assert(missing_service_dependencies(m,()=>true,()=>[])[0]=='/usr/lib/pppd/*/pptp.so','pppd_without_pptp_plugin_is_rejected');
+assert(index(missing_service_dependencies(m,path=>path!='/lib/netifd/proto/ppp.sh',()=>['plugin']),'/lib/netifd/proto/ppp.sh')>=0,'missing_ppp_protocol_is_rejected');
 m=models();m.xl2tp.enabled=true;m.xl2tp.ipsecKey='secret';
 assert(index(service_requirements(m),'/usr/lib/ipsec/starter')>=0 && index(service_requirements(m),'/usr/sbin/xl2tpd')>=0,'ipsec_client_requires_both_daemons');
+assert(missing_service_dependencies(m,()=>true,()=>[])[0]=='/usr/lib/pppd/*/pppol2tp.so','l2tp_requires_kernel_ppp_plugin');
 rejects('unmanaged_l2tp_refused',()=>validate_service_ownership(m,[{cmd:'/usr/sbin/xl2tpd\x00-D\x00-c\x00/etc/xl2tpd/xl2tpd.conf'}]));
 assert(validate_service_ownership(m,[{cmd:'/usr/sbin/xl2tpd\x00-D\x00-c\x00/var/run/mp716-vpn/xl2tpd.conf'}]),'managed_l2tp_allowed');
 rejects('unmanaged_ipsec_refused',()=>validate_service_ownership(m,[{cmd:'/usr/lib/ipsec/charon\x00',environ:'PATH=/usr/bin\x00'}]));

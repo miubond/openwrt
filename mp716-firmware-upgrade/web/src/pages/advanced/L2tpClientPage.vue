@@ -15,7 +15,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const form = reactive<L2tpClientConfig>({
@@ -90,7 +90,7 @@ async function save() {
   saving.value = true
   try {
     const result = unwrap(await getRouterApi().updateL2tpClient({ ...form }))
-    toast.success(t('vpn.l2tpClientApplied'))
+    notifySaved(result, 'vpn.l2tpClientApplied')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {

@@ -361,6 +361,8 @@ export default {
     limited: '该功能受硬件/固件能力限制，当前版本仅提供入口预留。',
   },
   apply: {
+    savedApplying: '配置已保存，正在应用；请等待设备确认应用结果。',
+    savedAwaitingConfirm: '配置已应用，请确认保留；确认前仍可能自动回滚。',
     inProgressTitle: '正在应用配置',
     inProgressDesc: '设备正在应用服务，完成后才能确认。',
     rollingBackTitle: '正在恢复配置',

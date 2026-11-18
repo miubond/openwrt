@@ -360,6 +360,8 @@ export default {
     limited: 'Limited by hardware/firmware capability. Entry is reserved in this build.',
   },
   apply: {
+    savedApplying: 'Configuration saved and applying. Wait for the device result.',
+    savedAwaitingConfirm: 'Configuration applied and awaiting confirmation. Automatic rollback remains active.',
     inProgressTitle: 'Applying configuration',
     inProgressDesc: 'Wait for the device to apply its services before confirming.',
     rollingBackTitle: 'Restoring configuration',

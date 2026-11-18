@@ -1,4 +1,5 @@
 [
+  "GET auth/prelogin",
   "GET home/physical-ports",
   "GET hosts/connected",
   "GET hosts/device-acl",
@@ -9,10 +10,12 @@
   "GET network/wan/config",
   "GET network/wan/status",
   "GET system/capabilities",
+  "GET system/config-task/:id",
   "GET system/device",
   "GET system/firmware",
   "GET system/info",
   "GET system/logs",
+  "GET system/ping",
   "GET system/sche-reboot",
   "GET system/status",
   "GET system/time",

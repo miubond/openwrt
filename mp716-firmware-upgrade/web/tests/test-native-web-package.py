@@ -32,6 +32,21 @@ class WebPackageTests(unittest.TestCase):
   with self.assertRaisesRegex(ValueError,'API contract'):m.verify(p,{'apiContract':'factory','routes':[]})
   with ZipFile(p,'a') as z:z.writestr('web/../escape',b'bad')
   with self.assertRaisesRegex(ValueError,'Unsafe archive path'):m.verify(p)
+ def assert_essential_route_required(self,route):
+  contract=json.loads((Path(__file__).parents[1]/'native-web-contract.json').read_text())
+  self.assertIn(route,contract['required_routes'])
+  (self.root/'native-web-contract.json').write_text(json.dumps(contract))
+  package=self.package();all_routes=contract['required_routes']
+  m.verify(package,{'apiContract':m.API,'routes':all_routes})
+  with self.assertRaises(ValueError) as failure:
+   m.verify(package,{'apiContract':m.API,'routes':[entry for entry in all_routes if entry!=route]})
+  self.assertIn('missing routes',str(failure.exception));self.assertIn(route,str(failure.exception))
+ def test_missing_prelogin_route_is_rejected_before_deploy(self):
+  self.assert_essential_route_required('GET auth/prelogin')
+ def test_missing_session_probe_route_is_rejected_before_deploy(self):
+  self.assert_essential_route_required('GET system/ping')
+ def test_missing_task_poll_route_is_rejected_before_deploy(self):
+  self.assert_essential_route_required('GET system/config-task/:id')
  def test_factory_bundle_is_rejected(self):
   (self.dist/'app.js').write_text('const url="/cgi-bin/cgi_huayi.cgi";')
   with self.assertRaisesRegex(ValueError,'Factory or mock'):self.package()

@@ -18,7 +18,7 @@ const { t } = useI18n()
 const toast = useToastStore()
 const loading = ref(true)
 const saving = ref(false)
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const editorOpen = ref(false)
 const deleteIndex = ref(-1)
 const showPassword = ref(false)
@@ -102,7 +102,7 @@ async function persist(users: VpnUser[]) {
     config.value = next
     editorOpen.value = false
     deleteIndex.value = -1
-    toast.success(t('vpn.userSaved'))
+    notifySaved(result, 'vpn.userSaved')
     await load(true)
   } catch (e) {
     toast.error(formatApiError(e, t))

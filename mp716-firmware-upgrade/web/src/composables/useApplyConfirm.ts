@@ -81,18 +81,22 @@ export function useApplyConfirm(onRollback?: () => void) {
       } finally { if (pollingGeneration === current) pollingGeneration = undefined }
     }, 1000)
   }
-  async function confirm() {
-    if (!pending.value || !canConfirm.value) return
+  async function confirm(): Promise<ConfigTaskStatus['state'] | null> {
+    if (!pending.value || !canConfirm.value) return null
     const current = generation, id = pending.value.applyId
     ++operation
     requesting.value = true
     try {
       const status = unwrap(await getRouterApi().confirmConfigTask(id))
-      if (current !== generation) return
+      if (current !== generation) return null
       consume(status)
-      if (status.state !== 'confirmed' && status.state !== 'failed')
+      if (status.state === 'pending')
         toast.warning(status.message || t('apply.inProgressDesc'))
-    } catch (e) { if (current === generation) toast.error(formatApiError(e, t)) }
+      return status.state
+    } catch (e) {
+      if (current === generation) toast.error(formatApiError(e, t))
+      return null
+    }
     finally { if (current === generation) requesting.value = false }
   }
   async function cancel() {
@@ -110,6 +114,13 @@ export function useApplyConfirm(onRollback?: () => void) {
     } catch (e) { if (current === generation) toast.error(formatApiError(e, t)) }
     finally { if (current === generation) requesting.value = false }
   }
+  function notifySaved(result: ConfigApplyResult, legacyKey: string) {
+    if (result.phase === 'prepared' || result.phase === 'applying') toast.info(t('apply.savedApplying'))
+    else if (result.phase === 'applied' && result.rollbackSec > 0) toast.info(t('apply.savedAwaitingConfirm'))
+    else if (result.phase === 'rolling_back') toast.warning(t('apply.rollingBackDesc'))
+    else if (result.phase === 'failed') toast.error(t('apply.failedDesc'))
+    else toast.success(t(legacyKey))
+  }
   onUnmounted(() => { ++generation; ++operation; clearTimer() })
-  return { pending, remaining, applying, canConfirm, begin, confirm, cancel }
+  return { pending, remaining, applying, canConfirm, begin, confirm, cancel, notifySaved }
 }

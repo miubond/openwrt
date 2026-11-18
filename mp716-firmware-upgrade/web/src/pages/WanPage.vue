@@ -113,7 +113,7 @@ function formToWanConfig(form: WanPageForm, dns: string[]): WanConfig {
 }
 
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const helpOpen = ref(false)
@@ -229,7 +229,7 @@ async function save() {
         : form.dns
     form.dns = dns
     const result = unwrap(await getRouterApi().updateWanConfig(formToWanConfig(form, dns)))
-    toast.success(t('wan.configSubmitted'))
+    notifySaved(result, 'wan.configSubmitted')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
   } catch (e) {
     toast.error(formatApiError(e, t))

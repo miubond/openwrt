@@ -16,7 +16,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const savingMode = ref(false)
 const savingList = ref(false)
@@ -77,7 +77,7 @@ async function saveMode() {
       }),
     )
     savedMode.value = mode.value
-    toast.success(t('wifiMac.appliedMode'))
+    notifySaved(result, 'wifiMac.appliedMode')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {
@@ -98,7 +98,7 @@ async function commitList(next: WirelessAclEntry[]) {
     )
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     rows.value = next
-    toast.success(t('wifiMac.appliedList'))
+    notifySaved(result, 'wifiMac.appliedList')
     closeAdd()
   } catch (e) {
     toast.error(formatApiError(e, t))

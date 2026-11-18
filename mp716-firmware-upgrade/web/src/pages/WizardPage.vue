@@ -19,7 +19,7 @@ const router = useRouter()
 const { t } = useI18n()
 const isNative = import.meta.env.VITE_ROUTER_ADAPTER === 'device'
 const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
-async function confirmWizard() { await confirm(); if (!pending.value) await goHome() }
+async function confirmWizard() { if (await confirm() === 'confirmed') await goHome() }
 const toast = useToastStore()
 const auth = useAuthStore()
 const loading = ref(true)
@@ -85,8 +85,12 @@ const wifi = reactive<QuickSettingWifi>({
 async function goHome() {
   try {
     unwrap(await getRouterApi().completeWizardFirstBoot())
-  } catch {
-    /* skip and go home */
+  } catch (e) {
+    if (isNative) {
+      toast.error(formatApiError(e, t))
+      return
+    }
+    /* Keep the original factory skip behavior. */
   }
   auth.markWizardComplete()
   await router.replace('/')

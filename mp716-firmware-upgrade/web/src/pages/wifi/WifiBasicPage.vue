@@ -16,7 +16,7 @@ import { useToastStore } from '@/stores/toast'
 const { t } = useI18n()
 const isNative = import.meta.env.VITE_ROUTER_ADAPTER === 'device'
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const showPassword = ref(false)
@@ -153,7 +153,7 @@ async function save() {
   saving.value = true
   try {
     const result = unwrap(await getRouterApi().updateWifiConfig(formToWifiConfig(form)))
-    toast.success(t('wifiBasic.saved'))
+    notifySaved(result, 'wifiBasic.saved')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
   } catch (e) {
     toast.error(formatApiError(e, t))

@@ -14,7 +14,7 @@ import { isIpv4 } from '@/utils/validate'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const form = reactive({ ip: '192.168.199.1', netmask: '255.255.255.0' })
@@ -43,7 +43,7 @@ async function save() {
     const next: LanConfig = { ...full, ipv4: form.ip, netmask: form.netmask }
     const result = unwrap(await getRouterApi().updateLanConfig(next))
     full = next
-    toast.success(t('common.configSubmitted'))
+    notifySaved(result, 'common.configSubmitted')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
   } catch (e) {
     toast.error(formatApiError(e, t))

@@ -18,7 +18,7 @@ const props = defineProps<{ kind: 'pptp' | 'l2tp' }>()
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const showAdvanced = ref(true)
@@ -89,7 +89,7 @@ async function save() {
     const result = unwrap(
       props.kind === 'pptp' ? await api.updatePptpServer({ ...form }) : await api.updateL2tpServer({ ...form }),
     )
-    toast.success(t('common.configApplied'))
+    notifySaved(result, 'common.configApplied')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
   } catch (e) {
     toast.error(formatApiError(e, t))

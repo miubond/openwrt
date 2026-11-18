@@ -7,7 +7,8 @@ export function service_requirements(m) {
 	for(let kind in ['pptp','pptpd','xl2tp','xl2tpd','openvpn']) {
 		let cfg=m[kind];if(!cfg?.enabled)continue;enabled=true;
 		if(kind!='openvpn')push(paths,'/usr/sbin/pppd');
-		if(kind=='pptp')push(paths,'/lib/netifd/proto/pptp.sh');
+		// The pinned OpenWrt PPP package registers PPTP in ppp.sh.
+		if(kind=='pptp')push(paths,'/lib/netifd/proto/ppp.sh','/etc/ppp/options.pptp');
 		if(kind=='pptpd')push(paths,'/usr/sbin/pptpd');
 		if(kind=='xl2tp'||kind=='xl2tpd')push(paths,'/usr/sbin/xl2tpd');
 		if(kind=='xl2tp')push(paths,'/lib/netifd/proto/l2tp.sh');
@@ -16,6 +17,18 @@ export function service_requirements(m) {
 	}
 	if(enabled)push(paths,'/etc/init.d/mp716-vpn','/usr/share/mp716/vpn-render.uc');
 	return paths;
+};
+export function missing_service_dependencies(m,exists,find) {
+	let missing=[];
+	for(let path in service_requirements(m))if(!exists(path))push(missing,path);
+	let plugins=[];
+	if(m.pptp?.enabled)push(plugins,'pptp');
+	if(m.xl2tp?.enabled||m.xl2tpd?.enabled)push(plugins,'pppol2tp');
+	for(let name in plugins) {
+		let pattern='/usr/lib/pppd/*/'+name+'.so';
+		if(!length(find(pattern)||[]))push(missing,pattern);
+	}
+	return missing;
 };
 export function validate_service_ownership(m,processes) {
 	for(let process in processes) {
@@ -30,9 +43,9 @@ export function validate_service_ownership(m,processes) {
 	return true;
 };
 export function check_vpn_services(m) {
-	let paths=service_requirements(m);
-	for(let path in paths)if(!stat(path))die('当前固件缺少 VPN 服务，请先安装配套固件: '+path);
-	if(!length(paths))return true;
+	let missing=missing_service_dependencies(m,stat,glob);
+	if(length(missing))die('当前固件缺少 VPN 服务，请先安装配套固件: '+missing[0]);
+	if(!length(service_requirements(m)))return true;
 	let processes=[];
 	for(let path in glob('/proc/[0-9]*/cmdline') || [])push(processes,{cmd:readfile(path)||'',environ:readfile(replace(path,/\/cmdline$/,'/environ'))||''});
 	return validate_service_ownership(m,processes);
