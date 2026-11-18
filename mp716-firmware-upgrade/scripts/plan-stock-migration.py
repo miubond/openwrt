@@ -117,6 +117,15 @@ def plan(configs):
     set_('dhcp.lan.start', start)
     set_('dhcp.lan.limit', end - start + 1)
     set_('dhcp.lan.leasetime', dhcp.get('leasetime', '7200'))
+    dnsmasq = [s['options'] for s in configs.get('dhcp', []) if s['type'] == 'dnsmasq']
+    if len(dnsmasq) > 1:
+        raise ValueError('Multiple dnsmasq instances need separate adaptation')
+    if dnsmasq:
+        for key in ('domainneeded', 'boguspriv', 'filterwin2k', 'localise_queries',
+                    'rebind_protection', 'rebind_localhost', 'local', 'domain',
+                    'expandhosts', 'nonegcache', 'authoritative', 'readethers', 'localservice'):
+            if key in dnsmasq[0]:
+                set_('dhcp.@dnsmasq[0].' + key, dnsmasq[0][key])
     hosts = [s['options'] for s in configs.get('dhcp', []) if s['type'] == 'host']
     for index, host in enumerate(hosts):
         if ipaddress.IPv4Address(host['ip']) not in subnet.network or host['ip'] == str(subnet.ip):
@@ -159,7 +168,7 @@ def plan(configs):
             set_('system.ntp.' + key, ntp[key])
     upnp = section(configs, 'upnpd', 'config')
     set_('upnpd.config.enabled', '1' if upnp.get('enable_upnp') == '1' or upnp.get('enable_natpmp') == '1' else '0')
-    for key in ('enable_upnp', 'enable_natpmp', 'secure_mode', 'log_output', 'port', 'download', 'upload'):
+    for key in ('enable_upnp', 'enable_natpmp', 'secure_mode', 'log_output', 'port', 'download', 'upload', 'uuid'):
         if key in upnp:
             set_('upnpd.config.' + key, upnp[key])
     set_('upnpd.config.external_iface', 'wan')
@@ -182,6 +191,10 @@ def plan(configs):
         for key, value in {'': 'rule', '.name': 'Stock-014-HTTP-management', '.src': 'wan',
                            '.proto': 'tcp', '.dest_port': '80', '.target': 'ACCEPT', '.family': 'ipv4'}.items():
             set_('firewall.mp716_stock_http' + key, value)
+    wanping = [s['options'] for s in legacy_fw if s['name'] == 'wanping']
+    if wanping and wanping[0].get('wanping_en') == '0':
+        # The fixed firewall4 defaults name their second rule Allow-Ping.
+        set_('firewall.@rule[1].enabled', '0')
     for package in ('network', 'dhcp', 'wireless', 'system', 'upnpd', 'firewall'):
         commands.append('commit ' + package)
     report = {'status': 'UNVERIFIED', 'wan_protocol': 'dhcp', 'wan_device': 'eth0.2',

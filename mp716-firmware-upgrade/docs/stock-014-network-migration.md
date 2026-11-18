@@ -36,6 +36,8 @@ python3 scripts/plan-stock-migration.py /private/backup-current.tar.gz --output 
 
 目前只转换实测的有线路由 + DHCP WAN 模式。检测到已启用的 VPN、QoS、DDNS、DMZ、端口转发、ACL 或不同 WAN 模式时拒绝生成，需补充适配。关闭的可选功能保留在原始备份，未宣称可用。原厂 WAN HTTP 管理若已开启，私有计划会保留 IPv4 TCP/80 例外；公共镜像保留上游 WAN 默认拒绝。
 
+DNS/DHCP 服务参数采用白名单转换，旧系统的解析文件路径不直接沿用。原厂关闭 WAN ping 时，私有计划会关闭固定 firewall4 默认的 `Allow-Ping` 规则；首次启动脚本先核对规则名称，避免规则顺序改变时误改其他策略。
+
 ## 构建与验证
 
 OpenWrt 使用固定提交的 `feeds.conf.default`，packages 固定为 `093d551675b1119a06ef224d419905e8d6b2af1a`。CI 显式校验 feed 提交与 `firewall4`、`miniupnpd-nftables`、`swconfig`、`dnsmasq` 配置及实际镜像内文件。[官方固定 feeds](https://github.com/openwrt/openwrt/blob/v25.12.6/feeds.conf.default)；[上游板级网络辅助函数](https://github.com/openwrt/openwrt/blob/v25.12.6/package/base-files/files/lib/functions/uci-defaults.sh)。

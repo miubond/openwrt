@@ -9,6 +9,7 @@ directory=/etc/mp716-migration
 [ "$(uci -q get network.lan.device)" = br-lan ]
 [ "$(uci -q get network.wan.device)" = eth0.2 ]
 [ -x /sbin/fw4 ] && [ -x /usr/sbin/miniupnpd ]
+[ "$(uci -q get firewall.@rule[1].name)" = Allow-Ping ]
 /sbin/wifi config
 [ "$(uci -q get wireless.radio0)" = wifi-device ]
 uci -q batch < "$directory/migration.uci"

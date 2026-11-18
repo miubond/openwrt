@@ -66,6 +66,8 @@ option ext_ports 0-65535
         'huayi_firewall': """config firewall remote
 option remote_enable 1
 option port 80
+config firewall wanping
+option wanping_en 0
 """,
         'openvpn': """package openvpn
 config openvpn unused
@@ -88,6 +90,7 @@ class StockMigrationTests(unittest.TestCase):
         self.assertEqual(values['wireless.default_radio0.key'], 'example-password')
         self.assertEqual(values['upnpd.config.enabled'], '1')
         self.assertEqual(values['firewall.mp716_stock_http.dest_port'], '80')
+        self.assertEqual(values['firewall.@rule[1].enabled'], '0')
         self.assertNotIn('example-password', str(report))
         self.assertFalse(report['configuration_applied'])
 
