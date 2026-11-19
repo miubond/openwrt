@@ -126,10 +126,12 @@ if [ -f "$tree/.config" ]; then
 	# staging_dir/host and staging_dir/toolchain-*.
 	make -C "$tree" clean
 fi
-# Drop generated profile files and host-side package state. In particular,
-# never carry a previous build's public key into a new image.
+# Drop target/profile state, including the previous test public key. Preserve
+# hostpkg for LAN -> RAM in this same pinned checkout/inner ABI key: it contains
+# host Python/tools, not target overlays. OpenWrt clean also preserves hostpkg.
+# The remote cache deliberately excludes hostpkg; it is not shared across jobs.
 rm -rf -- "$tree/files" "$tree/package/mp716-sysupgrade" \
-	"$tree/bin/targets/ramips/mt76x8" "$tree/build_dir/hostpkg" "$tree/staging_dir/hostpkg"
+	"$tree/bin/targets/ramips/mt76x8"
 git -C "$tree" restore -- target/linux/ramips/image/mt76x8.mk
 
 bash "$project/scripts/build-openwrt-test.sh" "$1" "$2" "$tree" "$3" "$4"

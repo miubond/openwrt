@@ -73,6 +73,9 @@ jobs:
             ~/.cache/mp716-firmware/*/openwrt/staging_dir/host
             ~/.cache/mp716-firmware/*/openwrt/staging_dir/toolchain-*
           key: ${{ runner.os }}-${{ runner.arch }}-mp716-toolchain-v2-${{ hashFiles('mp716-firmware-upgrade/config/openwrt.commit', 'mp716-firmware-upgrade/scripts/build-openwrt-test.sh', 'mp716-firmware-upgrade/scripts/build-openwrt-cached.sh') }}
+          # The wrapper recomputes the strict pin/host/toolchain-input inner key.
+          # An incompatible restored directory is ignored, never relabelled.
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-mp716-toolchain-v2-
 
       - name: Build and verify LAN and RAM images
         id: images

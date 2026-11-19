@@ -16,6 +16,7 @@ TIMEFORMAT='LAN sysupgrade elapsed: %3R s'
 { time MP716_TEST_PUBLIC_KEY="$PWD/build/ci-release/upgrade.pub" \
   bash scripts/build-openwrt-cached.sh --lan-candidate web/dist \
   build/target-device.profile build/target-images; } 2>&1 | tee build/ci-logs/sysupgrade.log
+grep -E '^(MP716 toolchain cache (hit|cold)|LAN sysupgrade elapsed:)' build/ci-logs/sysupgrade.log > build/target-images/build-timing.txt || true
 (cd build/target-images && sha256sum -c SHA256SUMS)
 python3 scripts/check-native-vpn-crypto.py build/target-images/openwrt.config \
   build/target-images/rootfs-files.txt --report build/target-images/vpn-crypto-report.json \
@@ -24,6 +25,7 @@ TIMEFORMAT='RAM initramfs elapsed: %3R s'
 { time MP716_TEST_PUBLIC_KEY="$PWD/build/ci-release/upgrade.pub" \
   bash scripts/build-openwrt-cached.sh --ram-web web/dist \
   build/ram-device.profile build/ram-images; } 2>&1 | tee build/ci-logs/initramfs.log
+grep -E '^(MP716 toolchain cache (hit|cold)|RAM initramfs elapsed:)' build/ci-logs/initramfs.log > build/ram-images/build-timing.txt || true
 (cd build/ram-images && sha256sum -c SHA256SUMS)
 python3 scripts/check-native-vpn-crypto.py build/ram-images/openwrt.config \
   build/ram-images/initramfs-files.txt --report build/ram-images/vpn-crypto-report.json \
