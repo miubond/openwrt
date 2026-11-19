@@ -17,11 +17,17 @@ TIMEFORMAT='LAN sysupgrade elapsed: %3R s'
   bash scripts/build-openwrt-cached.sh --lan-candidate web/dist \
   build/target-device.profile build/target-images; } 2>&1 | tee build/ci-logs/sysupgrade.log
 (cd build/target-images && sha256sum -c SHA256SUMS)
+python3 scripts/check-native-vpn-crypto.py build/target-images/openwrt.config \
+  build/target-images/rootfs-files.txt --report build/target-images/vpn-crypto-report.json \
+  2>&1 | tee build/ci-logs/sysupgrade-vpn-crypto.log
 TIMEFORMAT='RAM initramfs elapsed: %3R s'
 { time MP716_TEST_PUBLIC_KEY="$PWD/build/ci-release/upgrade.pub" \
   bash scripts/build-openwrt-cached.sh --ram-web web/dist \
   build/ram-device.profile build/ram-images; } 2>&1 | tee build/ci-logs/initramfs.log
 (cd build/ram-images && sha256sum -c SHA256SUMS)
+python3 scripts/check-native-vpn-crypto.py build/ram-images/openwrt.config \
+  build/ram-images/initramfs-files.txt --report build/ram-images/vpn-crypto-report.json \
+  2>&1 | tee build/ci-logs/initramfs-vpn-crypto.log
 set -- build/target-images/*-yunxm_mp716-squashfs-sysupgrade.bin
 test "$#" -eq 1
 cp "$1" build/payload.bin

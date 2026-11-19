@@ -95,7 +95,7 @@ def copy_image(target, kind, source, profile, openwrt_version, openwrt_commit):
         if item == "openwrt.config" or (source / item).is_file():
             shutil.copyfile(source / item, config_dir / item)
     for item in ("SHA256SUMS", "build-report.json", "sysupgrade-metadata.json", "rootfs-files.txt", "initramfs-files.txt",
-                 "original-sysupgrade.sha256", "ram-upgrade.pub", "sysupgrade-upgrade.pub"):
+                 "original-sysupgrade.sha256", "ram-upgrade.pub", "sysupgrade-upgrade.pub", "vpn-crypto-report.json"):
         if item == "build-report.json" or (source / item).is_file():
             shutil.copyfile(source / item, report_dir / item)
     if kind == "sysupgrade":

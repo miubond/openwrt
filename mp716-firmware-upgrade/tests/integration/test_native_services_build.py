@@ -10,7 +10,7 @@ class NativeServiceBuildTests(unittest.TestCase):
   (root/'include/rootfs.mk').write_text('if ! echo " $(3) "; then $$script enable; else $$script disable; fi')
   for name,call in m.CALLS.items():(root/name).write_text(call+'\n')
   strongswan=root/m.STRONGSWAN_MAKEFILE;strongswan.parent.mkdir(parents=True)
-  strongswan.write_text('PKG_VERSION:=6.0.7\nPKG_HASH:=e518e34e159514f4c6ba80d1f926cb151e0dd4e3a1d94213171234b8b9ae6f55\nPKG_BUILD_DEPENDS:=python3/host\n')
+  strongswan.write_text('PKG_VERSION:=6.0.7\nPKG_HASH:=e518e34e159514f4c6ba80d1f926cb151e0dd4e3a1d94213171234b8b9ae6f55\nPKG_BUILD_DEPENDS:=python3/host\n'+m.CRYPTO_DEPENDS_FROM)
   return root
  def test_only_image_delivery_calls_change_and_operation_is_idempotent(self):
   root=self.fixture();original=(root/'include/rootfs.mk').read_bytes();m.prepare(root);m.prepare(root)
@@ -18,6 +18,7 @@ class NativeServiceBuildTests(unittest.TestCase):
   self.assertEqual(original,(root/'include/rootfs.mk').read_bytes())
   body=(root/m.STRONGSWAN_MAKEFILE).read_text()
   self.assertEqual(body.count('PKG_BUILD_DEPENDS:=gmp python3/host\n'),1)
+  self.assertEqual(body.count('+kmod-crypto-sha256 +kmod-crypto-xcbc'),1)
   self.assertNotIn('CONFIG_PACKAGE_libgmp',body)
  def test_unexpected_pinned_call_fails_before_any_file_is_changed(self):
   root=self.fixture();original=(root/'package/Makefile').read_bytes();(root/'include/image.mk').write_text('unexpected')
@@ -37,3 +38,15 @@ class NativeServiceBuildTests(unittest.TestCase):
   root=self.fixture();config=root/'.config';config.write_text('CONFIG_PACKAGE_strongswan-mod-gmpdh=y\n# CONFIG_PACKAGE_libgmp is not set\n')
   original=config.read_bytes();m.prepare(root)
   self.assertEqual(config.read_bytes(),original)
+ def test_crypto_dependency_drift_does_not_partially_patch_source_or_rootfs(self):
+  root=self.fixture();path=root/m.STRONGSWAN_MAKEFILE
+  path.write_text(path.read_text().replace('+kmod-ipsec +kmod-ipsec4','+kmod-unreviewed +kmod-ipsec4'))
+  original={p:p.read_bytes() for p in root.rglob('*') if p.is_file()}
+  with self.assertRaisesRegex(ValueError,'strongswan crypto dependencies'):m.prepare(root)
+  for path,body in original.items():self.assertEqual(path.read_bytes(),body)
+ def test_existing_gmp_patch_can_receive_crypto_patch_idempotently(self):
+  root=self.fixture();path=root/m.STRONGSWAN_MAKEFILE
+  path.write_text(path.read_text().replace('PKG_BUILD_DEPENDS:=python3/host','PKG_BUILD_DEPENDS:=gmp python3/host'))
+  m.prepare(root);first=path.read_bytes();m.prepare(root)
+  self.assertEqual(first,path.read_bytes())
+  self.assertEqual(path.read_text().count('+kmod-crypto-sha256 +kmod-crypto-xcbc'),1)
