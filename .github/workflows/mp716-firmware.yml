@@ -61,10 +61,12 @@ jobs:
           node-version: '24'
 
       - name: Restore shared OpenWrt build cache
-        uses: actions/cache@v5
+        id: toolchain-cache
+        uses: actions/cache/restore@v5
         with:
           path: |
             ~/.cache/mp716-firmware/*/validated
+            ~/.cache/mp716-firmware/*/toolchain-verified
             ~/.cache/mp716-firmware/*/openwrt/dl
             ~/.cache/mp716-firmware/*/openwrt/build_dir/host
             ~/.cache/mp716-firmware/*/openwrt/build_dir/toolchain-*
@@ -73,7 +75,44 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-mp716-toolchain-v2-${{ hashFiles('mp716-firmware-upgrade/config/openwrt.commit', 'mp716-firmware-upgrade/scripts/build-openwrt-test.sh', 'mp716-firmware-upgrade/scripts/build-openwrt-cached.sh') }}
 
       - name: Build and verify LAN and RAM images
+        id: images
         run: bash scripts/build-ci-images.sh
+
+      - name: Check independently verified toolchain cache
+        id: toolchain-ready
+        if: ${{ always() && !cancelled() && steps.toolchain-cache.outcome == 'success' && steps.toolchain-cache.outputs.cache-hit != 'true' }}
+        env:
+          TOOLCHAIN_MARKER: ${{ steps.images.outputs.toolchain-cache-marker }}
+        run: |
+          set -euo pipefail
+          printf 'ready=false\n' >> "$GITHUB_OUTPUT"
+          base=$(getent passwd "$(id -u)" | cut -d: -f6)/.cache/mp716-firmware
+          [ -d "$base" ] || exit 0
+          base=$(cd "$base" && pwd -P)
+          marker=${TOOLCHAIN_MARKER:-}
+          [[ "$marker" == "$base/"*/toolchain-verified ]] || exit 0
+          [ -f "$marker" ] && [ ! -L "$marker" ] && [ -O "$marker" ] || exit 0
+          key=$(basename "$(dirname "$marker")")
+          [[ "$key" =~ ^[0-9a-f]{64}$ ]] || exit 0
+          grep -Fxq 'schema=1' "$marker" || exit 0
+          grep -Fxq "cache_key=$key" "$marker" || exit 0
+          grep -Fxq 'format=ELF32-LSB-MIPS' "$marker" || exit 0
+          printf 'ready=true\n' >> "$GITHUB_OUTPUT"
+
+      - name: Save verified toolchain even when a target image fails
+        if: ${{ always() && !cancelled() && steps.toolchain-cache.outputs.cache-hit != 'true' && steps.toolchain-ready.outputs.ready == 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ~/.cache/mp716-firmware/*/validated
+            ~/.cache/mp716-firmware/*/toolchain-verified
+            ~/.cache/mp716-firmware/*/openwrt/dl
+            ~/.cache/mp716-firmware/*/openwrt/build_dir/host
+            ~/.cache/mp716-firmware/*/openwrt/build_dir/toolchain-*
+            ~/.cache/mp716-firmware/*/openwrt/staging_dir/host
+            ~/.cache/mp716-firmware/*/openwrt/staging_dir/toolchain-*
+          key: ${{ steps.toolchain-cache.outputs.cache-primary-key }}
 
       - name: Package and verify test container
         run: bash scripts/package-ci-test.sh "$RUNNER_TEMP/mp716-test"

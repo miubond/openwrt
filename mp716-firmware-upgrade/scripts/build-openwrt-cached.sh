@@ -51,9 +51,60 @@ if [ -L "$tree" ] || { [ -e "$tree" ] && [ ! -O "$tree" ]; }; then
 	echo "OpenWrt cache checkout must be owned by the runner and cannot be a symlink." >&2
 	exit 2
 fi
+# BEGIN VERIFIED TOOLCHAIN CACHE
+# Image/rootfs validation can fail after the toolchain is complete. Qualify
+# only host tools and the cross toolchain, independently of target images.
+# This EXIT handler still owns fd 9's flock and never changes the build status.
+verify_toolchain_cache() {
+	local probe compiler
+	local compilers=("$tree"/staging_dir/toolchain-mipsel_*/bin/*-openwrt-linux-musl-gcc)
+	[ "${#compilers[@]}" -eq 1 ] && [ -x "${compilers[0]}" ] || return 1
+	command -v timeout >/dev/null && command -v readelf >/dev/null || return 1
+	compiler=${compilers[0]}
+	probe=$(mktemp -d "$cache/toolchain-probe.XXXXXX") || return 1
+	cat > "$probe/check.c" <<'C'
+#include <stdint.h>
+#include <stdio.h>
+int main(void) { uint32_t value = 716u; return printf("%u\n", (unsigned)value) < 0; }
+C
+	# Link against the cross libc/startup files; never run the target program.
+	if timeout -s KILL 30s "$compiler" -std=c99 -Werror "$probe/check.c" -o "$probe/check.elf" &&
+		LC_ALL=C readelf -h "$probe/check.elf" > "$probe/header" &&
+		grep -Eq 'Class:[[:space:]]+ELF32' "$probe/header" &&
+		grep -Eq 'Data:.*little endian' "$probe/header" &&
+		grep -Eq 'Machine:.*MIPS' "$probe/header" &&
+		grep -Eq 'Type:[[:space:]]+(EXEC|DYN)' "$probe/header"; then
+		printf 'schema=1\ncache_key=%s\nformat=ELF32-LSB-MIPS\n' "$key" > "$cache/toolchain-verified.new" &&
+			mv -f -- "$cache/toolchain-verified.new" "$cache/toolchain-verified"
+	else
+		rm -f -- "$cache/toolchain-verified" "$cache/toolchain-verified.new"
+	fi
+	rm -rf -- "$probe"
+	[ -f "$cache/toolchain-verified" ]
+}
+finish_toolchain_cache() {
+	local status=$1
+	trap - EXIT
+	set +e
+	# An older marker must not authorize saving a newly broken toolchain.
+	rm -f -- "$cache/toolchain-verified" "$cache/toolchain-verified.new"
+	if verify_toolchain_cache; then
+		echo "MP716 toolchain cache verified: $key (ELF32 LSB MIPS; image status $status)"
+	else
+		echo "MP716 toolchain cache not verified: $key (image status $status); cache save disabled" >&2
+	fi
+	exit "$status"
+}
+shopt -s nullglob
+trap 'finish_toolchain_cache "$?"' EXIT
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+	printf 'toolchain-cache-marker=%s\n' "$cache/toolchain-verified" >> "$GITHUB_OUTPUT"
+fi
+# END VERIFIED TOOLCHAIN CACHE
 shopt -s nullglob
 compilers=("$tree"/staging_dir/toolchain-mipsel_*/bin/*-openwrt-linux-musl-gcc)
-if [ -f "$cache/validated" ] && [ "${#compilers[@]}" -eq 1 ] && [ -x "${compilers[0]}" ]; then
+if { [ -f "$cache/toolchain-verified" ] || [ -f "$cache/validated" ]; } &&
+	[ "${#compilers[@]}" -eq 1 ] && [ -x "${compilers[0]}" ]; then
 	echo "MP716 toolchain cache hit: $key"
 else
 	echo "MP716 toolchain cache cold or incomplete: $key"
