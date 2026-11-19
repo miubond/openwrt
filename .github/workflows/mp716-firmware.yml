@@ -131,5 +131,7 @@ jobs:
             mp716-firmware-upgrade/build/ci-logs/*.log
             mp716-firmware-upgrade/build/ram-images/*.log
             mp716-firmware-upgrade/build/target-images/*.log
+            mp716-firmware-upgrade/build/ram-images/openwrt.config
+            mp716-firmware-upgrade/build/target-images/openwrt.config
             mp716-firmware-upgrade/build/ci-release/*.json
           if-no-files-found: ignore

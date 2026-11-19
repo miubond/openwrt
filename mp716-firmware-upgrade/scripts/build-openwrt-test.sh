@@ -150,18 +150,22 @@ CONFIG_BUSYBOX_CONFIG_PING=y
 CONFIG_BUSYBOX_CONFIG_FEATURE_FANCY_PING=y
 CONFIG_BUSYBOX_CONFIG_TRACEROUTE=y
 CONFIG_BUSYBOX_CONFIG_NSLOOKUP=y
+CONFIG_PACKAGE_ppp=y
 CONFIG_PACKAGE_ppp-mod-pptp=y
 CONFIG_PACKAGE_ppp-mod-pppoe=y
 CONFIG_PACKAGE_pptpd=y
 CONFIG_PACKAGE_xl2tpd=y
 CONFIG_PACKAGE_openvpn-mbedtls=y
+CONFIG_PACKAGE_strongswan=y
 CONFIG_PACKAGE_strongswan-isakmp=y
 CONFIG_PACKAGE_strongswan-mod-kdf=y
 CONFIG_PACKAGE_strongswan-mod-sha2=y
 CONFIG_PACKAGE_kmod-nft-xfrm=y
 CONFIG
 fi
-make defconfig
+make defconfig 2>&1 | tee "$output/defconfig.log"
+# Preserve the resolved configuration even if a required dependency was dropped.
+cp .config "$output/openwrt.config"
 required_config=(CONFIG_TARGET_ramips_mt76x8_DEVICE_yunxm_mp716 CONFIG_PACKAGE_mp716-sysupgrade
 	CONFIG_PACKAGE_kmod-mt7603 CONFIG_PACKAGE_wpad-basic-mbedtls
 	CONFIG_PACKAGE_firewall4 CONFIG_PACKAGE_miniupnpd-nftables CONFIG_PACKAGE_swconfig
@@ -183,9 +187,9 @@ if [ -n "$web_input" ]; then
 		CONFIG_PACKAGE_ucode-mod-fs CONFIG_PACKAGE_ucode-mod-ubus CONFIG_PACKAGE_ucode-mod-uci
 		CONFIG_BUSYBOX_CONFIG_SETSID CONFIG_BUSYBOX_CONFIG_TIMEOUT CONFIG_BUSYBOX_CONFIG_TRACEROUTE
 		CONFIG_BUSYBOX_CONFIG_PING CONFIG_BUSYBOX_CONFIG_FEATURE_FANCY_PING CONFIG_BUSYBOX_CONFIG_NSLOOKUP
-		CONFIG_PACKAGE_ppp-mod-pptp CONFIG_PACKAGE_ppp-mod-pppoe CONFIG_PACKAGE_ppp-mod-pppol2tp
+		CONFIG_PACKAGE_ppp CONFIG_PACKAGE_ppp-mod-pptp CONFIG_PACKAGE_ppp-mod-pppoe CONFIG_PACKAGE_ppp-mod-pppol2tp
 		CONFIG_PACKAGE_pptpd CONFIG_PACKAGE_xl2tpd CONFIG_PACKAGE_openvpn-mbedtls
-		CONFIG_PACKAGE_strongswan-isakmp CONFIG_PACKAGE_strongswan-mod-kdf CONFIG_PACKAGE_strongswan-mod-sha2
+		CONFIG_PACKAGE_strongswan CONFIG_PACKAGE_strongswan-isakmp CONFIG_PACKAGE_strongswan-mod-kdf CONFIG_PACKAGE_strongswan-mod-sha2
 		CONFIG_PACKAGE_strongswan-charon CONFIG_PACKAGE_strongswan-ipsec CONFIG_PACKAGE_strongswan-mod-stroke
 		CONFIG_PACKAGE_kmod-ppp CONFIG_PACKAGE_kmod-pptp CONFIG_PACKAGE_kmod-pppoe
 		CONFIG_PACKAGE_kmod-pppol2tp CONFIG_PACKAGE_kmod-mppe CONFIG_PACKAGE_kmod-tun
