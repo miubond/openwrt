@@ -97,6 +97,18 @@ jobs:
           PROJECT="${{ steps.repo.outputs.project }}"
           cd "$PROJECT"
           mkdir -p build/host/unit build/ci-logs
+          if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists json-c; then
+            if [ "$(id -u)" = 0 ]; then
+              apt-get update
+              apt-get install -y --no-install-recommends pkg-config libjson-c-dev
+            else
+              sudo -n apt-get update
+              sudo -n apt-get install -y --no-install-recommends pkg-config libjson-c-dev
+            fi
+          fi
+          python3 scripts/build-jsonfilter-host.py --cc "$(command -v gcc || command -v clang)" 2>&1 | tee build/ci-logs/jsonfilter-build.log
+          export JSONFILTER="$PWD/build/host-tools/jsonfilter"
+          export MP716_REQUIRE_JSONFILTER=1
           python3 scripts/build_host.py 2>&1 | tee build/ci-logs/host-build.log
           ./build/host/test_device build/host/unit 2>&1 | tee build/ci-logs/fake-mtd.log
           python3 tests/run_all.py 2>&1 | tee build/ci-logs/host-tests.log

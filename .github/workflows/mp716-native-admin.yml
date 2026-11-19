@@ -13,6 +13,7 @@ on:
       - 'mp716-firmware-upgrade/config/**'
       - 'mp716-firmware-upgrade/tests/**'
       - 'mp716-firmware-upgrade/scripts/build_host.py'
+      - 'mp716-firmware-upgrade/scripts/build-jsonfilter-host.py'
       - '.github/workflows/mp716-native-admin.yml'
   workflow_dispatch:
 
@@ -45,6 +46,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/native-admin build/native-admin-logs build/host/unit
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libjson-c-dev
+          python3 scripts/build-jsonfilter-host.py 2>&1 | tee build/native-admin-logs/jsonfilter-build.log
+          printf 'JSONFILTER=%s/build/host-tools/jsonfilter\n' "$PWD" >> "$GITHUB_ENV"
+          printf 'MP716_REQUIRE_JSONFILTER=1\n' >> "$GITHUB_ENV"
           python3 -m pip install -r packer/requirements.txt 2>&1 | tee build/native-admin-logs/python-deps.log
           gcc --version | tee build/native-admin-logs/gcc-version.log
           while IFS= read -r -d '' native_script; do

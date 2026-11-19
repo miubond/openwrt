@@ -2,7 +2,7 @@ name: MP716 Firmware Package
 
 on:
   push:
-    branches: [main, codex/mp716-versioned-artifacts]
+    branches: [main, codex/mp716-versioned-artifacts, codex/mp716-vpn-106]
     paths:
       - 'mp716-firmware-upgrade/**'
       - '!mp716-firmware-upgrade/web/**'
@@ -39,7 +39,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential bison flex gawk gcc-multilib g++-multilib gettext \
-            libelf-dev libncurses-dev libssl-dev python3-cryptography python3-setuptools \
+            libelf-dev libncurses-dev libssl-dev libjson-c-dev pkg-config python3-cryptography python3-setuptools \
             rsync swig unzip zlib1g-dev
           python3 -c 'import cryptography'
           printf 'JOBS=%s\n' "$(nproc)" >> "$GITHUB_ENV"
@@ -48,6 +48,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/host/unit build/ci-logs
+          python3 scripts/build-jsonfilter-host.py 2>&1 | tee build/ci-logs/jsonfilter-build.log
+          export JSONFILTER="$PWD/build/host-tools/jsonfilter"
+          export MP716_REQUIRE_JSONFILTER=1
           bash -n scripts/build-ci-images.sh scripts/build-openwrt-cached.sh scripts/build-openwrt-test.sh scripts/package-ci-test.sh
           python3 scripts/build_host.py 2>&1 | tee build/ci-logs/host-build.log
           ./build/host/test_device build/host/unit 2>&1 | tee build/ci-logs/fake-mtd.log
