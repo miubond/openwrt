@@ -126,10 +126,30 @@ if [ -f "$tree/.config" ]; then
 	# staging_dir/host and staging_dir/toolchain-*.
 	make -C "$tree" clean
 fi
-# Drop target/profile state, including the previous test public key. Preserve
-# hostpkg for LAN -> RAM in this same pinned checkout/inner ABI key: it contains
-# host Python/tools, not target overlays. OpenWrt clean also preserves hostpkg.
-# The remote cache deliberately excludes hostpkg; it is not shared across jobs.
+# BEGIN HOSTPKG SESSION GUARD
+# This code still owns fd 9's flock. hostpkg is deliberately excluded from the
+# remote cache; persistent local checkouts must also reject another CI session.
+hostpkg_marker="$cache/hostpkg-session"
+hostpkg_session=${MP716_HOSTPKG_SESSION:-}
+hostpkg_valid=0
+hostpkg_keep=0
+if [[ "$hostpkg_session" =~ ^[0-9a-f]{32}$ ]]; then
+	hostpkg_valid=1
+	if [ ! -L "$hostpkg_marker" ] && [ -f "$hostpkg_marker" ] &&
+		[ "$(cat -- "$hostpkg_marker")" = "$hostpkg_session" ]; then
+		hostpkg_keep=1
+	fi
+fi
+if [ "$hostpkg_keep" -ne 1 ]; then
+	rm -rf -- "$tree/build_dir/hostpkg" "$tree/staging_dir/hostpkg"
+	rm -f -- "$hostpkg_marker"
+fi
+if [ "$hostpkg_valid" -eq 1 ]; then
+	(umask 077; printf '%s\n' "$hostpkg_session" > "$hostpkg_marker")
+fi
+# END HOSTPKG SESSION GUARD
+# Always drop target/profile state, including the previous test public key.
+# A matching host session never authorizes reuse of target overlays or images.
 rm -rf -- "$tree/files" "$tree/package/mp716-sysupgrade" \
 	"$tree/bin/targets/ramips/mt76x8"
 git -C "$tree" restore -- target/linux/ramips/image/mt76x8.mk

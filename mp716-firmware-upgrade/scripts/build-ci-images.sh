@@ -1,6 +1,12 @@
 #!/bin/bash
 # Build and validate both MP716 images on the same CI runner.
 set -euo pipefail
+# BEGIN HOSTPKG BUILD SESSION
+# Always replace an inherited value: only this invocation's LAN/RAM pair may
+# share host packages, including on persistent self-hosted runners.
+MP716_HOSTPKG_SESSION=$(python3 -c 'import secrets; print(secrets.token_hex(16))')
+export MP716_HOSTPKG_SESSION
+# END HOSTPKG BUILD SESSION
 mkdir -p build/target-images build/ram-images build/ci-logs
 FIRMWARE_VERSION=$(cat config/firmware.version)
 WEB_VERSION=$(node -p 'require("./web/package.json").version')
