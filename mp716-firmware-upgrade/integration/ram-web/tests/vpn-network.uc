@@ -7,12 +7,16 @@ let records={network:{},firewall:{}}, removed=[];
 let c={
 	get:(pkg,name,option)=>option?records[pkg][name]?.[option]:records[pkg][name]?.['.type'],
 	set:(pkg,name,key,value)=>{
+		if(type(value)=='array' && !length(value))return false;
 		if(value==null){records[pkg][name]??={'.name':name};records[pkg][name]['.type']=key;}
 		else {records[pkg][name]??={'.name':name};records[pkg][name][key]=value;}
 		return true;
 	},
 	foreach:(pkg,type,fn)=>{for(let name,row in records[pkg])if(!type||row['.type']==type)fn(row);},
-	delete:(pkg,name)=>{push(removed,name);delete records[pkg][name];return true;}
+	delete:(pkg,name,option)=>{
+		if(option){delete records[pkg][name][option];return true;}
+		push(removed,name);delete records[pkg][name];return true;
+	}
 };
 let m={};for(let kind in VPN_KINDS)m[kind]=defaults(kind);
 m.pptp={...m.pptp,enabled:true,server:'vpn.example.org',username:'one',password:'two'};
@@ -32,4 +36,12 @@ assert(index(zone.device,'!pppoe+')>=0 && index(zone.device,'!pppoe-wan')>=0,'vp
 m.pptp.enabled=false;m.xl2tp.enabled=false;
 sync_network(c,m,bus);
 assert(!records.network.mp716pptp && !records.network.mp716l2tp && records.network.unmanaged?.proto=='static','disable_cleans_short_managed_interfaces_only');
+for(let kind in ['pptpd','xl2tpd','openvpn']) {
+	let only={};for(let name in VPN_KINDS)only[name]=defaults(name);
+	only[kind].enabled=true;
+	sync_network(c,only,bus);
+	let only_zone=records.firewall.mp716_vpn_zone;
+	assert(only_zone?.['.type']=='zone' && only_zone.network==null && index(only_zone.device,'tun-mp716')>=0,kind+'_device_only_zone_omits_empty_network');
+	assert(records.network.unmanaged?.proto=='static',kind+'_preserves_unmanaged_network');
+}
 printf('%J\n',{passed:passed,fixture_only:true,services_started:false});

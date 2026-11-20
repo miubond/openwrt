@@ -40,7 +40,7 @@
     "src/api/router-api.ts": "a2b7ebebaaaeae4660df47c6fee4909438250ee9439fd53d8ecd7cacb41a8bc1",
     "src/api/session.spec.ts": "be644bad81b1efdd9a5fbf131b1adea414af0590980a66e44593f368c1be599a",
     "src/api/session.ts": "68d8226b596abc5a78b38eadc7e442cd5d601f0188936a1b18a52a78f408e71a",
-    "src/api/types.ts": "8c680ebe5976f77681f1db23d9dbf9bd1fbfe57f5d2f905fcbfbf5674fded225",
+    "src/api/types.ts": "a572cd1b55be3eab1f59af99f09f107b62f7626892b6ea4ae158ec1a502f2fa6",
     "src/api/validate.spec.ts": "ca06121d17b8b63259925bf4c34d17e80fa90fc67e98e7efbde941ff504234dc",
     "src/api/view-map.ts": "edb7a0b02f2d9ea92daab19e1b0c3c82980c49302c4e970e5e5e62a0904114c3",
     "src/api/wifi-map.spec.ts": "e7ae870046450bdefdba28ab032ef90fb196d2c2788f12b7e76ee9aac7f7a081",
@@ -77,8 +77,8 @@
     "src/layouts/AppLayout.vue": "b0b1b3ea4d72e556169ee0df1cadef0c10efe21dfde5adf556d74667741453f9",
     "src/main.ts": "5dfa55bd55ebb2624ddd3041fe0d148c466a7b0855331a3d79d62fdaf44b565e",
     "src/nav.ts": "f245f0a1fca15a812ffae3986c222d3d3b673efb5f2d94ce3d33a73f46ee8c12",
-    "src/pages/DashboardPage.vue": "d2699d95a62b5aa6e482bf7df5eff76c03d5565e1f52b7b71d6043e1a74eba3c",
-    "src/pages/DashboardPhysicalPorts.spec.ts": "f261d8c70935b9746d683781651f3935716800b5fbdc05f594ca69eba9e3a5d3",
+    "src/pages/DashboardPage.vue": "2001232e70d533ff7abe876a5f3a719e3dedf1197d5c2c549b9bafe7b2c880b3",
+    "src/pages/DashboardPhysicalPorts.spec.ts": "85d764a7150b9200aa8943782921052f36a474f22e2dc750eab9d7475afee7f8",
     "src/pages/DevicesPage.vue": "5a10b36509c736b5147f9229724c79d9cef6bcded88134fa07cff8733b37a424",
     "src/pages/LoginPage.vue": "a4e1affdf39f632ad8941284eba8d096657ece1129e8148ddbe09a6774539d46",
     "src/pages/LogsNativePage.vue": "51b605551369e3898252342f1940021b2200fcd41150b5ea9761ec077c70c232",
@@ -169,8 +169,8 @@
     "vite.config.ts": "5e0d9f02d84b5a89b7cb8c34c57b6cfd78805e7f1d607e61f13dcb397055b46c"
   },
   "generated": true,
-  "source_commit": "0a76c150a2273ae88cfa8b6ab4b8754c9c406ff5",
+  "source_commit": "bbf6d4618fd6b0e4faf5ea1c8e6cc8d60fb283ba",
   "source_dirty": false,
   "source_project": "openwrt_system",
-  "source_tree_sha256": "034af0cdf0a9af138e9699e3bd31e0b917dea9bbdebab68309ec98b5152512f7"
+  "source_tree_sha256": "8cf27b5d341a968c32a948064e378540b75991303bdf8534f386b19ff158e567"
 }

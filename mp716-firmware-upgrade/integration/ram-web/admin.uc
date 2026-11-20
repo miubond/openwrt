@@ -3,6 +3,7 @@ import { cursor } from 'uci';
 import { readfile, writefile, stat } from 'fs';
 import { address, pool_bounds, sample_rates } from '/usr/share/mp716/network-values.uc';
 import { sample_cpu } from '/usr/share/mp716/system-values.uc';
+import { physical_ports, load_mapping } from '/usr/share/mp716/physical-ports.uc';
 import { command, ensure_dirs, acquire, release, expire, pending, begin, applied, rollback,
 	get_task, access_list, apply_access, store, STATE } from '/usr/share/mp716/admin-state.uc';
 
@@ -403,7 +404,7 @@ export function route_admin(bus, method, path, body, token) {
 		if (path == 'wireless/acl') { let cfg=wifi_config(c);return { data:{mode:cfg.macfilter,entries:map(cfg.maclist,(m)=>({id:uc(m),mac:uc(m),policy:cfg.macfilter=='allow'?'allow':'deny'}))} }; }
 		if (path == 'hosts/connected') return { data:hosts(bus,c) };
 		if (path == 'hosts/device-acl') return { data:access_list() };
-		if (path == 'home/physical-ports') { let ports=[];for(let i=0;i<5;i++){let link=command('/sbin/swconfig dev switch0 port '+i+' get link 2>/dev/null').output;let speed=match(link,/speed:([0-9]+)/);push(ports,{id:'port'+i,label:'P'+i,role:i==4?'wan':'lan',mappingVerified:false,linkUp:index(link,'link:up')>=0,speedMbps:speed?int(speed[1]):0});}return{data:ports}; }
+		if (path == 'home/physical-ports') return {data:physical_ports(command,load_mapping())};
 		if (path == 'network/qos/capability') return { data:{supported:false,backend:'none',reason:'当前固件未启用 QoS'} };
 		if (path == 'system/logs') return { data:{enabled:true,content:command('logread -l 200').output} };
 	}

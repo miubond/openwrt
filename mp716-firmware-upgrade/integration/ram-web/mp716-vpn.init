@@ -109,7 +109,7 @@ prepare_guard() {
 	if nft list table inet mp716_vpn_guard >/dev/null 2>&1; then
 		printf 'delete table inet mp716_vpn_guard\n' > "$runtime/guard-deny.nft"
 	else : > "$runtime/guard-deny.nft"; fi
-	printf 'table inet mp716_vpn_guard { chain %s { type filter hook %s priority -5; policy accept; udp dport 1701 drop; } }\n' "$hook" "$hook" >> "$runtime/guard-deny.nft"
+	printf 'table inet mp716_vpn_guard { chain %s { type filter hook %s priority -5; policy accept; udp dport 1701 drop; }\n}\n' "$hook" "$hook" >> "$runtime/guard-deny.nft"
 	nft -f "$runtime/guard-deny.nft" || return 1
 	{ printf 'delete table inet mp716_vpn_guard\n'; cat "$runtime/guard.nft"; } > "$runtime/guard-apply.nft"
 	nft -f "$runtime/guard-apply.nft"

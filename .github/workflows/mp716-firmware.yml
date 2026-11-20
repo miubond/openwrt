@@ -2,7 +2,7 @@ name: MP716 Firmware Package
 
 on:
   push:
-    branches: [main, codex/mp716-versioned-artifacts, codex/mp716-vpn-106]
+    branches: [main, codex/mp716-versioned-artifacts, codex/mp716-vpn-106, codex/mp716-vpn-107]
     paths:
       - 'mp716-firmware-upgrade/**'
       - '!mp716-firmware-upgrade/web/**'
@@ -176,6 +176,8 @@ jobs:
             mp716-firmware-upgrade/build/ci-logs/*.log
             mp716-firmware-upgrade/build/ram-images/*.log
             mp716-firmware-upgrade/build/target-images/*.log
+            mp716-firmware-upgrade/build/ram-images/*.json
+            mp716-firmware-upgrade/build/target-images/*.json
             mp716-firmware-upgrade/build/ram-images/openwrt.config
             mp716-firmware-upgrade/build/target-images/openwrt.config
             mp716-firmware-upgrade/build/ci-release/*.json

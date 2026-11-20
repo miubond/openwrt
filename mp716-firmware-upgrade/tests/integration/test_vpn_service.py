@@ -50,11 +50,14 @@ class VpnServiceTests(unittest.TestCase):
                  pptp_client=False, l2tp_client=False, fifo_ready=True, old_raw=None,
                  new_raw=None, action='start', sentinels=False, fail_field='', parser_failure=False, render_missing=False,
                  value_failure=False, read_failure=False,
-                 legacy_selector=False):
+                 legacy_selector=False, legacy_guard_separator=False, existing_guard=False):
         parent=ROOT/'build/vpn-service-fixtures';parent.mkdir(parents=True,exist_ok=True)
         with tempfile.TemporaryDirectory(dir=parent) as temporary:
             root=Path(temporary);(root/'runtime').mkdir();(root/'chap-secrets').write_text('legacy account remains\n')
             script=SOURCE.read_text().replace('/usr/bin/ucode','mock_ucode').replace('/bin/ubus','mock_ubus').replace('/etc/init.d/firewall','mock_firewall')
+            if legacy_guard_separator:
+                self.assertEqual(script.count('drop; }\\n}\\n'),1)
+                script=script.replace('drop; }\\n}\\n','drop; } }\\n')
             if legacy_selector:
                 self.assertEqual(script.count('"@.$1"'),2,'The temporary mutation must target both actual field selectors')
                 script=script.replace('"@.$1"','"@$1"')
@@ -118,7 +121,8 @@ mount() { printf 'mount %s\n' "$*" >> "$events"; [ "$MOUNT_FAIL" != 1 ]; }
 umount() { printf 'umount %s\n' "$*" >> "$events"; }
 nft() {
  printf 'nft %s\n' "$*" >> "$events"
- case "$1" in list) return 1 ;; esac
+ case "$1" in list) [ "$EXISTING_GUARD" = 1 ]; return "$?" ;; esac
+ if [ "$1" = -f ]; then cp "$2" "$STAGE/nft-input-$(basename "$2")"; fi
  if [ "$REJECT_GUARD" = 1 ] && [ "${2:-}" = "$runtime/guard-apply.nft" ]; then return 1; fi
 }
 logger() { :; }
@@ -143,6 +147,7 @@ printf '%s\n' "$status" > "$STAGE/status"
                  'REJECT_GUARD':'1' if reject_guard else '0','MOUNT_FAIL':'1' if mount_fail else '0',
                  'FAIL_FIELD':fail_field,'PARSER_FAILURE':'1' if parser_failure else '0',
                  'VALUE_FAILURE':'1' if value_failure else '0','READ_FAILURE':'1' if read_failure else '0',
+                 'EXISTING_GUARD':'1' if existing_guard else '0',
                  'RENDER_MISSING':'1' if render_missing else '0'}
             result=subprocess.run([BASH,'-c',harness],env=env,text=True,capture_output=True)
             self.assertEqual(result.returncode,0,result.stderr)
@@ -150,6 +155,7 @@ printf '%s\n' "$status" > "$STAGE/status"
             return {'events':(root/'events').read_text(),'status':int((root/'status').read_text()),
                     'chap':(root/'chap-secrets').read_text(),'mounted':(root/'runtime/chap-target').exists(),
                     'parsed':parsed,'stderr':result.stderr,
+                    'nft_inputs':{path.name.removeprefix('nft-input-'):path.read_text() for path in root.glob('nft-input-*')},
                     'old_plan_unchanged':old_bytes is not None and (root/'runtime/services.json').is_file() and (root/'runtime/services.json').read_bytes()==old_bytes,
                     'protected_equal':all((root/'runtime'/name).is_file() and (root/'runtime'/name).read_text()==raw for name,raw in protected.items())}
 
@@ -198,6 +204,26 @@ printf '%s\n' "$status" > "$STAGE/status"
         result=self.exercise(True,'input',reject_guard=True)
         self.assertNotEqual(result['status'],0);self.assertIn('guard-deny.nft',result['events'])
         self.assertNotIn('instance ',result['events']);self.assertFalse(result['mounted'])
+
+    def test_actual_deny_input_separates_nested_chain_and_table_before_full_guard(self):
+        for hook in ('input','output'):
+            for existing in (False,True):
+                with self.subTest(hook=hook,existing=existing):
+                    result=self.exercise(True,hook,existing_guard=existing)
+                    self.assertEqual(result['status'],0,result['stderr'])
+                    deny=result['nft_inputs']['guard-deny.nft']
+                    prefix='delete table inet mp716_vpn_guard\n' if existing else ''
+                    self.assertEqual(deny,prefix+'table inet mp716_vpn_guard { chain '+hook+
+                        ' { type filter hook '+hook+' priority -5; policy accept; udp dport 1701 drop; }\n}\n')
+                    self.assertNotRegex(deny,r'}[ \t]+}')
+                    self.assertEqual(result['nft_inputs']['guard-apply.nft'],
+                        'delete table inet mp716_vpn_guard\ntable inet mp716_vpn_guard {}\n')
+                    self.assertLess(result['events'].index('guard-deny.nft'),result['events'].index('guard-apply.nft'))
+                    self.assertLess(result['events'].index('guard-apply.nft'),result['events'].index('mount '))
+
+    def test_temporary_old_separator_mutation_reproduces_the_actual_bad_nft_input(self):
+        result=self.exercise(True,'input',legacy_guard_separator=True)
+        self.assertRegex(result['nft_inputs']['guard-deny.nft'],r'drop; }[ \t]+}\n$')
 
     def test_mount_failure_does_not_mark_secrets_as_mounted(self):
         result=self.exercise(True,mount_fail=True)

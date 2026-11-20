@@ -201,6 +201,8 @@ jobs:
             ${{ steps.repo.outputs.project }}/build/ci-logs/*.log
             ${{ steps.repo.outputs.project }}/build/ram-images/*.log
             ${{ steps.repo.outputs.project }}/build/target-images/*.log
+            ${{ steps.repo.outputs.project }}/build/ram-images/*.json
+            ${{ steps.repo.outputs.project }}/build/target-images/*.json
             ${{ steps.repo.outputs.project }}/build/ci-release/*.json
           if-no-files-found: ignore
 

@@ -68,6 +68,7 @@ function trafficLabel(bytes: number, rate: number) {
 }
 
 function portStatusLabel(port: PhysicalPortStatus) {
+  if (port.linkKnown === false || port.linkUp === null) return t('dashboard.linkUnknown')
   if (!port.linkUp) return t('dashboard.portDown')
   const speed = port.speedMbps > 0 ? `${port.speedMbps}M` : ''
   return t('dashboard.portConnected', { speed: speed ? `${speed} ` : '' })

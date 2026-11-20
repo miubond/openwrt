@@ -60,7 +60,7 @@ def stage(
     gateway.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("httpd.uc"), gateway)
     gateway.chmod(0o644)
-    for name in ("admin.uc", "admin-state.uc", "admin-tick.uc", "apply-task.uc", "network-values.uc", "system-values.uc", "dispatch.uc", "capabilities.uc", "native-routes.json",
+    for name in ("admin.uc", "admin-state.uc", "admin-tick.uc", "apply-task.uc", "network-values.uc", "system-values.uc", "physical-ports.uc", "dispatch.uc", "capabilities.uc", "native-routes.json",
                  "system-admin.uc", "system-apply.uc", "diagnostics.uc", "diagnostic-worker.sh",
                  "vpn.uc", "vpn-config.uc", "vpn-runtime.uc", "vpn-render.uc", "vpn-hook.uc", "vpn-services.uc", "vpn-health.uc",
                  "vpn-ppp-up.sh", "vpn-ppp-down.sh", "vpn-openvpn-up.sh", "vpn-openvpn-down.sh"):

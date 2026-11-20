@@ -35,9 +35,17 @@ function cleanup(c,pkg) {
 	let names=[];c.foreach(pkg,null,(s)=>{if(s.mp716_managed=='1' && (match(s['.name'],/^mp716_vpn_/) || index(['mp716pptp','mp716l2tp'],s['.name'])>=0))push(names,s['.name']);});
 	for(let name in names)c.delete(pkg,name);
 }
-function configure(c,pkg,name,type,options) {
-	owned(c,pkg,name,type);
-	for(let key,value in options)if(!c.set(pkg,name,key,value))die('无法写入 VPN 网络配置');
+function configure(c,pkg,name,section_type,options) {
+	owned(c,pkg,name,section_type);
+	for(let key,value in options) {
+		// A zone may contain only device selectors (servers/OpenVPN). libuci
+		// rejects an empty list; represent its missing network option explicitly.
+		if(type(value)=='array' && !length(value)) {
+			if(c.get(pkg,name,key)!=null && !c.delete(pkg,name,key))die('无法清除 VPN 网络配置');
+			continue;
+		}
+		if(!c.set(pkg,name,key,value))die('无法写入 VPN 网络配置');
+	}
 }
 export function sync_network(c,m,bus) {
 	cleanup(c,'network');cleanup(c,'firewall');

@@ -314,10 +314,11 @@ export interface WifiStatus {
 /** HYID 108 port_arr：物理网口，与逻辑 wan/lan 接口分离 */
 export interface PhysicalPortStatus {
   mappingVerified?: boolean
+  linkKnown?: boolean
   id: string
   label: string
-  role: 'lan' | 'wan'
-  linkUp: boolean
+  role: 'lan' | 'wan' | 'unknown'
+  linkUp: boolean | null
   speedMbps: number
 }
 

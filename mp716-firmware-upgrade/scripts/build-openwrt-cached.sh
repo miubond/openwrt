@@ -109,6 +109,9 @@ if { [ -f "$cache/toolchain-verified" ] || [ -f "$cache/validated" ]; } &&
 else
 	echo "MP716 toolchain cache cold or incomplete: $key"
 fi
+# This marker qualifies the previous image only. A fresh attempt must pass
+# final-image inspection before it may recreate it; retain toolchain evidence.
+rm -f -- "$cache/validated"
 
 umask 022
 if [ ! -d "$tree/.git" ]; then
@@ -155,4 +158,12 @@ rm -rf -- "$tree/files" "$tree/package/mp716-sysupgrade" \
 git -C "$tree" restore -- target/linux/ramips/image/mt76x8.mk
 
 bash "$project/scripts/build-openwrt-test.sh" "$1" "$2" "$tree" "$3" "$4"
+# Inspect the delivered image's ELF while fd 9 still protects this build/tree.
+# This wrapper is outside the toolchain key; ABI checks cannot invalidate it.
+case "$1" in
+	--ram-web) plugin_image_type=initramfs ;;
+	--lan-candidate) plugin_image_type=sysupgrade ;;
+esac
+python3 "$project/scripts/check-native-vpn-plugin.py" --openwrt-tree "$tree" \
+	--output "$4" --image-type "$plugin_image_type" --report "$4/vpn-plugin-abi-report.json"
 touch "$cache/validated"

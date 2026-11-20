@@ -39,9 +39,13 @@ export function vpn_plan(m,read,base_chap) {
 	files['chap-secrets']=chap;
 	files['pptp.options']=options(m.pptpd,'mp716-pptp');
 	files['l2tp.options']=options(m.xl2tpd,'mp716-l2tp');
-	files['pptpd.conf']='option '+VPN_RUNTIME+'/pptp.options\nlocalip '+m.pptpd.server+'\nremoteip '+m.pptpd.startIp+'-'+split(m.pptpd.endIp,'.')[3]+'\n';
+	// Keep ipparam=mp716-pptp from the managed options. pptpd otherwise
+	// appends the outer client IP after this file and breaks the typed PPP hook.
+	files['pptpd.conf']='noipparam\noption '+VPN_RUNTIME+'/pptp.options\nlocalip '+m.pptpd.server+'\nremoteip '+m.pptpd.startIp+'-'+split(m.pptpd.endIp,'.')[3]+'\n';
 	let l2tp='[global]\nport = 1701\naccess control = no\n';
-	if(m.xl2tpd.enabled)l2tp+='[lns mp716]\nip range = '+m.xl2tpd.startIp+'-'+m.xl2tpd.endIp+'\nlocal ip = '+m.xl2tpd.server+'\nrequire authentication = yes\nrefuse pap = yes\nrequire chap = yes\nname = mp716-l2tp\npppoptfile = '+VPN_RUNTIME+'/l2tp.options\nlength bit = yes\n';
+	// xl2tpd 1.3.18 get_lns() falls back only to deflns when
+	// access control is off and no outer-peer lac selector matches.
+	if(m.xl2tpd.enabled)l2tp+='[lns default]\nip range = '+m.xl2tpd.startIp+'-'+m.xl2tpd.endIp+'\nlocal ip = '+m.xl2tpd.server+'\nrequire authentication = yes\nrefuse pap = yes\nname = mp716-l2tp\npppoptfile = '+VPN_RUNTIME+'/l2tp.options\nlength bit = yes\n';
 	files['xl2tpd.conf']=l2tp;files['xl2tp-secrets']='';
 	files['openvpn.auth']=m.openvpn.username+'\n'+m.openvpn.password+'\n';
 	let ovpn='';

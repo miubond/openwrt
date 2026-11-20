@@ -86,7 +86,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mp716-serial-failure-${{ github.run_id }}-${{ github.run_attempt }}
-          path: mp716-serial-output/*.log
+          path: |
+            mp716-serial-output/*.log
+            mp716-serial-output/*.json
           if-no-files-found: ignore
 
       - name: Clean build files
