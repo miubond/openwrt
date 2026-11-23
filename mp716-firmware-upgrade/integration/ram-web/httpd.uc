@@ -37,10 +37,20 @@ function login(ubus) {
 	let password = credentials?.password;
 	if ((name != 'admin' && name != 'root') || type(password) != 'string' || !length(password))
 		return fail(401, 'UNAUTHORIZED', '用户名或密码错误');
-	let session = ubus.call('session', 'login', { username: 'root', password: password, timeout: 600 });
+	let session = ubus.call('session', 'login', {
+		scope: 'access',
+		username: 'root',
+		password: password,
+		timeout: 600,
+	});
 	if (!session?.ubus_rpc_session)
 		return fail(401, 'UNAUTHORIZED', '用户名或密码错误');
-	return ok({ token: session.ubus_rpc_session, expiresIn: session.timeout || 30 });
+	ubus.call('session', 'set', {
+		ubus_rpc_session: session.ubus_rpc_session,
+		values: { username: name, token: session.ubus_rpc_session },
+		acls: ['mp716-admin'],
+	});
+	return ok({ token: session.ubus_rpc_session, expiresIn: session.timeout || 600 });
 }
 
 function verify() {

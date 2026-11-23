@@ -507,10 +507,12 @@ export function route_admin(bus, method, path, body, token) {
 		if (path == 'home/dashboard') return { data: home_dashboard_cached(bus, c) };
 		if (path == 'home/physical-ports') return { data:physical_ports_cached(command, load_mapping()) };
 		if (path == 'network/qos/capability') return { data:{supported:false,backend:'none',reason:'当前固件未启用 QoS'} };
+		if (path == 'network/qos/config') return { data:{enabled:false,downloadKbps:0,uploadKbps:0} };
 		if (path == 'system/logs') return { data:{enabled:true,content:command('logread -l 100').output} };
 	}
 	let task_match = match(path,/^system\/config-task\/([a-f0-9]{32})$/);
 	let task_action = path == 'system/config-task/confirm' ? 'confirm' : path == 'system/config-task/cancel' ? 'cancel' : null;
+	if (method == 'POST' && path == 'network/qos/config') return reject('当前固件未启用 QoS', 'VALIDATION');
 	let write_config = method == 'POST' && index(['network/wan/config','network/lan/config','network/dns/config','network/dhcp/config','network/dhcp/static','wireless/config','wireless/advanced','wireless/acl'],path)>=0;
 	let access = method == 'POST' && path == 'hosts/device-acl';
 	let wizard = method == 'POST' && index(['wizard/quick','wizard/complete'],path)>=0;
