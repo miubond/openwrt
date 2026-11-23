@@ -6,7 +6,7 @@ import { sample_cpu } from '/usr/share/mp716/system-values.uc';
 import { physical_ports, load_mapping } from '/usr/share/mp716/physical-ports.uc';
 import { command, ensure_dirs, acquire, release, expire, pending, blocking_pending, dismiss_failed_pending,
 	begin, applied, rollback, get_task, task_view, access_list, apply_access, store, STATE } from '/usr/share/mp716/admin-state.uc';
-import { firmware_version } from '/usr/share/mp716/build-meta.uc';
+import { firmware_version, webui_version } from '/usr/share/mp716/build-meta.uc';
 
 function reject(message, code) { return { error: code || 'VALIDATION', message: message }; }
 function string(value) { return sprintf('%s', value); }
@@ -514,7 +514,7 @@ export function route_admin(bus, method, path, body, token) {
 				wifi:{ssid2g:w.ssid,encry2g:w.security=='none'?0:1,passphrase2g:w.password}}};
 		}
 		if (path == 'system/info') return { data:system_info_cached(bus,c) };
-		if (path == 'system/device') return { data:{ productName:'MP716',productModel:'MP716',softwareVersion:firmware_version(),webuiVersion:'',lanMac:iface_status(bus,c,'lan').mac,wanIp:iface_status(bus,c,'wan').ipv4 } };
+		if (path == 'system/device') return { data:{ productName:'MP716',productModel:'MP716',softwareVersion:firmware_version(),webuiVersion:webui_version(),lanMac:iface_status(bus,c,'lan').mac,wanIp:iface_status(bus,c,'wan').ipv4 } };
 		if (path == 'system/status') return { data:system_status_cached(bus,c) };
 		if (path == 'network/wan/status') return { data:iface_status(bus,c,'wan') };
 		if (path == 'network/lan/status') { let value=iface_status(bus,c,'lan');value.clientCount=length(hosts_cached(bus,c));return { data:value }; }

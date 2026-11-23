@@ -23,3 +23,16 @@ export function firmware_build_date() {
 	let m = match(rel, /DISTRIB_DESCRIPTION='([^']+)'/);
 	return m ? trim(m[1]) : '';
 };
+
+export function webui_version() {
+	for (let path in [
+		'/etc/mp716-web.version',
+		'/rom/etc/mp716-web.version',
+		'/www/mp716/WEB_VERSION.txt',
+	]) {
+		let v = trim(readfile(path) || '');
+		if (length(v) > 0 && length(v) < 64 && index(v, '\x00') < 0)
+			return v;
+	}
+	return '';
+};
