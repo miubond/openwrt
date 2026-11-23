@@ -116,6 +116,27 @@ function stations(bus, c, detail) {
 	}
 	return result;
 };
+
+function wifi_station_linked(bus, iface, mac) {
+	if (!match(iface || '', /^[A-Za-z0-9_.-]{1,24}$/)) return false;
+	let addr = lc(mac);
+	let clients = bus.call('hostapd.' + iface, 'get_clients', {})?.clients || {};
+	if (clients[addr]?.assoc || clients[addr]?.authorized) return true;
+	return command('/usr/sbin/iw dev ' + iface + ' station get ' + addr + ' 2>/dev/null').code == 0;
+}
+
+function disconnect_wifi_client(bus, iface, mac) {
+	if (!match(iface || '', /^[A-Za-z0-9_.-]{1,24}$/)) die('无线接口无效');
+	let addr = lc(mac);
+	if (!unicast(mac)) die('终端 MAC 无效');
+	// hostapd ubus del_client 成功时经常无返回值（null），不能据此判失败
+	bus.call('hostapd.' + iface, 'del_client', { addr: addr, reason: 5, deauth: true, ban_time: 0 });
+	if (!wifi_station_linked(bus, iface, mac)) return;
+	let code = command('/usr/sbin/iw dev ' + iface + ' station del ' + addr + ' 2>/dev/null').code;
+	if (code == 0 && !wifi_station_linked(bus, iface, mac)) return;
+	die('无法断开无线终端');
+}
+
 function leases() {
 	let result = [];
 	for (let line in split(trim(readfile('/tmp/dhcp.leases') || ''), '\n')) {
@@ -538,8 +559,6 @@ export function route_admin(bus, method, path, body, token) {
 		if (path == 'hosts/overview') return { data:{ connected:hosts_cached(bus,c), acl:access_list() } };
 		if (path == 'home/dashboard') return { data: home_dashboard_cached(bus, c) };
 		if (path == 'home/physical-ports') return { data:physical_ports_cached(command, load_mapping()) };
-		if (path == 'network/qos/capability') return { data:{supported:false,backend:'none',reason:'当前固件未启用 QoS'} };
-		if (path == 'network/qos/config') return { data:{enabled:false,downloadKbps:0,uploadKbps:0} };
 		if (path == 'system/logs') return { data:{enabled:true,content:command('logread -l 100').output} };
 		if (path == 'system/config-task/active') {
 			expire();
@@ -549,7 +568,6 @@ export function route_admin(bus, method, path, body, token) {
 	}
 	let task_match = match(path,/^system\/config-task\/([a-f0-9]{32})$/);
 	let task_action = path == 'system/config-task/confirm' ? 'confirm' : path == 'system/config-task/cancel' ? 'cancel' : null;
-	if (method == 'POST' && path == 'network/qos/config') return reject('当前固件未启用 QoS', 'VALIDATION');
 	let write_config = method == 'POST' && index(['network/wan/config','network/lan/config','network/dns/config','network/dhcp/config','network/dhcp/static','wireless/config','wireless/advanced','wireless/acl'],path)>=0;
 	let access = method == 'POST' && path == 'hosts/device-acl';
 	let wizard = method == 'POST' && index(['wizard/quick','wizard/complete'],path)>=0;
@@ -589,11 +607,14 @@ export function route_admin(bus, method, path, body, token) {
 			}catch(e){rollback(t);die(e);}
 		}
 		if (disconnect) {
-			let row=filter(hosts_cached(bus,c),(h)=>h.id==body.deviceId)[0];
-			if(!row || row.wired)die('仅能暂时断开当前无线终端；有线终端请使用访问控制');
-			if(row.ipv4==getenv('REMOTE_ADDR'))die('不能断开当前管理终端');
-			let response=bus.call('hostapd.'+row.interface,'del_client',{addr:lc(row.mac),reason:5,deauth:true,ban_time:0});
-			if(response==null)die('无法断开无线终端');return {data:null};
+			clear_api_cache();
+			let id = uc(body.deviceId || '');
+			if (!unicast(id)) die('终端标识无效');
+			let row = filter(hosts(bus, c), (h) => uc(h.id) == id || uc(h.mac) == id)[0];
+			if (!row || row.wired) die('仅能暂时断开当前无线终端；有线终端请使用访问控制');
+			if (row.ipv4 == getenv('REMOTE_ADDR')) die('不能断开当前管理终端');
+			disconnect_wifi_client(bus, row.interface, row.mac);
+			return { data: null };
 		}
 		if (write_config) {
 			let seconds = body.confirmTimeoutSec == null ? 90 : body.confirmTimeoutSec;

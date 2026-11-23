@@ -25,8 +25,8 @@
 | DMZ | 52/53 | **已实现** `firewall/dmz` |
 | UPnP | 56/57 | **已实现** `network/upnp`（`upnpd` UCI，无包则只读提示） |
 | DDNS | 63/64 | **已实现** `network/ddns`（`ddns` UCI，无包则只读提示） |
-| 静态路由 | 12/13 | 待做 `network/static-routes` |
-| QoS | 47/48 | 前端有页，后端 `supported:false` |
+| 静态路由 | 12/13 | **已实现** `network/static-routes`（UCI `mp716_rt_*`） |
+| QoS | 47/48 | **条件可用** `network/qos/*`（需 `sqm` 包；`99-mp716-sqm-defaults` 种子队列） |
 | URL/MAC 全局过滤 | 16–19 | 待评估（与防火墙/ACL 合并） |
 | 无线：多 SSID/定时/扫描 | 86–110 | 待做（依赖 mac80211 能力） |
 | 远程管理、HWNAT、WAN Ping | 14–59、43–44 | 待做 |

@@ -72,7 +72,7 @@ def stage(
             (exp_dir / exp_name).chmod(0o644)
     for name in ("build-meta.uc", "admin.uc", "admin-state.uc", "admin-tick.uc", "apply-task.uc", "network-values.uc", "system-values.uc", "physical-ports.uc", "perf-diag.uc", "dispatch.uc", "capabilities.uc", "native-routes.json",
                  "system-admin.uc", "system-apply.uc", "diagnostics.uc", "diagnostic-worker.sh",
-                 "firewall-admin.uc", "network-services.uc", "port-links.sh",
+                 "firewall-admin.uc", "network-services.uc", "network-routes.uc", "network-qos.uc", "port-links.sh",
                  "vpn.uc", "vpn-config.uc", "vpn-runtime.uc", "vpn-render.uc", "vpn-hook.uc", "vpn-services.uc", "vpn-health.uc",
                  "vpn-ppp-up.sh", "vpn-ppp-down.sh", "vpn-openvpn-up.sh", "vpn-openvpn-down.sh"):
         shutil.copyfile(Path(__file__).with_name(name), gateway.with_name(name))
@@ -92,6 +92,9 @@ def stage(
     defaults.parent.mkdir(parents=True, exist_ok=True)
     defaults.write_text("#!/bin/sh\n/etc/init.d/mp716-admin enable\n/etc/init.d/mp716-vpn enable\n/etc/init.d/mp716-admin start\n/etc/init.d/mp716-vpn start\n", encoding="ascii")
     defaults.chmod(0o755)
+    sqm_defaults = root / "etc/uci-defaults/99-mp716-sqm-defaults"
+    shutil.copyfile(Path(__file__).with_name("99-mp716-sqm-defaults"), sqm_defaults)
+    sqm_defaults.chmod(0o755)
     version = Path(__file__).resolve().parents[2].joinpath("config/firmware.version").read_text(encoding="ascii").strip()
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         raise SystemExit("Invalid firmware build version")

@@ -1,0 +1,13 @@
+#!/bin/sh
+# 若已安装 sqm，则创建默认 mp716_wan 队列（默认关闭，供 Web QoS 页读写）
+[ -f /etc/config/sqm ] || exit 0
+uci -q get sqm.mp716_wan >/dev/null 2>&1 && exit 0
+uci set sqm.mp716_wan=queue
+uci set sqm.mp716_wan.enabled='0'
+uci set sqm.mp716_wan.interface='wan'
+uci set sqm.mp716_wan.download='51200'
+uci set sqm.mp716_wan.upload='10240'
+uci set sqm.mp716_wan.qdisc='cake'
+uci set sqm.mp716_wan.script='piece_of_cake.qos'
+uci commit sqm
+exit 0

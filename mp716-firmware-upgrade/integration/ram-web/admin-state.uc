@@ -5,7 +5,7 @@ import { perf_enabled, perf_add_shell, perf_monotonic_ms } from '/usr/share/mp71
 export const STATE = '/etc/mp716-admin';
 const RUNTIME = '/tmp/mp716-admin';
 const PENDING = STATE + '/pending.json';
-const PACKAGES = /^(network|wireless|dhcp|system|firewall|upnpd|ddns|mp716_system|mp716_vpn|pptpd|xl2tp|ipsec|openvpn)$/;
+const PACKAGES = /^(network|wireless|dhcp|system|firewall|upnpd|ddns|sqm|mp716_system|mp716_vpn|pptpd|xl2tp|ipsec|openvpn)$/;
 function snapshot_path(path) {
 	return path == '/etc/shadow' || match(path,/^\/etc\/mp716-vpn\/(client\.ovpn|ca\.pem|client\.crt|client\.key|ta\.key|auth)$/);
 }
@@ -98,7 +98,8 @@ export function reload(kind,task_id) {
 	// netifd reload preserves switch setup; never use /etc/init.d/network restart.
 	let commands={network:'/bin/ubus call network reload',wireless:'/sbin/wifi reload',dhcp:'/etc/init.d/dnsmasq reload',
 		system:'/usr/bin/ucode /usr/share/mp716/system-apply.uc',vpn:'/etc/init.d/mp716-vpn reload && /usr/bin/ucode /usr/share/mp716/vpn-health.uc',firewall:'/etc/init.d/firewall reload',
-		upnpd:'/etc/init.d/miniupnpd restart 2>/dev/null || /etc/init.d/upnpd restart 2>/dev/null || true',ddns:'/etc/init.d/ddns restart 2>/dev/null || true'};
+		upnpd:'/etc/init.d/miniupnpd restart 2>/dev/null || /etc/init.d/upnpd restart 2>/dev/null || true',ddns:'/etc/init.d/ddns restart 2>/dev/null || true',
+		sqm:'/etc/init.d/sqm restart 2>/dev/null || true'};
 	let kinds=kind=='all'?['network','wireless','dhcp','system','vpn','firewall']:kind=='network-wireless'?['network','wireless']:kind=='network-dhcp'?['network','dhcp']:kind=='none'?[]:[kind];
 	for(let name in kinds) {
 		let current=task_id?pending():null;
