@@ -10,7 +10,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm()
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm()
 const uploading = ref(false)
 const fileName = ref('')
 const file = ref<File | null>(null)
@@ -59,7 +59,7 @@ async function upload() {
   try {
     const result = unwrap(await getRouterApi().restoreConfig(file.value))
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
-    toast.success(t('sysBackup.importOk'))
+    notifySaved(result, 'sysBackup.importOk')
     file.value = null
     fileName.value = ''
     if (fileInput.value) fileInput.value.value = ''
@@ -73,7 +73,7 @@ async function upload() {
 
 <template>
   <div class="stack">
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <UiCard :title="t('sysBackup.downloadTitle')">
       <div class="down-btn">
         <button :disabled="downloading" @click="download">{{ t('sysBackup.downloadBtn') }}</button>
@@ -108,19 +108,19 @@ async function upload() {
 /* 对齐原厂 .down-btn：居中描边按钮 + 主题色文字链接 */
 .down-btn {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 28px 0 16px;
 }
 
 .down-btn button {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-width: 180px;
   height: 36px;
   padding: 0 20px;
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--color-bg-muted);
   color: var(--color-primary);
   font-size: var(--fs-base);

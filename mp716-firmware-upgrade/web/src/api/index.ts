@@ -1,7 +1,7 @@
 import { createRouterApi as createRouterApiImpl } from './create-router-api'
 import type { RouterAPI } from './router-api'
 
-export type AdapterKind = 'mock' | 'factory'
+export type AdapterKind = 'mock' | 'factory' | 'device'
 
 /** 开发期临时绕过：登录放行 + 用 mock 填页面，避免未录制契约刷红错 */
 function authBypassEnabled() {
@@ -17,25 +17,17 @@ function resolveAdapterKind(): AdapterKind {
         '[mp716] 生产构建禁止使用 Mock 适配器，请使用原厂 CGI 适配器',
       )
     }
-    return 'factory'
+    return configured === 'device' ? 'device' : 'factory'
   }
 
-  // bypass 开启时强制 mock，便于对齐菜单与表单；关闭 bypass 后仍可按配置走 factory
+  // bypass 开启时强制 mock；关闭后按配置走 device / factory
   if (authBypassEnabled()) return 'mock'
-
-  return configured === 'factory' ? 'factory' : 'mock'
+  if (configured === 'factory') return 'factory'
+  if (configured === 'device') return 'device'
+  return 'mock'
 }
 
-let tokenGetter: () => string | null = () => null
-
-export function setRouterApiTokenGetter(getter: () => string | null): void {
-  tokenGetter = getter
-}
-
-/** 留给已录制的原厂会话字段。当前生产适配器在契约录到之前不会发送它。 */
-export function currentSessionToken(): string | null {
-  return tokenGetter()
-}
+export { currentSessionToken, setRouterApiTokenGetter } from './session'
 
 export function createRouterApi(): RouterAPI {
   return createRouterApiImpl()
@@ -48,7 +40,7 @@ export function getRouterApi(): RouterAPI {
   return routerApi
 }
 
-/** UI 展示用：mock | factory */
+/** UI 展示用：mock | factory | device */
 export function getApiMode(): AdapterKind {
   return resolveAdapterKind()
 }

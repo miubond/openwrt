@@ -9,6 +9,7 @@ import FormActions from '@/components/FormActions.vue'
 import UiSelect from '@/components/UiSelect.vue'
 import ApplyBanner from '@/components/ApplyBanner.vue'
 import LoadingState from '@/components/LoadingState.vue'
+import NativeServiceNotice from '@/components/NativeServiceNotice.vue'
 import { asApplyHandle, formatApiError, getRouterApi, unwrap } from '@/api'
 import type { PptpClientConfig } from '@/api'
 import { useApplyConfirm } from '@/composables/useApplyConfirm'
@@ -16,13 +17,13 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 
 const mppeOptions = computed(() => [
   { value: 0, label: t('vpn.mppeRequired') },
-  { value: 1, label: t('vpn.mppeOptional') },
+  ...(import.meta.env.VITE_ROUTER_ADAPTER !== 'device' ? [{ value: 1, label: t('vpn.mppeOptional') }] : []),
   { value: 2, label: t('vpn.mppeNone') },
 ])
 
@@ -43,7 +44,11 @@ const form = reactive<PptpClientConfig>({
   routes: [],
 })
 
+const isNative = import.meta.env.VITE_ROUTER_ADAPTER === 'device'
 let loadedEnabled = false
+const clientConnected = computed(() => isNative
+  ? loadedEnabled && form.enabled && form.status === 1
+  : form.status !== 0)
 let timer: ReturnType<typeof setInterval> | undefined
 
 function stopStatusPoll() {
@@ -96,7 +101,7 @@ async function save() {
   saving.value = true
   try {
     const result = unwrap(await getRouterApi().updatePptpClient({ ...form, routes: form.routes.map((route) => ({ ...route })) }))
-    toast.success(t('vpn.pptpClientApplied'))
+    notifySaved(result, 'vpn.pptpClientApplied')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {
@@ -117,10 +122,11 @@ onUnmounted(stopStatusPoll)
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else>
       <div class="settings-form">
+        <NativeServiceNotice :available="form.serviceAvailable" :message="form.serviceMessage" />
         <UiFormRow :label="t('vpn.pptpClientSettings')">
           <label class="switch">
             <input v-model="form.enabled" type="checkbox" />
@@ -131,7 +137,7 @@ onUnmounted(stopStatusPoll)
 
         <template v-if="form.enabled">
           <UiFormRow :label="t('vpn.connectionStatus')">
-            <div class="value">{{ form.status === 0 ? t('vpn.connFailed') : t('vpn.connSuccess') }}</div>
+            <div class="value">{{ clientConnected ? t('vpn.connSuccess') : t('vpn.connFailed') }}</div>
           </UiFormRow>
           <UiFormRow :label="t('vpn.clientIp')">
             <div class="value">{{ form.address || '—' }}</div>

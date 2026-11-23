@@ -45,6 +45,7 @@ export default {
     statusLimited: '受限',
     apiMode: 'API {mode}',
     delete: '删除',
+    deleting: '删除中…',
     edit: '编辑',
     add: '新增',
     addRule: '添加规则',
@@ -87,6 +88,9 @@ export default {
     required: '{label}不能为空',
     macFormat: 'MAC 格式应为 XX:XX:XX:XX:XX:XX',
     detect: {
+      nativeHostFormat: '请输入 IPv4 地址或 DNS 主机名，不包含协议、路径或端口',
+      nativeHostMaxLen: '主机名不能超过 253 个字符',
+      nativeSourceFormat: '指定源地址须为本机 IPv4 地址',
       hostRequired: 'IP地址或域名不能为空!',
       hostFormat: 'IP地址或域名格式不正确,正确格式为xxx.yyy.zzz(例如baidu.com,www.baidu.com)!',
       hostMaxLen: 'IP地址或域名不能大于63个字符!',
@@ -101,6 +105,7 @@ export default {
     },
   },
   toolDetect: {
+    sourceAutoHint: '留空时自动选择源地址',
     host: 'IP地址或域名',
     source: '指定源地址Ping',
     pingCount: 'Ping包次数',
@@ -274,6 +279,7 @@ export default {
     dryRunValidateOk: '离线验证通过；真实 Flash 升级未启用',
   },
   dashboard: {
+    physicalMappingUnverified: '端口角色待核验；P0–P4 为交换机编号',
     topology: '网络拓扑',
     runningOk: '当前网络运行正常',
     diagnose: '网络诊断',
@@ -356,6 +362,14 @@ export default {
     limited: '该功能受硬件/固件能力限制，当前版本仅提供入口预留。',
   },
   apply: {
+    savedApplying: '配置已保存，正在应用；请等待设备确认应用结果。',
+    savedAwaitingConfirm: '配置已应用，请确认保留；确认前仍可能自动回滚。',
+    inProgressTitle: '正在应用配置',
+    inProgressDesc: '设备正在应用服务，完成后才能确认。',
+    rollingBackTitle: '正在恢复配置',
+    rollingBackDesc: '请等待设备完成恢复；结果以设备返回为准。',
+    failedTitle: '配置操作失败',
+    failedDesc: '尚未确认恢复成功，请重试回滚并检查设备。',
     pending: '有未应用的配置更改',
     discard: '放弃',
     applyNow: '应用更改',
@@ -396,6 +410,10 @@ export default {
     sectionNetwork: '网络信息',
   },
   wifiBasic: {
+    keepCurrentMode: '保持现有 {mode}',
+    keepCurrentEncryption: '保持现有加密（{encryption}）',
+    preserveEncryptionHint: '当前加密方式支持保持原配置；修改密码前请选择受支持的加密方式。',
+    nativeModeHint: '无线模式按设备支持列表显示；11B 尚未开放。',
     title: '2.4G 基础设置',
     enabled: '无线开关',
     ssid: 'SSID',
@@ -482,6 +500,8 @@ export default {
     noFile: '请选择配置文件',
     fileTooBig: '文件不能大于2M!',
     importOk: '配置已导入，请勿关闭设备',
+    restoring: '恢复中…请不要关闭设备',
+    restoringAbout: '完成还需约 {n} 秒',
   },
   sysReboot: {
     subtitle: '点击下面的按钮，将重启设备。',
@@ -544,6 +564,7 @@ export default {
     secondaryDns: '备 DNS',
   },
   wan: {
+    nativeWiredOnly: '当前原生固件仅适配有线 WAN，蜂窝模块尚未验收。',
     desc: '本页面用于设置多种访问Internet方式的参数。',
     help: '页面帮助',
     helpBody:
@@ -666,10 +687,12 @@ export default {
     connectedHours: '{h} 小时 {m} 分',
   },
   vpn: {
+    serviceUnavailable: '当前固件尚未安装此 VPN 服务。可保存关闭状态的配置，启用服务需要配套固件。',
     addUser: '新增用户',
     editUser: '编辑用户',
-    deleteUserTitle: '删除这个用户？',
-    deleteUserBody: '删除后会立即提交整份用户表。',
+    deleteUserTitle: '确认删除',
+    deleteUserName: '确定删除用户「{name}」吗？',
+    deleteUserBody: '删除后将立即提交并生效。',
     userSaved: '用户已保存',
     errUsername: '请填写用户名',
     userType: '用户类型',
@@ -792,6 +815,11 @@ export default {
     submitted: 'QoS 配置已提交',
   },
   devices: {
+    search: '搜索设备名称、IP 或 MAC',
+    noMatch: '无匹配设备', details: '设备详情', interface: '接口',
+    linkLabel: '连接方式', statusLabel: '状态',
+    link: { all: '全部连接', ethernet: '有线', wifi: '无线', unknown: '未知' },
+    status: { all: '全部状态', online: '在线', offline: '离线' },
     pageDesc: '访问控制入口与 main 的安全策略一致。断开在线终端请到「在线设备」。',
     wifiAclTitle: '无线访问控制',
     wifiAclDesc: '基于 MAC 的允许或拒绝列表，作用于 2.4GHz 关联终端。',

@@ -22,6 +22,7 @@ export const ROUTER_API_CONTRACT: ContractRoute[] = [
   { path: 'wizard/quick', methods: ['GET', 'POST'], auth: true, delegate: 'httpd', adapterMethod: 'getQuickSetting|applyQuickSetting', bodyShape: '{wan,wifi}' },
   { path: 'wizard/complete', methods: ['POST'], auth: true, delegate: 'httpd', adapterMethod: 'completeWizardFirstBoot' },
   { path: 'system/ping', methods: ['GET'], auth: true, delegate: 'httpd', adapterMethod: 'ping' },
+  { path: 'home/dashboard', methods: ['GET'], auth: true, delegate: 'httpd', adapterMethod: 'getHomeDashboard', responseShape: 'HomeDashboard' },
   { path: 'system/info', methods: ['GET'], auth: true, delegate: 'httpd', adapterMethod: 'getSystemInfo', responseShape: 'SystemInfo' },
   { path: 'system/device', methods: ['GET'], auth: true, delegate: 'httpd', adapterMethod: 'getDeviceInfo', responseShape: 'DeviceInfo' },
   { path: 'system/status', methods: ['GET'], auth: true, delegate: 'httpd', adapterMethod: 'getSystemStatus', responseShape: 'SystemStatus' },

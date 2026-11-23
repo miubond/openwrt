@@ -45,6 +45,7 @@ export default {
     statusLimited: '受限',
     apiMode: 'API {mode}',
     delete: '刪除',
+    deleting: '刪除中…',
     edit: '編輯',
     add: '新增',
     addRule: '新增規則',
@@ -87,6 +88,9 @@ export default {
     required: '{label}不能為空',
     macFormat: 'MAC 格式應為 XX:XX:XX:XX:XX:XX',
     detect: {
+      nativeHostFormat: '請輸入 IPv4 位址或 DNS 主機名稱，不包含協定、路徑或連接埠',
+      nativeHostMaxLen: '主機名稱不能超過 253 個字元',
+      nativeSourceFormat: '指定來源位址須為本機 IPv4 位址',
       hostRequired: 'IP位址或域名不能為空!',
       hostFormat: 'IP位址或域名格式不正確,正確格式為xxx.yyy.zzz(例如baidu.com,www.baidu.com)!',
       hostMaxLen: 'IP位址或域名不能大於63個字元!',
@@ -101,6 +105,7 @@ export default {
     },
   },
   toolDetect: {
+    sourceAutoHint: '留空時自動選擇來源位址',
     host: 'IP位址或域名',
     source: '指定源位址Ping',
     pingCount: 'Ping包次數',
@@ -272,6 +277,7 @@ export default {
     dryRunValidateOk: '離線驗證通過；真實 Flash 升級未啟用',
   },
   dashboard: {
+    physicalMappingUnverified: '連接埠角色待驗證；P0–P4 為交換器編號',
     topology: '網路拓撲',
     runningOk: '目前網路運行正常',
     diagnose: '網路診斷',
@@ -354,6 +360,14 @@ export default {
     limited: '此功能受硬體／韌體能力限制，目前版本僅提供入口預留。',
   },
   apply: {
+    savedApplying: '設定已儲存，正在套用；請等待裝置確認結果。',
+    savedAwaitingConfirm: '設定已套用，請確認保留；確認前仍可能自動還原。',
+    inProgressTitle: '正在套用設定',
+    inProgressDesc: '裝置正在套用服務，完成後才能確認。',
+    rollingBackTitle: '正在還原設定',
+    rollingBackDesc: '請等待裝置完成還原；以裝置回傳結果為準。',
+    failedTitle: '設定操作失敗',
+    failedDesc: '尚未確認還原成功，請重試回復並檢查裝置。',
     pending: '有未套用的設定變更',
     discard: '放棄',
     applyNow: '套用變更',
@@ -394,6 +408,10 @@ export default {
     sectionNetwork: '網路資訊',
   },
   wifiBasic: {
+    keepCurrentMode: '保留目前 {mode}',
+    keepCurrentEncryption: '保留目前加密（{encryption}）',
+    preserveEncryptionHint: '目前加密方式可保留原設定；修改密碼前請選擇受支援的加密方式。',
+    nativeModeHint: '無線模式依裝置支援清單顯示；11B 尚未開放。',
     title: '2.4G 基礎設定',
     enabled: '無線開關',
     ssid: 'SSID',
@@ -480,6 +498,8 @@ export default {
     noFile: '請選擇設定檔',
     fileTooBig: '檔案不能大於2M!',
     importOk: '設定已匯入，請勿關閉裝置',
+    restoring: '恢復中…請不要關閉裝置',
+    restoringAbout: '完成還需約 {n} 秒',
   },
   sysReboot: {
     subtitle: '點擊下面的按鈕，將重啟裝置。',
@@ -542,6 +562,7 @@ export default {
     secondaryDns: '備用 DNS',
   },
   wan: {
+    nativeWiredOnly: '目前原生韌體僅適配有線 WAN，行動網路模組尚未驗收。',
     desc: '本頁面用於設定多種連線 Internet 方式的參數。',
     help: '頁面說明',
     helpBody:
@@ -664,10 +685,12 @@ export default {
     connectedHours: '{h} 小時 {m} 分',
   },
   vpn: {
+    serviceUnavailable: '目前韌體尚未安裝此 VPN 服務。可儲存關閉狀態的設定，啟用服務需要配套韌體。',
     addUser: '新增使用者',
     editUser: '編輯使用者',
-    deleteUserTitle: '刪除這個使用者？',
-    deleteUserBody: '刪除後會立即提交整份使用者表。',
+    deleteUserTitle: '確認刪除',
+    deleteUserName: '確定刪除使用者「{name}」嗎？',
+    deleteUserBody: '刪除後將立即提交並生效。',
     userSaved: '使用者已儲存',
     errUsername: '請填寫使用者名稱',
     userType: '使用者類型',
@@ -790,6 +813,11 @@ export default {
     submitted: 'QoS 設定已提交',
   },
   devices: {
+    search: '搜尋裝置名稱、IP 或 MAC',
+    noMatch: '沒有相符裝置', details: '裝置詳情', interface: '介面',
+    linkLabel: '連線方式', statusLabel: '狀態',
+    link: { all: '全部連線', ethernet: '有線', wifi: '無線', unknown: '未知' },
+    status: { all: '全部狀態', online: '上線', offline: '離線' },
     pageDesc: '存取控制入口與 main 的安全策略一致。斷開線上終端請到「線上裝置」。',
     wifiAclTitle: '無線存取控制',
     wifiAclDesc: '基於 MAC 的允許或拒絕清單，作用於 2.4GHz 關聯終端。',

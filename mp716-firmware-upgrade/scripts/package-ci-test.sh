@@ -39,14 +39,15 @@ python3 packer/mp716_fwpack.py pack \
   --out build/ci-release/test.mp716upd \
   --hardware-revision ci-lab \
   --firmware-version "$(cat config/firmware.version)" \
-  --web-ui "$(cat config/firmware.version)" \
+  --web-ui "$(python3 -c 'import json; print(json.load(open("web/package.json"))["version"])')" \
   --build-time 2026-11-13T00:00:00Z 2>&1 | tee build/ci-logs/pack-test-container.log
 python3 - <<'PY'
 from pathlib import Path
+import json
 Path("build/ci-release/device.profile").write_text(
     "product=MP716\nhardware_revision=ci-lab\nbase_firmware=014\n"
     "vendor_software_version=014\ninstalled_custom_firmware=\n"
-    f"web_ui={Path('config/firmware.version').read_text().strip()}\nupgrade_engine=1.0.0\n",
+    f"web_ui={json.loads(Path('web/package.json').read_text())['version']}\nupgrade_engine=1.0.0\n",
     encoding="utf-8")
 PY
 verify_report build/ci-release/verify.json \

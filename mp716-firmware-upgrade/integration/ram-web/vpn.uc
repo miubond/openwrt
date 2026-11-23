@@ -2,9 +2,14 @@
 import { cursor } from 'uci';
 import { readfile, writefile, mkdir, chmod, rename, stat, glob, unlink } from 'fs';
 import { VPN_KINDS, defaults, validate_vpn, validate_openvpn, ip, mask_bits, number_ip } from '/usr/share/mp716/vpn-config.uc';
+import { vpn_plan } from '/usr/share/mp716/vpn-runtime.uc';
+import { check_vpn_services } from '/usr/share/mp716/vpn-services.uc';
 import { command, acquire, release, expire, pending, begin, applied, rollback, store, load } from '/usr/share/mp716/admin-state.uc';
 
 const CONFIG='mp716_vpn', RUNTIME='/var/run/mp716-vpn';
+// netifd prepends "pptp-" / "l2tp-" to these names. Keep the resulting
+// kernel interface names within IFNAMSIZ (15 visible bytes).
+export function client_interface(kind) { return kind=='pptp'?'mp716pptp':'mp716l2tp'; };
 function ensure(c) {
 	if(!stat('/etc/config/'+CONFIG)){writefile('/etc/config/'+CONFIG,'');chmod('/etc/config/'+CONFIG,0600);c.load(CONFIG);}
 }
@@ -27,22 +32,35 @@ function owned(c,pkg,name,type) {
 	c.set(pkg,name,'mp716_managed','1');
 }
 function cleanup(c,pkg) {
-	let names=[];c.foreach(pkg,null,(s)=>{if(s.mp716_managed=='1' && match(s['.name'],/^mp716_vpn_/))push(names,s['.name']);});
+	let names=[];c.foreach(pkg,null,(s)=>{if(s.mp716_managed=='1' && (match(s['.name'],/^mp716_vpn_/) || index(['mp716pptp','mp716l2tp'],s['.name'])>=0))push(names,s['.name']);});
 	for(let name in names)c.delete(pkg,name);
 }
-function configure(c,pkg,name,type,options) {
-	owned(c,pkg,name,type);
-	for(let key,value in options)if(!c.set(pkg,name,key,value))die('无法写入 VPN 网络配置');
+function configure(c,pkg,name,section_type,options) {
+	owned(c,pkg,name,section_type);
+	for(let key,value in options) {
+		// A zone may contain only device selectors (servers/OpenVPN). libuci
+		// rejects an empty list; represent its missing network option explicitly.
+		if(type(value)=='array' && !length(value)) {
+			if(c.get(pkg,name,key)!=null && !c.delete(pkg,name,key))die('无法清除 VPN 网络配置');
+			continue;
+		}
+		if(!c.set(pkg,name,key,value))die('无法写入 VPN 网络配置');
+	}
 }
-export function sync_network(c,m) {
+export function sync_network(c,m,bus) {
 	cleanup(c,'network');cleanup(c,'firewall');
 	let clients=[];
 	for(let pair in [['pptp','pptp'],['xl2tp','l2tp']]) {
-		let cfg=m[pair[0]], name='mp716_vpn_'+pair[0];
+		let cfg=m[pair[0]], name=client_interface(pair[0]);
 		if(!cfg.enabled)continue;
-		configure(c,'network',name,'interface',{proto:pair[1],server:cfg.server,username:cfg.username,password:cfg.password,keepalive:'5 5',defaultroute:'0',peerdns:'0',ipv6:'0',auto:'1',checkup_interval:'5',mtu:'1400'});
+		// l2tp.sh writes these inside quoted pppd option lines; escape them for
+		// that parser without changing the credentials kept in mp716_vpn.
+		let escape=(s)=>replace(replace(s,'\\','\\\\'),'"','\\"');
+		// The supervisor brings clients up only after its daemon/control FIFO and
+		// IPsec guard are ready. auto=1 races network startup against this service.
+		configure(c,'network',name,'interface',{proto:pair[1],server:cfg.server,username:pair[0]=='xl2tp'?escape(cfg.username):cfg.username,password:pair[0]=='xl2tp'?escape(cfg.password):cfg.password,keepalive:'5 5',defaultroute:'0',peerdns:'0',ipv6:'0',auto:'0',checkup_interval:'5',mtu:'1400'});
 		if(pair[0]=='pptp') {
-			let options=cfg.mppe==0?'require-mppe-128':cfg.mppe==1?'mppe-stateful':'nomppe';
+			let options=cfg.mppe==0?'require-mppe-128':'nomppe';
 			c.set('network',name,'pppd_options',options);
 			let routes=cfg.routeType==1?[{target:'0.0.0.0',netmask:'128.0.0.0'},{target:'128.0.0.0',netmask:'128.0.0.0'}]:cfg.routes;
 			for(let i,route in routes)configure(c,'network','mp716_vpn_route_'+i,'route',{interface:name,target:route.target+'/'+mask_bits(route.netmask)});
@@ -51,7 +69,12 @@ export function sync_network(c,m) {
 	}
 	let enabled=m.pptpd.enabled || m.xl2tpd.enabled || length(clients)>0 || m.openvpn.enabled;
 	if(enabled) {
-		configure(c,'firewall','mp716_vpn_zone','zone',{name:'mp716_vpn',input:'ACCEPT',output:'ACCEPT',forward:'ACCEPT',masq:'1',mtu_fix:'1',network:clients,device:['ppp+','tun-mp716']});
+		// fw4 combines positive devices with negative device predicates. PPPoE
+		// WAN names start with pppoe- and must never enter the trusted VPN zone.
+		let devices=['ppp+','tun-mp716','!pppoe+'];
+		let wan=bus?bus.call('network.interface.wan','status',{})?.l3_device:null;
+		if(type(wan)=='string'&&match(wan,/^[A-Za-z0-9_.-]{1,15}$/))push(devices,'!'+wan);
+		configure(c,'firewall','mp716_vpn_zone','zone',{name:'mp716_vpn',input:'ACCEPT',output:'ACCEPT',forward:'ACCEPT',masq:'1',mtu_fix:'1',network:clients,device:devices});
 		for(let pair in [['lan','mp716_vpn'],['mp716_vpn','lan'],['mp716_vpn','wan']])configure(c,'firewall','mp716_vpn_fwd_'+pair[0]+'_'+pair[1],'forwarding',{src:pair[0],dest:pair[1]});
 	}
 	if(m.pptpd.enabled) {
@@ -68,13 +91,8 @@ export function sync_network(c,m) {
 };
 function check_services(kind,cfg) {
 	if(!cfg.enabled)return;
-	let needed=[];
-	if(kind=='pptp')needed=['/usr/sbin/pppd','/lib/netifd/proto/pptp.sh'];
-	if(kind=='pptpd')needed=['/usr/sbin/pptpd'];
-	if(kind=='xl2tp'||kind=='xl2tpd')needed=['/usr/sbin/xl2tpd','/lib/netifd/proto/l2tp.sh'];
-	if(kind=='openvpn')needed=['/usr/sbin/openvpn'];
-	if(kind=='xl2tp'&&length(cfg.ipsecKey)||kind=='xl2tpd'&&cfg.ipsecEnabled)push(needed,'/usr/lib/ipsec/starter');
-	for(let path in needed)if(!stat(path))die('当前固件缺少 VPN 服务，请先安装配套固件: '+path);
+	let m={};for(let name in VPN_KINDS)m[name]=defaults(name);m[kind]=cfg;
+	check_vpn_services(m);
 }
 function session_alive(row) {
 	if(!row || !match(row.pid || '',/^[1-9][0-9]{0,7}$/))return false;
@@ -91,16 +109,18 @@ function online() {
 }
 function public_config(bus,c,kind,m) {
 	let cfg={...m[kind]};
+	try {check_services(kind,{...m[kind],enabled:true});cfg.serviceAvailable=true;cfg.serviceMessage='';}
+	catch(e) {cfg.serviceAvailable=false;cfg.serviceMessage=e.message || string(e);}
 	if(kind=='users') {
 		cfg.users=map(cfg.users,(u)=>({...u,password:'********'}));cfg.pptpStart=m.pptpd.startIp;cfg.pptpEnd=m.pptpd.endIp;cfg.l2tpStart=m.xl2tpd.startIp;cfg.l2tpEnd=m.xl2tpd.endIp;
 	}else {
 		if(length(cfg.password||''))cfg.password='********';if(length(cfg.ipsecKey||''))cfg.ipsecKey='********';
 		if(kind=='pptp'||kind=='xl2tp') {
-			let status=bus.call('network.interface.mp716_vpn_'+kind,'status',{}) || {};
-			cfg.status=status.up?1:0;cfg.address=(status['ipv4-address'] || [])[0]?.address || '';
+			let status=bus.call('network.interface.'+client_interface(kind),'status',{}) || {};
+			cfg.status=cfg.enabled?(status.up?1:0):2;cfg.address=(status['ipv4-address'] || [])[0]?.address || '';
 			if(kind=='xl2tp')cfg.serverEnabled=m.xl2tpd.enabled;
 		}
-		if(kind=='openvpn') {let status=load(RUNTIME+'/openvpn-up.json');cfg.status=session_alive(status)?1:0;cfg.configUploaded=!!stat('/etc/mp716-vpn/client.ovpn');}
+		if(kind=='openvpn') {let status=load(RUNTIME+'/openvpn-up.json');cfg.status=cfg.enabled?(session_alive(status)?1:0):2;cfg.configUploaded=!!stat('/etc/mp716-vpn/client.ovpn');}
 		if((kind=='pptpd'||kind=='xl2tpd')&&!c.get(CONFIG,kind,'data')) {
 			let value=c.get('network','lan','ipaddr'), address=type(value)=='array'?value[0]:value;
 			if(address)cfg.primaryDns=split(address,'/')[0];
@@ -120,12 +140,17 @@ function check_pool(bus,cfg) {
 }
 function transaction(c,owner,fn,extra) {
 	let t=begin(owner,[CONFIG,'network','firewall'],'vpn',90,extra);
-	try {ensure(c);fn();if(!c.commit(CONFIG)||!c.commit('network')||!c.commit('firewall'))die('无法提交 VPN 配置');return {data:applied(t)};}
+	try {ensure(c);if(!c.load('network')||!c.load('firewall'))die('VPN 所需的网络或防火墙配置不存在');fn();if(!c.commit(CONFIG)||!c.commit('network')||!c.commit('firewall'))die('无法提交 VPN 配置');
+		// Client credentials also appear in netifd's UCI package. Restrict that
+		// file as well as the private model; rollback restores original modes.
+		if(!chmod('/etc/config/'+CONFIG,0600)||!chmod('/etc/config/network',0600))die('无法保护 VPN 凭据文件权限');
+		return {data:applied(t)};}
 	catch(e){rollback(t);die(e);}
 }
 function quote(v) {return "'"+replace(v,"'","'\\''")+"'";}
 function pem(name,raw) {
-	if(length(raw)>131072 || index(raw,'\x00')>=0 || !match(raw,/-----BEGIN (CERTIFICATE|RSA PRIVATE KEY|PRIVATE KEY|EC PRIVATE KEY|OpenVPN Static key V1)-----/))die('证书包中含无效 PEM 文件: '+name);
+	let marker=match(raw,/-----BEGIN (CERTIFICATE|RSA PRIVATE KEY|PRIVATE KEY|EC PRIVATE KEY|OpenVPN Static key V1)-----/);
+	if(length(raw)>131072 || index(raw,'\x00')>=0 || !marker || index(raw,'-----END '+marker[1]+'-----')<0)die('证书包中含无效 PEM 文件: '+name);
 	return raw;
 }
 function upload_files(body,owner) {
@@ -141,7 +166,10 @@ function upload_files(body,owner) {
 	let dir='/tmp/mp716-vpn-upload-'+owner;mkdir(dir,0700);
 	try {
 		writefile(dir+'/input.gz',raw);chmod(dir+'/input.gz',0600);
-		let decompress='/bin/busybox gzip -dc '+quote(dir+'/input.gz')+' | /bin/busybox head -c 524289 > '+quote(dir+'/archive.tar');
+		// Bound output without a pipe: "gzip | head" reports head's status and
+		// can accept a corrupt gzip trailer. The file limit bounds a zip bomb,
+		// while gzip's actual status now rejects truncated/CRC-invalid input.
+		let decompress='ulimit -f 1024 || exit 1; exec /bin/busybox gzip -dc '+quote(dir+'/input.gz')+' > '+quote(dir+'/archive.tar');
 		if(command('/bin/busybox timeout 10 /bin/sh -c '+quote(decompress)).code!=0 || (stat(dir+'/archive.tar')?.size || 0)>524288)die('证书包解压失败或超出限制');
 		let listing=command('/bin/busybox tar -tvf '+quote(dir+'/archive.tar'));
 		if(listing.code!=0)die('证书压缩包无效');
@@ -184,6 +212,7 @@ export function route_vpn(bus,method,path,body,owner) {
 			}
 			if(kind=='openvpn/upload') {
 				let files=upload_files(body,owner), extras=map(keys(files),(n)=>'/etc/mp716-vpn/'+n);
+				vpn_plan(m,(path)=>files[pop(split(path,'/'))] ?? readfile(path),'');
 				return transaction(c,owner,()=>{
 					mkdir('/etc/mp716-vpn',0700);chmod('/etc/mp716-vpn',0700);
 					for(let name,raw in files) {
@@ -199,7 +228,9 @@ export function route_vpn(bus,method,path,body,owner) {
 			if((kind=='pptpd'||kind=='xl2tpd')&&cfg.enabled)check_pool(bus,cfg);
 			if(kind=='openvpn'&&cfg.enabled&&cfg.mode==1&&!stat('/etc/mp716-vpn/client.ovpn'))die('请先上传 OpenVPN 配置文件');
 			m[kind]=cfg;
-			return transaction(c,owner,()=>{save(c,kind,cfg);sync_network(c,m);});
+			for(let name in VPN_KINDS)m[name]=validate_vpn(name,m[name],null,m);
+			vpn_plan(m,readfile,'');
+			return transaction(c,owner,()=>{save(c,kind,cfg);sync_network(c,m,bus);});
 		})();}catch(e){result={error:'VALIDATION',message:e.message || string(e)};}
 		release();return result;
 	}catch(e){return {error:'VALIDATION',message:e.message || string(e)};}

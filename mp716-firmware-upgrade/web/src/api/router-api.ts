@@ -160,7 +160,7 @@ export interface RouterAPI {
   getFirmwareInfo(): Promise<ApiResponse<FirmwareInfo>>
   uploadFirmware(
     file: Blob,
-    options?: { keepSettings?: boolean },
+    options?: { keepSettings?: boolean; maxBytes?: number; maxSizeLabel?: string },
   ): Promise<ApiResponse<ConfigApplyResult>>
 
   getFirmwareV2Info(): Promise<ApiResponse<FirmwareV2EngineInfo>>

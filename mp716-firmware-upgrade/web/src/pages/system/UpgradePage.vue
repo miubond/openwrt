@@ -58,7 +58,11 @@ async function doUpgrade() {
   uploading.value = true
   try {
     const result = unwrap(
-      await getRouterApi().uploadFirmware(file.value, { keepSettings: keepSettings.value }),
+      await getRouterApi().uploadFirmware(file.value, {
+        keepSettings: keepSettings.value,
+        maxBytes: info.value?.maxBytes,
+        maxSizeLabel: info.value?.maxSizeLabel,
+      }),
     )
     if (result.validated && result.flashWrite === false) {
       toast.success(result.message || t('upgrade.successValidateOnly'))

@@ -54,10 +54,11 @@ GitHub 托管 runner 在同一次任务内共享上述工具链缓存。Actions 
 | 项目 | 当前值 |
 |---|---|
 | 产品 | MP716 |
-| 原厂软件 | 014 |
-| Web UI | 1.0.0 |
-| 升级引擎 | 1.0.0 |
-| 自研固件 | 空。没有真实启动记录之前不能写成 1.0.0 |
+| 原厂软件（历史/救砖对照） | 014 |
+| Web UI（`openwrt_system`） | 0.2.1 |
+| 自研固件（`config/firmware.version`） | 1.0.7 |
+| 实验室实机 | 已运行 1.0.7 + Vue，原厂 Web/系统未并存，见 [实机运行状态](docs/mp716-device-runtime-state.md) |
+| 产物发布标记 | `UNVERIFIED`；生产在线升级门见 [生产验收](docs/production-acceptance.md) |
 
 ## 本机验证
 

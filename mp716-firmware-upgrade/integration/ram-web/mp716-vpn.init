@@ -1,0 +1,192 @@
+#!/bin/sh /etc/rc.common
+# This service owns only /var/run/mp716-vpn and its dedicated procd instances.
+START=59
+STOP=20
+USE_PROCD=1
+
+runtime=/var/run/mp716-vpn
+json_value() {
+	local kind value result
+	[ "$#" -eq 2 ] || return 1
+	case "$1" in pptp|l2tp|ipsec|openvpn|pptpClient|l2tpClient|chap|guard) ;; *) return 1 ;; esac
+	# Command substitution strips all trailing LFs. Preserve them with a marker,
+	# then remove only jsonfilter's one output delimiter, not guard data's LF.
+	# Type and value are emitted by the same real parser invocation, in order.
+	result=$(/usr/bin/jsonfilter -s "$2" -t "@.$1" -e "@.$1" && printf '.') || return 1
+	kind=${result%%'
+'*}
+	value=${result#*'
+'}
+	[ "$value" != "$result" ] || return 1
+	value=${value%.}
+	case "$value" in
+		*'
+') value=${value%?} ;;
+		*) return 1 ;;
+	esac
+	case "$1:$kind:$value" in
+		guard:string:|guard:string:input|guard:string:output) ;;
+		guard:*) return 1 ;;
+		*:boolean:true|*:boolean:false) ;;
+		*) return 1 ;;
+	esac
+	printf '%s\n' "$value"
+}
+
+read_service_plan() {
+	local document wrapped kind original
+	[ -f "$runtime/services.json" ] && [ -r "$runtime/services.json" ] && [ ! -L "$runtime/services.json" ] || return 1
+	original=$(cat "$runtime/services.json") || return 1
+	# json-c truncates object keys at an escaped NUL, so reject it before parsing
+	# as well as in the canonical values below. It is never part of this schema.
+	case "$original" in *'\u0000'*) return 1 ;; esac
+	# Serialize one real parsed root into a stable, non-secret snapshot. Subsequent
+	# typed field reads cannot mix two atomic generations of services.json.
+	# Array input mode also parses the file's tail; ordinary mode accepts a valid
+	# first object followed by garbage. Require exactly one complete object. Both
+	# values use the same json-c serializer; inspecting index 1 alone misses null.
+	wrapped=$(/usr/bin/jsonfilter -a -i "$runtime/services.json" -e '@') || return 1
+	document=$(/usr/bin/jsonfilter -s "$wrapped" -e '@[0]') || return 1
+	[ "$wrapped" = "[ $document ]" ] || return 1
+	# Shell variables and string output cannot represent embedded NUL reliably.
+	# Such a value is never valid in this boolean/guard-only service plan.
+	case "$document" in *'\u0000'*) return 1 ;; esac
+	kind=$(/usr/bin/jsonfilter -s "$document" -t '@') || return 1
+	[ "$kind" = object ] || return 1
+	plan_pptp=$(json_value pptp "$document") || return 1
+	plan_l2tp=$(json_value l2tp "$document") || return 1
+	plan_ipsec=$(json_value ipsec "$document") || return 1
+	plan_openvpn=$(json_value openvpn "$document") || return 1
+	plan_pptp_client=$(json_value pptpClient "$document") || return 1
+	plan_l2tp_client=$(json_value l2tpClient "$document") || return 1
+	plan_chap=$(json_value chap "$document") || return 1
+	plan_guard=$(json_value guard "$document") || return 1
+}
+
+plan_active() {
+	[ "$plan_pptp" = true ] || [ "$plan_l2tp" = true ] || [ "$plan_ipsec" = true ] ||
+		[ "$plan_openvpn" = true ] || [ "$plan_pptp_client" = true ] || [ "$plan_l2tp_client" = true ]
+}
+
+prepare_chap() {
+	local target
+	[ "$#" -eq 1 ] || return 1
+	case "$1" in true|false) ;; *) return 1 ;; esac
+	if [ "$1" = true ]; then
+		target=$(readlink -f /etc/ppp/chap-secrets)
+		case "$target" in /etc/ppp/chap-secrets|/var/etc/chap-secrets|/tmp/etc/chap-secrets) ;; *) logger -t mp716-vpn 'Unexpected PPP secrets path'; return 1 ;; esac
+		[ -f "$target" ] || return 1
+		if [ -f "$runtime/chap-target" ]; then
+			[ "$(cat "$runtime/chap-target")" = "$target" ] || return 1
+			umount "$target" || return 1
+			rm -f "$runtime/chap-target"
+		else
+			cp -p "$target" "$runtime/chap-original" || return 1
+			chmod 600 "$runtime/chap-original"
+		fi
+		mount --bind "$runtime/chap-secrets" "$target" || return 1
+		printf '%s\n' "$target" > "$runtime/chap-target"
+	else
+		if [ -f "$runtime/chap-target" ]; then
+			target=$(cat "$runtime/chap-target")
+			case "$target" in /etc/ppp/chap-secrets|/var/etc/chap-secrets|/tmp/etc/chap-secrets) umount "$target" || return 1 ;; *) return 1 ;; esac
+			rm -f "$runtime/chap-target" "$runtime/chap-original"
+		fi
+	fi
+}
+
+prepare_guard() {
+	local hook
+	[ "$#" -eq 1 ] || return 1
+	hook=$1
+	if [ -z "$hook" ]; then
+		nft delete table inet mp716_vpn_guard 2>/dev/null || true
+		return 0
+	fi
+	case "$hook" in input|output) ;; *) return 1 ;; esac
+	# Install a deny rule first. Missing nft_xfrm support must never expose a
+	# formerly plaintext L2TP listener during a failed reload to IPsec mode.
+	if nft list table inet mp716_vpn_guard >/dev/null 2>&1; then
+		printf 'delete table inet mp716_vpn_guard\n' > "$runtime/guard-deny.nft"
+	else : > "$runtime/guard-deny.nft"; fi
+	printf 'table inet mp716_vpn_guard { chain %s { type filter hook %s priority -5; policy accept; udp dport 1701 drop; }\n}\n' "$hook" "$hook" >> "$runtime/guard-deny.nft"
+	nft -f "$runtime/guard-deny.nft" || return 1
+	{ printf 'delete table inet mp716_vpn_guard\n'; cat "$runtime/guard.nft"; } > "$runtime/guard-apply.nft"
+	nft -f "$runtime/guard-apply.nft"
+}
+
+instance() {
+	local name="$1"; shift
+	procd_open_instance "$name"
+	procd_set_param command "$@"
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+}
+start_service() {
+	local was_active=0 active=0
+	# Only a genuinely absent first-boot plan means inactive. An existing broken
+	# or unreadable plan must leave the current guard and CHAP mount untouched.
+	if [ -e "$runtime/services.json" ] || [ -L "$runtime/services.json" ]; then
+		read_service_plan || return 1
+		if plan_active; then was_active=1; fi
+	fi
+	umask 077
+	/usr/bin/ucode /usr/share/mp716/vpn-render.uc || return 1
+	read_service_plan || return 1
+	if plan_active; then active=1; fi
+	prepare_guard "$plan_guard" || return 1
+	prepare_chap "$plan_chap" || return 1
+	if [ "$plan_pptp" = true ]; then
+		instance pptp /usr/sbin/pptpd --fg -c "$runtime/pptpd.conf" -o "$runtime/pptp.options"
+		procd_set_param file "$runtime/pptpd.conf" "$runtime/pptp.options" "$runtime/chap-secrets"
+		procd_close_instance
+	fi
+	if [ "$plan_l2tp" = true ]; then
+		mkdir -p /var/run/xl2tpd
+		instance l2tp /usr/sbin/xl2tpd -D -l -p "$runtime/xl2tpd.pid" -c "$runtime/xl2tpd.conf" -C /var/run/xl2tpd/l2tp-control -s "$runtime/xl2tp-secrets"
+		procd_set_param file "$runtime/xl2tpd.conf" "$runtime/l2tp.options" "$runtime/chap-secrets"
+		procd_close_instance
+	fi
+	if [ "$plan_ipsec" = true ]; then
+		instance ipsec /usr/lib/ipsec/starter --daemon charon --nofork --conf "$runtime/ipsec.conf"
+		procd_set_param env "STRONGSWAN_CONF=$runtime/strongswan.conf"
+		procd_set_param file "$runtime/ipsec.conf" "$runtime/ipsec.secrets" "$runtime/strongswan.conf"
+		procd_close_instance
+	fi
+	if [ "$plan_openvpn" = true ]; then
+		instance openvpn /usr/sbin/openvpn --config "$runtime/openvpn.conf" --writepid "$runtime/openvpn.pid"
+		procd_set_param file "$runtime/openvpn.conf" "$runtime/openvpn.auth" /etc/mp716-vpn/ca.pem /etc/mp716-vpn/client.crt /etc/mp716-vpn/client.key /etc/mp716-vpn/ta.key
+		procd_close_instance
+	fi
+	# netifd must see the dedicated L2TP control FIFO before it starts the LAC.
+	# These UCI interfaces deliberately have auto=0 to prevent network S20
+	# from invoking the package's unrelated xl2tpd init script during boot.
+	if [ "$active" = 1 ] || [ "$was_active" = 1 ]; then
+		(
+			sleep 2
+			/bin/ubus call network reload || exit 1
+			/etc/init.d/firewall reload || exit 1
+			[ "$plan_pptp_client" != true ] || /bin/ubus call network.interface.mp716pptp up
+			if [ "$plan_l2tp_client" = true ]; then
+				attempt=0
+				while [ ! -p /var/run/xl2tpd/l2tp-control ]; do
+					attempt=$((attempt + 1))
+					[ "$attempt" -le 10 ] || { logger -t mp716-vpn 'L2TP control FIFO unavailable; client remains down'; exit 1; }
+					sleep 1
+				done
+				/bin/ubus call network.interface.mp716l2tp up
+			fi
+		) >/dev/null 2>&1 &
+	fi
+}
+stop_service() {
+	local target
+	if [ -f "$runtime/chap-target" ]; then
+		target=$(cat "$runtime/chap-target")
+		case "$target" in /etc/ppp/chap-secrets|/var/etc/chap-secrets|/tmp/etc/chap-secrets) umount "$target" && rm -f "$runtime/chap-target" "$runtime/chap-original" ;; esac
+	fi
+	# Retain the IPsec plaintext deny guard if a service crashes or is stopped.
+	# A successful disabled-configuration reload explicitly removes it.
+}
+service_triggers() { procd_add_reload_trigger mp716_vpn; }

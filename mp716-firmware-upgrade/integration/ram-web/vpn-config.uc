@@ -18,6 +18,7 @@ export function mask_bits(v) {
 };
 export function host(v) {
 	if(!text(v,253)||!length(v))return false;
+	if(match(v,/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/))return ip(v);
 	for(let s in split(v,'.'))if(!match(s,/^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/))return false;
 	return true;
 };
@@ -28,7 +29,10 @@ function secret(v,previous,required) {
 }
 function cidr(v) {
 	if(!text(v,19))return false;
-	let p=split(v,'/');return length(p)==2 && ip(p[0]) && match(p[1],/^[0-9]{1,2}$/) && int(p[1])<=32;
+	let p=split(v,'/');
+	if(length(p)!=2 || !ip(p[0]) || !match(p[1],/^[0-9]{1,2}$/) || int(p[1])>32)return false;
+	let size=1;for(let i=0;i<32-int(p[1]);i++)size*=2;
+	return int(number_ip(p[0])/size)*size==number_ip(p[0]);
 }
 export function defaults(kind) {
 	if(kind=='pptpd'||kind=='xl2tpd') {
@@ -51,6 +55,7 @@ export function validate_vpn(kind,value,previous,peers) {
 		if(!integer(cfg.mtu,576,1500)||!integer(cfg.mru,576,1500)||type(cfg.dnsEnabled)!='bool')die('VPN 高级参数无效');
 		if(cfg.dnsEnabled && (!ip(cfg.primaryDns)||(cfg.secondaryDns && !ip(cfg.secondaryDns))))die('VPN DNS 地址无效');
 		if(kind=='pptpd'&&!integer(cfg.mppe,0,2))die('MPPE 参数无效');
+		if(kind=='pptpd'&&cfg.enabled&&cfg.mppe==1)die('当前 PPP 不支持可选 MPPE，请选择强制加密或不加密');
 		if(kind=='xl2tpd') {
 			if(type(cfg.ipsecEnabled)!='bool')die('IPSec 开关无效');
 			cfg.ipsecKey=secret(cfg.ipsecKey,old.ipsecKey,cfg.enabled&&cfg.ipsecEnabled);
@@ -58,18 +63,28 @@ export function validate_vpn(kind,value,previous,peers) {
 		}
 		let other=peers?peers[kind=='pptpd'?'xl2tpd':'pptpd']:null;
 		if(cfg.enabled && other?.enabled && number_ip(cfg.startIp)<=number_ip(other.endIp) && number_ip(cfg.endIp)>=number_ip(other.startIp))die('VPN 地址池冲突');
-		for(let address in [cfg.startIp,cfg.endIp,cfg.server])if(index([0,255],number_ip(address)%256)>=0 || number_ip(address)<167772160 || number_ip(address)>=3758096384)die('VPN 地址不能使用网络、广播或保留地址');
+		for(let address in [cfg.startIp,cfg.endIp,cfg.server]) {
+			let parts=split(address,'.');
+			if(index([0,255],number_ip(address)%256)>=0 || int(parts[0])==0 || int(parts[0])==127 || int(parts[0])>=224 || int(parts[0])==169&&int(parts[1])==254)
+				die('VPN 地址不能使用网络、广播、回环或链路本地地址');
+		}
 		return cfg;
 	}
 	if(kind=='users') {
 		if(type(cfg.users)!='array'||length(cfg.users)>64)die('VPN 用户数量超出限制');
-		let names={};
+		let names={}, addresses={};
 		cfg.users=map(cfg.users,(user)=>{
 			if(!text(user.username,64)||!length(user.username)||names[user.username]||index(['all','pptp','l2tp'],user.type)<0||!text(user.comment||'',128))die('VPN 用户无效或重复');
 			names[user.username]=true;
 			let olduser=filter(old.users || [],(u)=>u.username==user.username)[0];
 			let password=secret(user.password,olduser?.password,true);
-			if(user.address && !ip(user.address))die('VPN 用户地址无效');
+			if(user.address) {
+				if(!ip(user.address)||addresses[user.address])die('VPN 用户地址无效或重复');
+				let servers=user.type=='pptp'?[peers?.pptpd || defaults('pptpd')]:user.type=='l2tp'?[peers?.xl2tpd || defaults('xl2tpd')]:[peers?.pptpd || defaults('pptpd'),peers?.xl2tpd || defaults('xl2tpd')], inside=false;
+				for(let server in servers)if(number_ip(user.address)>=number_ip(server.startIp)&&number_ip(user.address)<=number_ip(server.endIp))inside=true;
+				if(!inside)die('VPN 用户地址必须位于对应服务器的地址池');
+				addresses[user.address]=true;
+			}
 			let routes=filter(split(user.routes||'',';'),(s)=>length(s)>0);
 			if(length(routes)>16)die('VPN 用户路由过多');
 			for(let route in routes)if(!cidr(route))die('VPN 用户路由无效');
@@ -81,6 +96,7 @@ export function validate_vpn(kind,value,previous,peers) {
 		cfg.password=secret(cfg.password,old.password,cfg.enabled);
 		if(kind=='pptp') {
 			if(!integer(cfg.mppe,0,2)||!integer(cfg.routeType,0,1)||type(cfg.routes)!='array'||length(cfg.routes)>32)die('PPTP 客户端参数无效');
+			if(cfg.enabled&&cfg.mppe==1)die('当前 PPP 不支持可选 MPPE，请选择强制加密或不加密');
 			for(let route in cfg.routes)if(!ip(route.target)||mask_bits(route.netmask)==null)die('PPTP 静态路由无效');
 		}else {
 			cfg.ipsecKey=secret(cfg.ipsecKey,old.ipsecKey,false);
@@ -93,6 +109,11 @@ export function validate_vpn(kind,value,previous,peers) {
 	return cfg;
 };
 export function ppp_quote(v) { return '"'+replace(replace(v,'\\','\\\\'),'"','\\"')+'"'; };
+export function session_addresses(kind,local,remote,caller) {
+	if(!ip(local)||(kind!='openvpn'&&!ip(remote)))die('VPN 会话地址无效');
+	if(kind=='openvpn'&&!ip(remote)&&!match(remote || '',/^[A-Fa-f0-9:]{2,45}$/))remote='';
+	return {dialIp:ip(caller)?caller:remote,assignIp:kind=='openvpn'?local:remote,localIp:local};
+};
 export function validate_openvpn(text) {
 	if(type(text)!='string'||length(text)>262144||index(text,'\x00')>=0||match(text,/[\x0b\x0c]/))die('OpenVPN 配置文件无效');
 	let rows=[], inline=null;
@@ -105,10 +126,13 @@ export function validate_openvpn(text) {
 		if(tag){inline=tag[1];push(rows,line);continue;}
 		let words=split(line,/[ \t]+/), option=words[0];
 		if(index(allowed,option)<0)die('不支持的 OpenVPN 指令: '+option);
-		if(option=='dev')line='dev tun-mp716';
+		if(option=='dev') {
+			if(!match(words[1] || '',/^tun([0-9]*|-mp716)$/))die('当前原生 OpenVPN 仅支持 TUN 配置');
+			line='dev tun-mp716';
+		}
 		if(option=='auth-user-pass')line='auth-user-pass /var/run/mp716-vpn/openvpn.auth';
 		if(paths[option]) {
-			if(length(words)<2 || !match(words[1],/^[A-Za-z0-9_.-]+$/))die('证书文件必须使用相对文件名');
+			if(length(words)<2 || (!match(words[1],/^[A-Za-z0-9_.-]+$/) && words[1]!='/etc/mp716-vpn/'+paths[option]))die('证书文件必须使用相对文件名或本后台固定路径');
 			line=option+' /etc/mp716-vpn/'+paths[option];
 			if(option=='tls-auth'&&words[2]) {if(index(['0','1'],words[2])<0)die('TLS 密钥方向无效');line+=' '+words[2];}
 		}

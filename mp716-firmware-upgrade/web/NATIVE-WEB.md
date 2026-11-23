@@ -6,7 +6,7 @@
 
 原厂 014 使用既有 FactoryCgiAdapter，`npm run build:mp716-test`。原厂登录和 CGI 路径保持独立。
 
-自研 OpenWrt 使用 DeviceRouterAdapter，`npm run build:openwrt`，产物位于 `dist-openwrt/`，访问路径 `/mp716/`，接口 `/cgi-bin/mp716/`。固件验签走现有原生验证器，页面只能上传并校验，不能通过此入口刷写。
+自研 OpenWrt 使用 DeviceRouterAdapter，`npm run build:openwrt`，产物位于 `dist-openwrt/`，管理入口 `/`（页面路由 `/#/`），静态资源保持 `/mp716/`，接口 `/cgi-bin/mp716/`。固件验签走现有原生验证器，页面只能上传并校验，不能通过此入口刷写。
 
 ## 仅更新页面
 
@@ -28,4 +28,18 @@ python scripts/package-native-web.py --verify <Web ZIP> --capabilities <设备�
 
 旧设备没有能力响应、API 版本不匹配或缺少路由时，先停止替换后台并补齐设备服务。不能通过移除清单中的路由、伪造连接成功或隐藏整个页面来当作功能已经实现。
 
-2026-11-18：1.0.4 固件完成构建与现机网页验签，但它仍是原有接口范围。完整原生后台的 VPN、诊断和部分系统管理服务处于接入阶段；本项目构建及模拟接口测试不构成这些服务的真机验收。当前独立包保持 UNVERIFIED，不应覆盖现机后台。
+2026-11-18：Web 0.2.0 已补齐原生系统、VPN、诊断及真实配置任务阶段的页面契约，并保留 Factory 模式。主前端回归结果以对应提交的 CI 报告为准。对应的完整固件候选版本为 1.0.5；旧 1.0.4 不含这些新服务。接口回归、服务就绪和 VPN 隧道互通是不同验证层级，未验收的硬件/隧道不得标为成功。产物保持 UNVERIFIED；生产更新须先核对设备依赖与接口能力。
+
+## 管理 IP 根入口
+
+原生构建的 `.env.openwrt` 设置 `VITE_ROUTER_BASE=/`，不改变 `/cgi-bin/mp716/` 接口。部署时把构建产物的 `index.html` 同时安装为 `/www/index.html` 和 `/www/mp716/index.html`，资源仍放在 `/www/mp716/`。直接输入管理 IP 即可打开后台，旧 `/mp716/` 书签保持可用。生产原厂构建未设置此变量，继续使用原来的部署路径。
+
+## feature/lp 设计基准（Web 0.2.1）
+
+界面最初以本地 `feature/lp` 提交 `397021b5fdd2277680df1c44df6ace7ebb2d9ca7` 为参考，随后按用户要求合并 `hotfix/lp` 提交 `1441b0896c7624626186e0867cd2193d924cc654`。当前采用该 hotfix 的 62px 顶栏、最大 1400px 内容框架及独立滚动布局，保留标签上置、有边框输入和终端搜索/筛选/详情。合并后的原生后台继续按设备返回值展示网口；未知映射不从数组位置推断。
+
+这是现有原生后台的设计适配，保留翻译、移动端、原生 DeviceRouterAdapter、配置应用确认/回滚、签名校验及管理 IP 根入口。没有回退到旧分支的原厂 CGI、虚构网口映射、限速或未接通的断开指令。网口角色未核验仍显示 P0–P4；速率为零时首页显示 0bps，累计字节不再替代实时速率。
+
+Web 独立包只含页面资源；不会改变当前固件版本、Wi-Fi、WAN 或管理地址。主源码提交后仍须通过 `sync-web-reference.py` 导出固件快照；不能直接编辑生成目录。构建和本机隔离浏览器测试不等于设备端功能验收。
+
+布局回归可在安装 Playwright Chromium 后运行：`npm run build:openwrt`，然后 `npm run test:ui:lp`。测试只绑定 127.0.0.1，浏览器禁止访问其他来源，原生接口由本机只读测试数据提供；测试不连接设备。默认截图与结果在忽略的 `releases/lp-ui-check/`，可通过 `MP716_WEB_CHECK_OUTPUT` 指定输出目录。

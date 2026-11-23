@@ -56,19 +56,41 @@ def stage(
         if not (web_dist / "index.html").is_file():
             raise SystemExit(f"Missing built Vue frontend: {web_dist}")
         shutil.copytree(web_dist, root / "www/mp716", dirs_exist_ok=True)
+        # Serve the native Vue entry directly at the management IP. Assets and
+        # the legacy /mp716/ entry keep their existing, API-independent paths.
+        shutil.copyfile(web_dist / "index.html", root / "www/index.html")
     gateway = root / "usr/share/mp716/httpd.uc"
     gateway.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("httpd.uc"), gateway)
     gateway.chmod(0o644)
-    for name in ("admin.uc", "admin-state.uc", "admin-tick.uc"):
+    exp_dir = gateway.parent / "experiment"
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    for exp_name in ("rpcd-native-readonly.uc", "README-rpcd-ubus.md"):
+        src = Path(__file__).parent / "experiment" / exp_name
+        if src.is_file():
+            shutil.copyfile(src, exp_dir / exp_name)
+            (exp_dir / exp_name).chmod(0o644)
+    for name in ("build-meta.uc", "admin.uc", "admin-state.uc", "admin-tick.uc", "apply-task.uc", "network-values.uc", "system-values.uc", "physical-ports.uc", "perf-diag.uc", "dispatch.uc", "capabilities.uc", "native-routes.json",
+                 "system-admin.uc", "system-apply.uc", "diagnostics.uc", "diagnostic-worker.sh",
+                 "firewall-admin.uc", "network-services.uc", "port-links.sh",
+                 "vpn.uc", "vpn-config.uc", "vpn-runtime.uc", "vpn-render.uc", "vpn-hook.uc", "vpn-services.uc", "vpn-health.uc",
+                 "vpn-ppp-up.sh", "vpn-ppp-down.sh", "vpn-openvpn-up.sh", "vpn-openvpn-down.sh"):
         shutil.copyfile(Path(__file__).with_name(name), gateway.with_name(name))
+        gateway.with_name(name).chmod(0o755 if name.endswith(".sh") else 0o644)
+    vpn_init = root / "etc/init.d/mp716-vpn"
+    vpn_init.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(Path(__file__).with_name("mp716-vpn.init"), vpn_init)
+    vpn_init.chmod(0o755)
+    keep = root / "lib/upgrade/keep.d/mp716-admin"
+    keep.parent.mkdir(parents=True, exist_ok=True)
+    keep.write_text("/etc/mp716-admin/\n/etc/mp716-vpn/\n",encoding="ascii")
     init = root / "etc/init.d/mp716-admin"
     init.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("mp716-admin.init"), init)
     init.chmod(0o755)
     defaults = root / "etc/uci-defaults/98-mp716-admin"
     defaults.parent.mkdir(parents=True, exist_ok=True)
-    defaults.write_text("#!/bin/sh\n/etc/init.d/mp716-admin enable\n/etc/init.d/mp716-admin start\n", encoding="ascii")
+    defaults.write_text("#!/bin/sh\n/etc/init.d/mp716-admin enable\n/etc/init.d/mp716-vpn enable\n/etc/init.d/mp716-admin start\n/etc/init.d/mp716-vpn start\n", encoding="ascii")
     defaults.chmod(0o755)
     version = Path(__file__).resolve().parents[2].joinpath("config/firmware.version").read_text(encoding="ascii").strip()
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):

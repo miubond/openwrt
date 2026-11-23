@@ -1,11 +1,5 @@
 #!/bin/sh
-# Deliberately do not source the normal DHCP client hook or change interfaces.
-case "$1" in
- bound|renew)
-  case "${serverid:-}" in
-   ''|*[!0-9.]*) exit 1 ;;
-   *) printf 'DHCP_SERVER %s\n' "$serverid" ;;
-  esac
-  ;;
-esac
-exit 0
+# Compatibility entry point. Never starts udhcpc, sends DHCPREQUEST, configures
+# an address or sources the normal DHCP client hook.
+[ "$#" -eq 1 ] || exit 2
+exec /usr/sbin/mp716-dhcp-discover "$1"

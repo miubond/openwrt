@@ -9,13 +9,13 @@ const props = withDefaults(
     disabled?: boolean
     label?: string
     loadingLabel?: string
-    align?: 'center' | 'end'
+    align?: 'start' | 'center' | 'end'
     variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
   }>(),
   {
     loading: false,
     disabled: false,
-    align: 'center',
+    align: 'start',
     variant: 'primary',
   },
 )
@@ -44,14 +44,14 @@ const displayLoadingLabel = computed(() => props.loadingLabel ?? t('common.apply
   display: flex;
   padding-top: 8px;
 }
-.form-actions.align-center {
-  justify-content: center;
+.form-actions.align-start {
+  justify-content: flex-start;
 }
+.form-actions.align-center { justify-content: center; }
 .form-actions.align-end {
   justify-content: flex-end;
 }
 .form-actions :deep(.btn) {
-  min-width: 180px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
 }
 </style>

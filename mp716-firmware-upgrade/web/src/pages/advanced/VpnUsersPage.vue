@@ -18,7 +18,7 @@ const { t } = useI18n()
 const toast = useToastStore()
 const loading = ref(true)
 const saving = ref(false)
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const editorOpen = ref(false)
 const deleteIndex = ref(-1)
 const showPassword = ref(false)
@@ -42,6 +42,10 @@ const draft = reactive({
 
 const editorTitle = computed(() =>
   draft.index >= 0 ? t('vpn.editUser') : t('vpn.addUser'),
+)
+
+const deleteTarget = computed(() =>
+  deleteIndex.value >= 0 ? config.value?.users[deleteIndex.value] : undefined,
 )
 
 async function load(quiet = false) {
@@ -102,7 +106,7 @@ async function persist(users: VpnUser[]) {
     config.value = next
     editorOpen.value = false
     deleteIndex.value = -1
-    toast.success(t('vpn.userSaved'))
+    notifySaved(result, 'vpn.userSaved')
     await load(true)
   } catch (e) {
     toast.error(formatApiError(e, t))
@@ -135,14 +139,13 @@ onMounted(() => void load())
 
 <template>
   <div class="users-page">
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else icon="vpn" :title="t('nav.vpnUsers')">
       <template #actions>
         <UiButton @click="openAdd">{{ t('vpn.addUser') }}</UiButton>
       </template>
-      <p v-if="!config?.users.length" class="empty">{{ t('common.emptyUsers') }}</p>
-      <div v-else class="table-wrap">
+      <div class="table-wrap">
         <table class="table">
           <thead>
             <tr>
@@ -156,6 +159,9 @@ onMounted(() => void load())
             </tr>
           </thead>
           <tbody>
+            <tr v-if="!config?.users.length">
+              <td colspan="7" class="empty">{{ t('common.emptyUsers') }}</td>
+            </tr>
             <tr v-for="(user, index) in config?.users" :key="`${user.username}-${index}`">
               <td>{{ user.type.toUpperCase() }}</td>
               <td>{{ user.username }}</td>
@@ -246,13 +252,20 @@ onMounted(() => void load())
 
     <UiModal
       :open="deleteIndex >= 0"
+      size="sm"
       :title="t('vpn.deleteUserTitle')"
       danger
       :confirm-disabled="saving"
+      :confirm-label="saving ? t('common.deleting') : t('common.delete')"
       @close="deleteIndex = -1"
       @confirm="confirmDelete"
     >
-      <p class="delete-body">{{ t('vpn.deleteUserBody') }}</p>
+      <div class="delete-body">
+        <p class="delete-name">
+          {{ t('vpn.deleteUserName', { name: deleteTarget?.username || '—' }) }}
+        </p>
+        <p class="delete-hint">{{ t('vpn.deleteUserBody') }}</p>
+      </div>
     </UiModal>
   </div>
 </template>
@@ -284,8 +297,9 @@ onMounted(() => void load())
   }
 }
 
-.empty {
-  margin: 0 0 12px;
+.table td.empty {
+  padding: 28px 12px;
+  text-align: center;
   color: var(--color-muted);
   font-size: var(--fs-sm);
 }
@@ -384,11 +398,12 @@ onMounted(() => void load())
 }
 
 .user-form :deep(.control input) {
-  background: var(--color-bg-muted);
   border-color: transparent;
-  border-radius: 999px;
   height: 40px;
   padding: 0 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .user-form :deep(.control input:focus) {
@@ -406,10 +421,11 @@ onMounted(() => void load())
 .user-form :deep(.control .ui-select-trigger) {
   width: 100%;
   min-height: 40px;
-  border-radius: 999px;
-  background: var(--color-bg-muted);
   border-color: transparent;
   padding: 4px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .user-form :deep(.control .ui-select.open .ui-select-trigger),
@@ -457,6 +473,21 @@ onMounted(() => void load())
 
 .delete-body {
   margin: 0;
+  text-align: left;
   line-height: 1.5;
+}
+
+.delete-name {
+  margin: 0 0 8px;
+  color: var(--color-title);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.delete-hint {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--fs-sm);
 }
 </style>

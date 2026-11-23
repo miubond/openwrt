@@ -18,7 +18,7 @@ import { formatDateTime } from '@/utils/format'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const syncing = ref(false)
@@ -101,7 +101,7 @@ async function save() {
         ntpServers: [0, 1, 2].map((index) => form.ntpServers[index] ?? ''),
       }),
     )
-    toast.success(t('common.configApplied'))
+    notifySaved(result, 'common.configApplied')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {
@@ -122,7 +122,7 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else :subtitle="t('sysTime.subtitle')">
       <div class="settings-form">

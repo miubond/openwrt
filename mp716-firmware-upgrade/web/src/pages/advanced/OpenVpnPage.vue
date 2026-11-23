@@ -8,6 +8,7 @@ import UiFormRow from '@/components/UiFormRow.vue'
 import FormActions from '@/components/FormActions.vue'
 import ApplyBanner from '@/components/ApplyBanner.vue'
 import LoadingState from '@/components/LoadingState.vue'
+import NativeServiceNotice from '@/components/NativeServiceNotice.vue'
 import { asApplyHandle, formatApiError, getRouterApi, unwrap } from '@/api'
 import type { OpenVpnConfig } from '@/api'
 import { useApplyConfirm } from '@/composables/useApplyConfirm'
@@ -15,7 +16,8 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const isNative = import.meta.env.VITE_ROUTER_ADAPTER === 'device'
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const uploading = ref(false)
@@ -77,7 +79,7 @@ async function upload(kind: 'config' | 'cert') {
     const result = unwrap(await getRouterApi().uploadOpenVpn(file, kind))
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     if (kind === 'config') form.value.configUploaded = true
-    toast.success(kind === 'config' ? t('vpn.configUploaded') : t('vpn.certUploaded'))
+    notifySaved(result, kind === 'config' ? 'vpn.configUploaded' : 'vpn.certUploaded')
   } catch (e) {
     toast.error(formatApiError(e, t))
   } finally {
@@ -89,7 +91,7 @@ async function save() {
   saving.value = true
   try {
     const result = unwrap(await getRouterApi().updateOpenVpn({ ...form.value }))
-    toast.success(t('vpn.openVpnApplied'))
+    notifySaved(result, 'vpn.openVpnApplied')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {
@@ -104,10 +106,11 @@ onMounted(() => void load())
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else>
       <div class="settings-form">
+        <NativeServiceNotice :available="form.serviceAvailable" :message="form.serviceMessage" />
         <UiFormRow :label="t('vpn.openVpnClientSettings')">
           <label class="switch">
             <input v-model="form.enabled" type="checkbox" />
@@ -133,16 +136,16 @@ onMounted(() => void load())
               </label>
             </div>
           </UiField>
+            <UiField v-if="form.mode === 0 || isNative" layout="horizontal" :label="t('vpn.username')">
+              <input v-model="form.username" maxlength="32" autocomplete="off" />
+            </UiField>
+            <UiField v-if="form.mode === 0 || isNative" layout="horizontal" :label="t('vpn.password')">
+              <input v-model="form.password" type="password" maxlength="32" autocomplete="new-password" />
+            </UiField>
 
           <template v-if="form.mode === 0">
             <UiField layout="horizontal" :label="t('vpn.hostname')">
               <input v-model="form.host" maxlength="32" autocomplete="off" />
-            </UiField>
-            <UiField layout="horizontal" :label="t('vpn.username')">
-              <input v-model="form.username" maxlength="32" autocomplete="off" />
-            </UiField>
-            <UiField layout="horizontal" :label="t('vpn.password')">
-              <input v-model="form.password" type="password" maxlength="32" autocomplete="new-password" />
             </UiField>
             <UiField layout="horizontal" :label="t('vpn.port')">
               <input v-model.number="form.port" type="number" min="80" max="65535" />

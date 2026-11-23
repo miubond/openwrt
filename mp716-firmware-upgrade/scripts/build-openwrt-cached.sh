@@ -51,13 +51,67 @@ if [ -L "$tree" ] || { [ -e "$tree" ] && [ ! -O "$tree" ]; }; then
 	echo "OpenWrt cache checkout must be owned by the runner and cannot be a symlink." >&2
 	exit 2
 fi
+# BEGIN VERIFIED TOOLCHAIN CACHE
+# Image/rootfs validation can fail after the toolchain is complete. Qualify
+# only host tools and the cross toolchain, independently of target images.
+# This EXIT handler still owns fd 9's flock and never changes the build status.
+verify_toolchain_cache() {
+	local probe compiler
+	local compilers=("$tree"/staging_dir/toolchain-mipsel_*/bin/*-openwrt-linux-musl-gcc)
+	[ "${#compilers[@]}" -eq 1 ] && [ -x "${compilers[0]}" ] || return 1
+	command -v timeout >/dev/null && command -v readelf >/dev/null || return 1
+	compiler=${compilers[0]}
+	probe=$(mktemp -d "$cache/toolchain-probe.XXXXXX") || return 1
+	cat > "$probe/check.c" <<'C'
+#include <stdint.h>
+#include <stdio.h>
+int main(void) { uint32_t value = 716u; return printf("%u\n", (unsigned)value) < 0; }
+C
+	# Link against the cross libc/startup files; never run the target program.
+	if timeout -s KILL 30s "$compiler" -std=c99 -Werror "$probe/check.c" -o "$probe/check.elf" &&
+		LC_ALL=C readelf -h "$probe/check.elf" > "$probe/header" &&
+		grep -Eq 'Class:[[:space:]]+ELF32' "$probe/header" &&
+		grep -Eq 'Data:.*little endian' "$probe/header" &&
+		grep -Eq 'Machine:.*MIPS' "$probe/header" &&
+		grep -Eq 'Type:[[:space:]]+(EXEC|DYN)' "$probe/header"; then
+		printf 'schema=1\ncache_key=%s\nformat=ELF32-LSB-MIPS\n' "$key" > "$cache/toolchain-verified.new" &&
+			mv -f -- "$cache/toolchain-verified.new" "$cache/toolchain-verified"
+	else
+		rm -f -- "$cache/toolchain-verified" "$cache/toolchain-verified.new"
+	fi
+	rm -rf -- "$probe"
+	[ -f "$cache/toolchain-verified" ]
+}
+finish_toolchain_cache() {
+	local status=$1
+	trap - EXIT
+	set +e
+	# An older marker must not authorize saving a newly broken toolchain.
+	rm -f -- "$cache/toolchain-verified" "$cache/toolchain-verified.new"
+	if verify_toolchain_cache; then
+		echo "MP716 toolchain cache verified: $key (ELF32 LSB MIPS; image status $status)"
+	else
+		echo "MP716 toolchain cache not verified: $key (image status $status); cache save disabled" >&2
+	fi
+	exit "$status"
+}
+shopt -s nullglob
+trap 'finish_toolchain_cache "$?"' EXIT
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+	printf 'toolchain-cache-marker=%s\n' "$cache/toolchain-verified" >> "$GITHUB_OUTPUT"
+fi
+# END VERIFIED TOOLCHAIN CACHE
 shopt -s nullglob
 compilers=("$tree"/staging_dir/toolchain-mipsel_*/bin/*-openwrt-linux-musl-gcc)
-if [ -f "$cache/validated" ] && [ "${#compilers[@]}" -eq 1 ] && [ -x "${compilers[0]}" ]; then
+if { [ -f "$cache/toolchain-verified" ] || [ -f "$cache/validated" ]; } &&
+	[ "${#compilers[@]}" -eq 1 ] && [ -x "${compilers[0]}" ]; then
 	echo "MP716 toolchain cache hit: $key"
 else
 	echo "MP716 toolchain cache cold or incomplete: $key"
 fi
+# This marker qualifies the previous image only. A fresh attempt must pass
+# final-image inspection before it may recreate it; retain toolchain evidence.
+rm -f -- "$cache/validated"
 
 umask 022
 if [ ! -d "$tree/.git" ]; then
@@ -75,11 +129,41 @@ if [ -f "$tree/.config" ]; then
 	# staging_dir/host and staging_dir/toolchain-*.
 	make -C "$tree" clean
 fi
-# Drop generated profile files and host-side package state. In particular,
-# never carry a previous build's public key into a new image.
+# BEGIN HOSTPKG SESSION GUARD
+# This code still owns fd 9's flock. hostpkg is deliberately excluded from the
+# remote cache; persistent local checkouts must also reject another CI session.
+hostpkg_marker="$cache/hostpkg-session"
+hostpkg_session=${MP716_HOSTPKG_SESSION:-}
+hostpkg_valid=0
+hostpkg_keep=0
+if [[ "$hostpkg_session" =~ ^[0-9a-f]{32}$ ]]; then
+	hostpkg_valid=1
+	if [ ! -L "$hostpkg_marker" ] && [ -f "$hostpkg_marker" ] &&
+		[ "$(cat -- "$hostpkg_marker")" = "$hostpkg_session" ]; then
+		hostpkg_keep=1
+	fi
+fi
+if [ "$hostpkg_keep" -ne 1 ]; then
+	rm -rf -- "$tree/build_dir/hostpkg" "$tree/staging_dir/hostpkg"
+	rm -f -- "$hostpkg_marker"
+fi
+if [ "$hostpkg_valid" -eq 1 ]; then
+	(umask 077; printf '%s\n' "$hostpkg_session" > "$hostpkg_marker")
+fi
+# END HOSTPKG SESSION GUARD
+# Always drop target/profile state, including the previous test public key.
+# A matching host session never authorizes reuse of target overlays or images.
 rm -rf -- "$tree/files" "$tree/package/mp716-sysupgrade" \
-	"$tree/bin/targets/ramips/mt76x8" "$tree/build_dir/hostpkg" "$tree/staging_dir/hostpkg"
+	"$tree/bin/targets/ramips/mt76x8"
 git -C "$tree" restore -- target/linux/ramips/image/mt76x8.mk
 
 bash "$project/scripts/build-openwrt-test.sh" "$1" "$2" "$tree" "$3" "$4"
+# Inspect the delivered image's ELF while fd 9 still protects this build/tree.
+# This wrapper is outside the toolchain key; ABI checks cannot invalidate it.
+case "$1" in
+	--ram-web) plugin_image_type=initramfs ;;
+	--lan-candidate) plugin_image_type=sysupgrade ;;
+esac
+python3 "$project/scripts/check-native-vpn-plugin.py" --openwrt-tree "$tree" \
+	--output "$4" --image-type "$plugin_image_type" --report "$4/vpn-plugin-abi-report.json"
 touch "$cache/validated"

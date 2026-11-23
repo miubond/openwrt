@@ -14,6 +14,7 @@ import { useToastStore } from '@/stores/toast'
 import { isIpv4 } from '@/utils/validate'
 
 const { t } = useI18n()
+const isNative = import.meta.env.VITE_ROUTER_ADAPTER === 'device'
 
 const modeOptions = [
   { value: 'dhcp', label: 'DHCP' },
@@ -112,7 +113,7 @@ function formToWanConfig(form: WanPageForm, dns: string[]): WanConfig {
 }
 
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const helpOpen = ref(false)
@@ -228,7 +229,7 @@ async function save() {
         : form.dns
     form.dns = dns
     const result = unwrap(await getRouterApi().updateWanConfig(formToWanConfig(form, dns)))
-    toast.success(t('wan.configSubmitted'))
+    notifySaved(result, 'wan.configSubmitted')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
   } catch (e) {
     toast.error(formatApiError(e, t))
@@ -248,7 +249,7 @@ onMounted(() => void load())
 
     <ApplyBanner
       v-if="pending"
-      :remaining="remaining"
+      :remaining="remaining" :phase="pending?.phase" :message="pending?.message"
       :applying="applying"
       @confirm="confirm"
       @cancel="cancel"
@@ -273,10 +274,11 @@ onMounted(() => void load())
                 type="radio"
                 name="wan-mode"
                 value="mobile"
+                :disabled="isNative"
                 :checked="form.wanMode === 'mobile'"
                 @change="onWanModeChange('mobile')"
               />
-              <span>{{ t('dashboard.netType.mobile') }}</span>
+              <span>{{ t('dashboard.netType.mobile') }}<small v-if="isNative"> — {{ t('wan.nativeWiredOnly') }}</small></span>
             </label>
           </div>
         </UiField>
@@ -444,11 +446,11 @@ onMounted(() => void load())
 }
 .clone-row {
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   column-gap: 20px;
   margin: -6px 0 18px;
 }
 .clone-spacer {
-  display: block;
+  display: none;
 }
 </style>

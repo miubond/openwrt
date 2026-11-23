@@ -16,3 +16,6 @@ keys/
 .DS_Store
 web/node_modules/
 web/dist/
+web/dist-openwrt/
+.pytest_cache/
+pytest-cache-files-*/

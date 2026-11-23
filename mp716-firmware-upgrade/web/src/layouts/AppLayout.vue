@@ -851,7 +851,7 @@ onBeforeUnmount(() => {
   .subnav {
     position: fixed;
     left: 0;
-    top: calc(56px + var(--safe-top));
+    top: calc(var(--header-h) + var(--safe-top));
     bottom: 0;
     width: min(280px, 86vw);
     height: auto;
@@ -875,7 +875,7 @@ onBeforeUnmount(() => {
     display: block;
     position: fixed;
     inset: 0;
-    top: calc(56px + var(--safe-top));
+    top: calc(var(--header-h) + var(--safe-top));
     background: rgba(10, 31, 68, 0.35);
     z-index: 34;
     /* 仅作暗化，不拦截点击（否则会挡住主内容按钮，需点两次） */

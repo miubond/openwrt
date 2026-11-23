@@ -135,8 +135,8 @@ export function toSystemStatusView(info: SystemInfo, status: SystemStatus): Syst
       total: info.flashTotalKb * 1024,
       free: info.flashFreeKb * 1024,
     },
-    cpu: { usagePercent: status.cpuPercent },
-    time: { local: info.localTime, timezone: 'Asia/Shanghai' },
+    cpu: { usagePercent: status.cpuSampled === false ? undefined : status.cpuPercent ?? undefined },
+    time: { local: info.localTime, timezone: info.timezone || 'Asia/Shanghai' },
     interfaces: status.interfaces || [],
   }
 }

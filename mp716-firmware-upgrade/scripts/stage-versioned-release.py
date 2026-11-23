@@ -21,6 +21,10 @@ MODEL = "MP716"
 PROFILE = "yunxm_mp716"
 STATUS = "UNVERIFIED"
 HARDWARE_REPORT = "reports/mp716-hardware-compatibility.md"
+VALIDATION_REPORTS = {
+    "physical_ports": "reports/mp716-port-mapping.md",
+    "vpn_interoperability": "reports/mp716-vpn-interoperability.md",
+}
 IMAGE_TYPES = {
     "initramfs": ("initramfs-kernel", "启动到 RAM，用于实验室启动测试"),
     "sysupgrade": ("squashfs-sysupgrade", "OpenWrt sysupgrade 格式候选，仅供实验室校验"),
@@ -81,6 +85,19 @@ def copy_image(target, kind, source, profile, openwrt_version, openwrt_commit):
     digest, size = sha256(native), native.stat().st_size
     require(digest == image["sha256"] == expected_sha(source / "SHA256SUMS", source_name)
             and size == image["bytes"], f"Build report or SHA-256 mismatch: {native}")
+    abi_path = source / "vpn-plugin-abi-report.json"
+    native_vpn = "CONFIG_PACKAGE_strongswan-mod-gmpdh=y" in (source / "openwrt.config").read_text().splitlines()
+    require(not native_vpn or abi_path.is_file(), "Missing native VPN plugin ABI report")
+    if abi_path.exists():
+        require(not abi_path.is_symlink(), "VPN plugin ABI report must be a regular file")
+        abi = read_json(abi_path)
+        delivery = abi.get("delivery", {})
+        require(abi.get("ok") is True and abi.get("openwrt_commit") == openwrt_commit
+                and abi.get("test_status") == STATUS and abi.get("hardware_validated") is False
+                and abi.get("flash_write") is False, "VPN plugin ABI report failed or has an unexpected source pin")
+        require(delivery.get("image_type") == kind and delivery.get("image") == source_name
+                and delivery.get("image_sha256") == digest,
+                "VPN plugin ABI report does not match the delivered image")
     name = f"openwrt-{openwrt_version}-ramips-mt76x8-{PROFILE}-{suffix}.bin"
     shutil.copyfile(native, target / name)
     require(sha256(target / name) == digest, f"Release copy differs from {native}")
@@ -95,7 +112,8 @@ def copy_image(target, kind, source, profile, openwrt_version, openwrt_commit):
         if item == "openwrt.config" or (source / item).is_file():
             shutil.copyfile(source / item, config_dir / item)
     for item in ("SHA256SUMS", "build-report.json", "sysupgrade-metadata.json", "rootfs-files.txt", "initramfs-files.txt",
-                 "original-sysupgrade.sha256", "ram-upgrade.pub", "sysupgrade-upgrade.pub"):
+                 "original-sysupgrade.sha256", "ram-upgrade.pub", "sysupgrade-upgrade.pub", "vpn-crypto-report.json",
+                 "vpn-plugin-abi-report.json", "build-timing.txt"):
         if item == "build-report.json" or (source / item).is_file():
             shutil.copyfile(source / item, report_dir / item)
     if kind == "sysupgrade":
@@ -166,10 +184,13 @@ def stage(output, images, build_commit, signed_test=None):
             "device": MODEL, "device_profile": PROFILE, "supported_devices": ["yunxm,mp716"],
             "test_status": STATUS, "production_flash_allowed": False,
             "hardware_compatibility_report": HARDWARE_REPORT,
+            "validation_reports": VALIDATION_REPORTS,
         }
         metadata["images"] = [copy_image(target, kind, Path(source), Path(profile), openwrt_version, openwrt_commit)
                               for kind, source, profile in sorted(images)]
         shutil.copyfile(PROJECT / "docs/mp716-hardware-compatibility.md", target / HARDWARE_REPORT)
+        for report_name in VALIDATION_REPORTS.values():
+            shutil.copyfile(PROJECT / "docs" / Path(report_name).name, target / report_name)
         shutil.copyfile(PROJECT / "docs/stock-014-network-migration.md",
                         target / "reports/stock-014-network-migration.md")
         shutil.copyfile(PROJECT / "docs/mp716-1.0.2-device-test.md",

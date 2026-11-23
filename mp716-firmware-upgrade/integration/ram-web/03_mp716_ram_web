@@ -7,7 +7,9 @@
 [ "$(board_name)" = yunxm,mp716 ] || return 0
 board_config_update
 # Stock 014 switch VLAN dump: VID 1 = 0,1,2,3,5,6; VID 2 = 4,6.
-# Port 6 is the tagged CPU port. Front-panel LAN1..LAN4 order is still TODO.
+# Port 6 is the tagged CPU port. This unit was measured LAN1..4=P0..3 and
+# WAN=P4 on 2026-11-19; keep per-device evidence in port-map.json rather than
+# assuming the same chassis order on an unmeasured hardware revision.
 ucidef_add_switch "switch0" \
 	"0:lan" "1:lan" "2:lan" "3:lan" "5:lan" "4:wan" "6t@eth0"
 ucidef_set_interface_lan "eth0.1"

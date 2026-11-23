@@ -28,6 +28,16 @@ assert(readfile(root+'/config/mp716_system')==null,'new schedule file remained a
 let export_response=route_system(null,'POST','system/backup/download',{},owner), exported=export_response?.data;
 assert(exported?.contentBase64 && exported.filename,'backup export failed: '+sprintf('%J',export_response));
 let backup=json(b64dec(exported.contentBase64));assert(backup.product=='MP716' && backup.files.network,'backup content missing');push(passed,'native_backup_export');
+let restored=json(sprintf('%J',backup));
+restored.files.system.contentBase64=b64enc("config system\n option timezone 'CST-8'\n");
+r=route_system(null,'POST','system/restore',{backup:restored},owner);
+assert(r?.data?.taskId && index(readfile(root+'/config/system'),'CST-8')>=0,'valid native backup restore failed: '+sprintf('%J',r));
+get_task(r.data.taskId,owner,'cancel');assert(readfile(root+'/config/system')==original,'restore rollback did not preserve original config');push(passed,'native_restore_exact_rollback');
+restored=json(sprintf('%J',backup));
+let accountLines=split(b64dec(restored.rootShadow),'\n');
+accountLines[1]='root:!:0:0:99999:7:::';restored.rootShadow=b64enc(join('\n',accountLines));
+r=route_system(null,'POST','system/restore',{backup:restored},owner);
+assert(r?.error,'duplicate root account in backup accepted');push(passed,'backup_cannot_replace_other_account_with_root');
 backup.files.Bootloader={contentBase64:b64enc('bad'),mode:0600};
 r=route_system(null,'POST','system/restore',{backup:backup},owner);assert(r?.error,'unallowed backup file accepted');push(passed,'backup_non_config_rejected');
 r=route_system(null,'POST','system/factory-reset',{confirmToken:'wrong'},owner);assert(r?.error,'reset without confirmation accepted');push(passed,'reset_confirmation_required');

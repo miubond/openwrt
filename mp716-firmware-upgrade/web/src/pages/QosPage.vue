@@ -60,7 +60,7 @@ onMounted(() => void load())
     <p class="page-desc">{{ t('qos.pageDesc') }}</p>
     <ApplyBanner
       v-if="pending"
-      :remaining="remaining"
+      :remaining="remaining" :phase="pending?.phase" :message="pending?.message"
       :applying="applying"
       @confirm="confirm"
       @cancel="cancel"

@@ -30,10 +30,6 @@ withDefaults(
   gap: 6px;
   margin-bottom: 16px;
 }
-.field--horizontal {
-  display: grid;
-  flex-direction: unset;
-}
 .label {
   font-size: var(--fs-base);
   color: var(--color-title);
@@ -75,93 +71,5 @@ withDefaults(
 }
 .error {
   color: var(--color-danger);
-}
-</style>
-
-<style>
-.field.field--horizontal {
-  grid-template-columns: 140px minmax(0, 1fr);
-  column-gap: 20px;
-  row-gap: 6px;
-  align-items: start;
-  margin-bottom: 18px;
-}
-
-.field.field--horizontal > .label {
-  grid-column: 1;
-  grid-row: 1;
-  padding-top: 9px;
-  font-weight: var(--fw-medium);
-  color: var(--color-text);
-}
-
-.field.field--horizontal > .control {
-  grid-column: 2;
-  grid-row: 1;
-  max-width: 320px;
-}
-
-.field.field--horizontal > .hint,
-.field.field--horizontal > .error {
-  grid-column: 2;
-  grid-row: 2;
-  max-width: 320px;
-}
-
-.settings-form .field.field--horizontal > .control {
-  max-width: 420px;
-}
-
-.settings-form .field.field--horizontal .control input:not([type='checkbox']):not([type='radio']):not([type='file']),
-.settings-form .field.field--horizontal .control textarea {
-  background: var(--color-bg-muted);
-  border-color: transparent;
-}
-
-.settings-form .field.field--horizontal .control input:not([type='checkbox']):not([type='radio']):focus,
-.settings-form .field.field--horizontal .control textarea:focus {
-  background: var(--color-surface);
-  border-color: var(--color-primary);
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
-}
-
-.settings-form .field.field--horizontal .control input[readonly] {
-  color: var(--color-muted);
-  cursor: default;
-}
-
-.settings-form .field.field--horizontal .control .ui-select {
-  width: 100%;
-  max-width: none;
-}
-
-.settings-form .field.field--horizontal .control .ui-select-trigger {
-  background: var(--color-bg-muted);
-  border-color: transparent;
-}
-
-.settings-form .field.field--horizontal .control .ui-select.open .ui-select-trigger,
-.settings-form .field.field--horizontal .control .ui-select-trigger:hover,
-.settings-form .field.field--horizontal .control .ui-select-trigger:focus-visible {
-  background: var(--color-surface);
-  border-color: var(--color-primary);
-}
-
-@media (max-width: 640px) {
-  .field.field--horizontal {
-    grid-template-columns: 1fr;
-  }
-
-  .field.field--horizontal > .label {
-    padding-top: 0;
-  }
-
-  .field.field--horizontal > .control,
-  .field.field--horizontal > .hint,
-  .field.field--horizontal > .error {
-    grid-column: 1;
-    max-width: none;
-  }
 }
 </style>

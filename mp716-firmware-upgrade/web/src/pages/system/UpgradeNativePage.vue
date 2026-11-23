@@ -62,7 +62,11 @@ async function doUpgrade() {
   verification.value = null
   try {
     const result = unwrap(
-      await getRouterApi().uploadFirmware(file.value, { keepSettings: keepSettings.value }),
+      await getRouterApi().uploadFirmware(file.value, {
+        keepSettings: keepSettings.value,
+        maxBytes: info.value?.maxBytes,
+        maxSizeLabel: info.value?.maxSizeLabel,
+      }),
     )
     verification.value = result.verificationReport || null
     if (result.validated && result.flashWrite === false) {

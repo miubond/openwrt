@@ -49,12 +49,12 @@ async function doReboot() {
 <style scoped>
 .actions {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 20px 0 8px;
 }
 
 .actions :deep(.btn) {
   min-width: 180px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
 }
 </style>

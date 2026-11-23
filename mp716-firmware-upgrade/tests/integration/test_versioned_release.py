@@ -79,6 +79,9 @@ class VersionedReleaseTests(unittest.TestCase):
         self.assertEqual(manifest["build_commit"], self.commit)
         self.assertEqual(manifest["test_status"], "UNVERIFIED")
         self.assertFalse(manifest["production_flash_allowed"])
+        for name in manifest["validation_reports"].values():
+            self.assertEqual((target / name).read_bytes(), (ROOT / "docs" / Path(name).name).read_bytes())
+            self.assertIn(f"  {name}\n", (target / "sha256sums").read_text(encoding="ascii"))
         hardware_report = manifest["hardware_compatibility_report"]
         self.assertIn("UNVERIFIED", (target / hardware_report).read_text(encoding="utf-8"))
         self.assertIn(f"  {hardware_report}\n", (target / "sha256sums").read_text(encoding="ascii"))
@@ -113,3 +116,42 @@ class VersionedReleaseTests(unittest.TestCase):
         manifest = release.read_json(target / "release-manifest.json")
         self.assertEqual(["initramfs"], [entry["type"] for entry in manifest["images"]])
         self.assertNotIn("signed_test_package", manifest)
+
+    def native_abi_report(self, kind, directory):
+        image, = release.read_json(directory / "build-report.json")["images"]
+        report = {
+            "ok": True, "openwrt_commit": self.pin, "test_status": "UNVERIFIED",
+            "hardware_validated": False, "flash_write": False,
+            "delivery": {"image_type": kind, "image": image["name"], "image_sha256": image["sha256"]},
+        }
+        release.store_json(directory / "vpn-plugin-abi-report.json", report)
+        return report
+
+    def test_native_vpn_release_requires_actual_image_abi_report(self):
+        for kind, directory, _ in self.images:
+            (directory / "openwrt.config").write_text("CONFIG_PACKAGE_strongswan-mod-gmpdh=y\n")
+        with self.assertRaisesRegex(ValueError, "Missing native VPN plugin ABI report"):
+            release.stage(self.output, self.images, self.commit)
+        self.assertFalse((self.output / "releases" / self.version / "targets/ramips/mt76x8").exists())
+        for kind, directory, _ in self.images:
+            self.native_abi_report(kind, directory)
+        target = release.stage(self.output, self.images, self.commit)
+        for kind, _, _ in self.images:
+            self.assertTrue((target / "reports" / kind / "vpn-plugin-abi-report.json").is_file())
+
+    def test_failed_stale_or_other_image_abi_report_cannot_be_published(self):
+        kind, directory, _ = self.images[0]
+        original = self.native_abi_report(kind, directory)
+        for label in ("failed", "wrong-pin", "hardware", "other-type", "other-name", "other-sha"):
+            with self.subTest(label=label):
+                report = json.loads(json.dumps(original))
+                if label == "failed": report["ok"] = False
+                elif label == "wrong-pin": report["openwrt_commit"] = "b" * 40
+                elif label == "hardware": report["hardware_validated"] = True
+                elif label == "other-type": report["delivery"]["image_type"] = "sysupgrade"
+                elif label == "other-name": report["delivery"]["image"] = "other.bin"
+                elif label == "other-sha": report["delivery"]["image_sha256"] = "b" * 64
+                release.store_json(directory / "vpn-plugin-abi-report.json", report)
+                with self.assertRaisesRegex(ValueError, "VPN plugin ABI report"):
+                    release.stage(self.output, self.images, self.commit)
+                self.assertFalse((self.output / "releases" / self.version / "targets/ramips/mt76x8").exists())

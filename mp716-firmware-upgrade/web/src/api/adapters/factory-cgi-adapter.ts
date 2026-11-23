@@ -710,14 +710,28 @@ function leaseSeconds(value: string): number | null {
 const cgiInFlight = new Map<string, Promise<ApiResponse<HuayiBody>>>()
 /** 读类 HYID 短缓存：合并路由 ping 与首页同 HYID，减轻刷新串行重复 */
 const cgiCache = new Map<string, { at: number; res: ApiResponse<HuayiBody> }>()
-const CGI_READ_CACHE_TTL_MS = 2_500
+const CGI_READ_CACHE_TTL_MS = 8_000
 const CGI_READ_CACHE_HYIDS = new Set<number>([
   HUAYI_HYID.getPreLoginConfig,
   HUAYI_HYID.getNetworkInfo,
   HUAYI_HYID.getAllStaList,
   HUAYI_HYID.getHomeSystemInfo,
   HUAYI_HYID.getHomeNetworkInfo,
+  HUAYI_HYID.getDeviceInfo,
+  HUAYI_HYID.getUpgradeInfo,
+  HUAYI_HYID.getCurrentUserInfo,
 ])
+
+function invalidateCgiReadCache(hyid?: number) {
+  if (hyid === undefined) {
+    cgiCache.clear()
+    return
+  }
+  const needle = `#${hyid}`
+  for (const key of [...cgiCache.keys()]) {
+    if (key.includes(needle)) cgiCache.delete(key)
+  }
+}
 
 function cgiRequestKey(url: string, hyid: number, extra?: Record<string, unknown>): string {
   if (!extra || Object.keys(extra).length === 0) return `${url}#${hyid}`
@@ -819,7 +833,7 @@ function samePayload(current: Record<string, unknown>, payload: Record<string, u
 const APPLIED: ConfigApplyResult = { accepted: true, rollbackSec: 0 }
 const RESTORE_MAX_BYTES = 2 * 1024 * 1024
 
-const HWMODE_BY_MODE: Record<WifiMode, number> = {
+const HWMODE_BY_MODE: Partial<Record<WifiMode, number>> = {
   '11bg': 0,
   '11b': 1,
   '11g': 4,
@@ -1488,6 +1502,7 @@ export class FactoryCgiAdapter implements RouterAPI {
     }
     const mode = config.mode || '11bgn'
     const hwmode = HWMODE_BY_MODE[mode]
+    if (hwmode === undefined) return failure('VALIDATION', '当前原厂不支持此无线模式')
     const bandwidthChoice = hwmode === 6 || hwmode === 9 || hwmode === 8
     let band = num(body.band) ?? 1
     if (bandwidthChoice) {
@@ -2120,14 +2135,19 @@ export class FactoryCgiAdapter implements RouterAPI {
   }
   async uploadFirmware(
     file: Blob,
-    options?: { keepSettings?: boolean },
+    options?: { keepSettings?: boolean; maxBytes?: number; maxSizeLabel?: string },
   ): Promise<ApiResponse<ConfigApplyResult>> {
     if (file.size < 1) return failure('VALIDATION', '请选择要上传的文件')
-    const info = await this.getFirmwareInfo()
-    if (!info.ok) return info
-    const maxBytes = info.data.maxBytes ?? 0
+    let maxBytes = options?.maxBytes ?? 0
+    let maxSizeLabel = options?.maxSizeLabel ?? ''
+    if (maxBytes < 1) {
+      const info = await this.getFirmwareInfo()
+      if (!info.ok) return info
+      maxBytes = info.data.maxBytes ?? 0
+      maxSizeLabel = info.data.maxSizeLabel ?? ''
+    }
     if (maxBytes > 0 && file.size > maxBytes) {
-      const tip = info.data.maxSizeLabel
+      const tip = maxSizeLabel
       return failure('VALIDATION', tip ? `文件不能大于${tip}!` : '文件超过升级大小限制')
     }
     const keep = options?.keepSettings === false ? '0' : '1'
@@ -2137,6 +2157,7 @@ export class FactoryCgiAdapter implements RouterAPI {
     if (!res.ok) return res
     const errcode = readErrcode(res.data)
     if (errcode === 2000) {
+      invalidateCgiReadCache(HUAYI_HYID.getUpgradeInfo)
       return success({ accepted: true, rollbackSec: 0, message: '固件已上传，设备正在升级' })
     }
     if (errcode === 4001) return failure('UNAUTHORIZED', '会话无效或已过期，请重新登录', res.data)
@@ -2206,9 +2227,15 @@ export class FactoryCgiAdapter implements RouterAPI {
     const res = await requestForm<HuayiBody>(`${STREAM_CGI}?streamid=3`, form)
     if (!res.ok) return res
     const errcode = readErrcode(res.data)
-    if (errcode === 2000) return success(APPLIED)
     if (errcode === 4001) return failure('UNAUTHORIZED', '会话无效或已过期，请重新登录', res.data)
-    return failure('INTERNAL', `配置恢复失败（${errcode ?? 'unknown'}）`, res.data)
+    if (errcode !== 2000) return failure('INTERNAL', `配置恢复失败（${errcode ?? 'unknown'}）`, res.data)
+    const data = record(res.data)
+    return success({
+      ...APPLIED,
+      progressSec: num(data.progresstime) ?? 0,
+      reconnect: enabledFlag(data.reconnection),
+      reconnectIp: text(data.reconnection_addr),
+    })
   }
   getConfigTaskStatus(taskId: string) {
     void taskId

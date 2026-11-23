@@ -71,6 +71,11 @@ grep -Fxq "src-git packages https://git.openwrt.org/feed/packages.git^$packages_
 	echo "Unexpected packages feed commit." >&2; exit 2;
 }
 ./scripts/feeds install miniupnpd-nftables
+if [ -n "$web_input" ]; then
+	./scripts/feeds install pptpd xl2tpd openvpn-mbedtls strongswan-isakmp
+	python3 "$project/scripts/prepare-native-services.py" "$tree"
+	export MP716_DISABLED_SERVICES='pptpd xl2tpd openvpn ipsec'
+fi
 
 overlay="$project/openwrt-overlay/target/linux/ramips"
 cp "$overlay/dts/mt7628an_yunxm_mp716.dts" target/linux/ramips/dts/
@@ -138,9 +143,29 @@ CONFIG_PACKAGE_ucode=y
 CONFIG_PACKAGE_ucode-mod-fs=y
 CONFIG_PACKAGE_ucode-mod-ubus=y
 CONFIG_PACKAGE_ucode-mod-uci=y
+CONFIG_BUSYBOX_CUSTOM=y
+CONFIG_BUSYBOX_CONFIG_SETSID=y
+CONFIG_BUSYBOX_CONFIG_TIMEOUT=y
+CONFIG_BUSYBOX_CONFIG_PING=y
+CONFIG_BUSYBOX_CONFIG_FEATURE_FANCY_PING=y
+CONFIG_BUSYBOX_CONFIG_TRACEROUTE=y
+CONFIG_BUSYBOX_CONFIG_NSLOOKUP=y
+CONFIG_PACKAGE_ppp=y
+CONFIG_PACKAGE_ppp-mod-pptp=y
+CONFIG_PACKAGE_ppp-mod-pppoe=y
+CONFIG_PACKAGE_pptpd=y
+CONFIG_PACKAGE_xl2tpd=y
+CONFIG_PACKAGE_openvpn-mbedtls=y
+CONFIG_PACKAGE_strongswan=y
+CONFIG_PACKAGE_strongswan-isakmp=y
+CONFIG_PACKAGE_strongswan-mod-kdf=y
+CONFIG_PACKAGE_strongswan-mod-sha2=y
+CONFIG_PACKAGE_kmod-nft-xfrm=y
 CONFIG
 fi
-make defconfig
+make defconfig 2>&1 | tee "$output/defconfig.log"
+# Preserve the resolved configuration even if a required dependency was dropped.
+cp .config "$output/openwrt.config"
 required_config=(CONFIG_TARGET_ramips_mt76x8_DEVICE_yunxm_mp716 CONFIG_PACKAGE_mp716-sysupgrade
 	CONFIG_PACKAGE_kmod-mt7603 CONFIG_PACKAGE_wpad-basic-mbedtls
 	CONFIG_PACKAGE_firewall4 CONFIG_PACKAGE_miniupnpd-nftables CONFIG_PACKAGE_swconfig
@@ -159,7 +184,16 @@ else
 fi
 if [ -n "$web_input" ]; then
 	required_config+=(CONFIG_PACKAGE_uhttpd CONFIG_PACKAGE_rpcd CONFIG_PACKAGE_ucode
-		CONFIG_PACKAGE_ucode-mod-fs CONFIG_PACKAGE_ucode-mod-ubus CONFIG_PACKAGE_ucode-mod-uci)
+		CONFIG_PACKAGE_ucode-mod-fs CONFIG_PACKAGE_ucode-mod-ubus CONFIG_PACKAGE_ucode-mod-uci
+		CONFIG_BUSYBOX_CONFIG_SETSID CONFIG_BUSYBOX_CONFIG_TIMEOUT CONFIG_BUSYBOX_CONFIG_TRACEROUTE
+		CONFIG_BUSYBOX_CONFIG_PING CONFIG_BUSYBOX_CONFIG_FEATURE_FANCY_PING CONFIG_BUSYBOX_CONFIG_NSLOOKUP
+		CONFIG_PACKAGE_ppp CONFIG_PACKAGE_ppp-mod-pptp CONFIG_PACKAGE_ppp-mod-pppoe CONFIG_PACKAGE_ppp-mod-pppol2tp
+		CONFIG_PACKAGE_pptpd CONFIG_PACKAGE_xl2tpd CONFIG_PACKAGE_openvpn-mbedtls
+		CONFIG_PACKAGE_strongswan CONFIG_PACKAGE_strongswan-isakmp CONFIG_PACKAGE_strongswan-mod-kdf CONFIG_PACKAGE_strongswan-mod-sha2
+		CONFIG_PACKAGE_strongswan-charon CONFIG_PACKAGE_strongswan-ipsec CONFIG_PACKAGE_strongswan-mod-stroke
+		CONFIG_PACKAGE_kmod-ppp CONFIG_PACKAGE_kmod-pptp CONFIG_PACKAGE_kmod-pppoe
+		CONFIG_PACKAGE_kmod-pppol2tp CONFIG_PACKAGE_kmod-mppe CONFIG_PACKAGE_kmod-tun
+		CONFIG_PACKAGE_kmod-ipsec CONFIG_PACKAGE_kmod-ipsec4 CONFIG_PACKAGE_kmod-nft-xfrm)
 fi
 for required in "${required_config[@]}"; do
 	grep -Fxq "$required=y" .config || { echo "Missing build configuration: $required" >&2; exit 2; }
@@ -176,6 +210,59 @@ initramfs=("$target"/*-yunxm_mp716-initramfs-kernel.bin)
 wireless_entries=(usr/sbin/wpad lib/firmware/mt7628_e1.bin lib/firmware/mt7628_e2.bin)
 network_entries=(sbin/swconfig sbin/fw4 usr/sbin/nft usr/sbin/dnsmasq
 	usr/sbin/miniupnpd etc/init.d/miniupnpd etc/config/firewall etc/config/upnpd)
+# BEGIN NATIVE ROOTFS CLOSURE
+# Inspect the final CPIO and SquashFS with the same dependency contract. Package
+# selection alone cannot prove that an overlay, plugin or rc.d policy was shipped.
+native_entries=(usr/sbin/uhttpd sbin/rpcd usr/bin/ucode usr/bin/jsonfilter
+	usr/lib/ucode/fs.so usr/lib/ucode/ubus.so usr/lib/ucode/uci.so
+	www/mp716/index.html www/cgi-bin/mp716
+	etc/init.d/mp716-admin etc/init.d/mp716-vpn
+	etc/rc.d/S18mp716-admin etc/rc.d/S59mp716-vpn
+	etc/uci-defaults/98-mp716-admin etc/mp716-build.version
+	lib/upgrade/keep.d/mp716-admin usr/share/rpcd/acl.d/mp716.json
+	usr/sbin/mp716-package-verify usr/sbin/mp716-upgraded usr/sbin/mp716-dhcp-discover
+	etc/board.d/03_mp716_ram_web
+	usr/sbin/pppd usr/sbin/pptpd usr/sbin/pptpctrl usr/sbin/xl2tpd usr/sbin/xl2tpd-control
+	usr/sbin/openvpn usr/lib/ipsec/starter usr/lib/ipsec/charon usr/lib/ipsec/stroke
+	lib/netifd/proto/ppp.sh lib/netifd/proto/l2tp.sh
+	lib/netifd/ppp-up lib/netifd/ppp-down etc/ppp/options.pptp etc/ppp/chap-secrets)
+for module in httpd admin admin-state admin-tick apply-task network-values system-values dispatch capabilities \
+	system-admin system-apply diagnostics vpn vpn-config vpn-runtime vpn-render vpn-hook vpn-services vpn-health; do
+	native_entries+=("usr/share/mp716/$module.uc")
+done
+native_entries+=(usr/share/mp716/native-routes.json)
+for hook in diagnostic-worker vpn-ppp-up vpn-ppp-down vpn-openvpn-up vpn-openvpn-down; do
+	native_entries+=("usr/share/mp716/$hook.sh")
+done
+native_patterns=()
+for plugin in pptp pppoe pppol2tp; do
+	native_patterns+=("usr/lib/pppd/[^/]+/$plugin\\.so")
+done
+# strongswan-isakmp's dependency closure plus the explicitly selected KDF/SHA2.
+for plugin in nonce aes des gmpdh hmac kdf kernel-netlink md5 mgf1 pubkey random sha1 sha2 socket-default stroke updown; do
+	native_entries+=("usr/lib/ipsec/plugins/libstrongswan-$plugin.so" "etc/strongswan.d/charon/$plugin.conf")
+done
+for module in ppp_generic ppp_async pppox pppoe pptp ppp_mppe gre ip_gre \
+	l2tp_core l2tp_netlink l2tp_ppp tun xfrm_user esp4 nft_xfrm; do
+	native_patterns+=("lib/modules/[^/]+/$module\\.ko(\\.(xz|zst|gz))?")
+done
+check_native_rootfs() {
+	local listing="$1" prefix="$2" entry pattern
+	for entry in "${native_entries[@]}"; do
+		grep -Fxq "$prefix$entry" "$listing" || {
+			echo "Missing native rootfs entry: $entry" >&2; return 2;
+		}
+	done
+	for pattern in "${native_patterns[@]}"; do
+		grep -Eq "^$prefix$pattern$" "$listing" || {
+			echo "Missing native rootfs dependency: $pattern" >&2; return 2;
+		}
+	done
+	if grep -Eq "^${prefix}etc/rc.d/[SK][0-9]+(pptpd|xl2tpd|openvpn|ipsec)$" "$listing"; then
+		echo 'Stock VPN service autostart conflicts with mp716-vpn ownership.' >&2; return 2
+	fi
+}
+# END NATIVE ROOTFS CLOSURE
 if [ -n "$web_input" ]; then
 	compilers=(build_dir/target-*/linux-ramips_mt76x8/linux-*/scripts/dtc/dtc)
 	[ "${#compilers[@]}" -eq 1 ] || { echo "Missing kernel device tree compiler." >&2; exit 2; }
@@ -196,12 +283,7 @@ if [ "$serial_rx" -eq 1 ]; then
 	grep -Eq '^(\./)?lib/modules/[^/]+/mt7603e\.ko(\.(xz|zst|gz))?$' "$output/initramfs-files.txt"
 	name=openwrt-ramips-mt76x8-yunxm_mp716-initramfs-rx-kernel.bin
 	if [ -n "$web_input" ]; then
-		entries+=(usr/sbin/uhttpd sbin/rpcd usr/bin/ucode
-			www/mp716/index.html www/cgi-bin/mp716 usr/share/mp716/httpd.uc
-			usr/share/mp716/admin.uc usr/share/mp716/admin-state.uc usr/share/mp716/admin-tick.uc
-			etc/init.d/mp716-admin etc/uci-defaults/98-mp716-admin etc/mp716-build.version
-			usr/share/rpcd/acl.d/mp716.json usr/sbin/mp716-package-verify
-			usr/sbin/mp716-upgraded etc/mp716-upgrade/upgrade.pub etc/board.d/03_mp716_ram_web)
+		entries+=(etc/mp716-upgrade/upgrade.pub)
 		name=openwrt-ramips-mt76x8-yunxm_mp716-initramfs-ram-web-kernel.bin
 	fi
 	for entry in "${entries[@]}"; do
@@ -210,6 +292,11 @@ if [ "$serial_rx" -eq 1 ]; then
 			exit 2
 		}
 	done
+	if [ -n "$web_input" ]; then
+		# CPIO implementations may prefix relative entries with ./.
+		sed 's@^\./@@' "$output/initramfs-files.txt" > "$output/native-rootfs-files.txt"
+		check_native_rootfs "$output/native-rootfs-files.txt" ''
+	fi
 	if [ -n "$web_input" ] && [ -n "$test_public_key" ]; then
 		staging_dir/host/bin/cpio -i --to-stdout 'etc/mp716-upgrade/upgrade.pub' './etc/mp716-upgrade/upgrade.pub' \
 			< "${archives[0]}" > "$output/ram-upgrade.pub"
@@ -260,9 +347,7 @@ done
 entries=(usr/sbin/mp716-upgraded usr/sbin/mp716-sysupgrade etc/rc.d/S95mp716-sysupgrade "${wireless_entries[@]}" "${network_entries[@]}")
 grep -Eq '^squashfs-root/lib/modules/[^/]+/mt7603e\.ko(\.(xz|zst|gz))?$' "$output/rootfs-files.txt"
 if [ "$lan_candidate" -eq 1 ]; then
-	entries+=(etc/board.d/03_mp716_ram_web www/mp716/index.html www/cgi-bin/mp716 usr/share/mp716/httpd.uc)
-	entries+=(usr/share/mp716/admin.uc usr/share/mp716/admin-state.uc usr/share/mp716/admin-tick.uc
-		etc/init.d/mp716-admin etc/uci-defaults/98-mp716-admin etc/mp716-build.version)
+	check_native_rootfs "$output/rootfs-files.txt" 'squashfs-root/'
 	if [ -n "$test_public_key" ]; then
 		entries+=(etc/mp716-upgrade/upgrade.pub)
 		"$unsquashfs" -offset "$offset" -cat "${sysupgrade[0]}" etc/mp716-upgrade/upgrade.pub > "$output/sysupgrade-upgrade.pub"

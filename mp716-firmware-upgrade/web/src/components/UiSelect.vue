@@ -154,7 +154,6 @@ onBeforeUnmount(() => {
 .ui-select {
   position: relative;
   min-width: 112px;
-  max-width: 320px;
 }
 
 .ui-select.disabled {
@@ -168,8 +167,8 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  min-height: 36px;
-  padding: 4px 10px 4px 11px;
+  min-height: 38px;
+  padding: 8px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
@@ -252,7 +251,7 @@ onBeforeUnmount(() => {
 }
 
 .ui-select-option {
-  padding: 5px 12px;
+  padding: 8px 10px;
   border-radius: 4px;
   color: var(--color-text);
   font-size: var(--fs-base);

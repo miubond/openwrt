@@ -4,7 +4,7 @@ import { getRouterApi, setRouterApiTokenGetter, toApiError, unwrap } from '@/api
 
 const TOKEN_KEY = 'mp716_session'
 /** 登录成功后短暂跳过 ping，避免刚进首页就被守卫打回登录页 */
-const SESSION_TRUST_MS = 90_000
+const SESSION_TRUST_MS = 120_000
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem(TOKEN_KEY))

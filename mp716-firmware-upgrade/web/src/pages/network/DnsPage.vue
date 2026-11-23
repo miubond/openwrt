@@ -14,7 +14,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const form = reactive<DnsConfig>({ mode: 'auto', servers: ['', ''] })
@@ -45,7 +45,7 @@ async function save() {
       servers: form.servers.map((s) => s.trim()).filter(Boolean),
     }
     const result = unwrap(await getRouterApi().updateDnsConfig(payload))
-    toast.success(t('common.configSubmitted'))
+    notifySaved(result, 'common.configSubmitted')
     await begin(asApplyHandle(result))
   } catch (e) {
     toast.error(formatApiError(e, t))
@@ -60,7 +60,7 @@ onMounted(() => void load())
 <template>
   <div>
     <p class="page-desc">{{ t('dns.pageDesc') }}</p>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else :title="t('dns.title')">
       <div class="settings-form">

@@ -1,7 +1,7 @@
 {
   "name": "mp716-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite --mode development",
@@ -21,7 +21,8 @@
     "factory:analyze": "node firmware/scripts/dump-hyid-registry.mjs && node firmware/scripts/analyze-factory-staging.mjs",
     "factory:parse": "node firmware/scripts/parse-factory-routes.mjs",
     "factory:probe-upgrade": "node firmware/scripts/probe-factory-upgrade.mjs",
-    "build:openwrt": "vue-tsc -b && vite build --mode openwrt"
+    "build:openwrt": "vue-tsc -b && vite build --mode openwrt",
+    "test:ui:lp": "node tests/unit/lp-render-check.mjs"
   },
   "dependencies": {
     "@lucide/vue": "^1.72.0",

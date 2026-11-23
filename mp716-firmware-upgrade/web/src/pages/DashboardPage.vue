@@ -7,6 +7,7 @@ import UiButton from '@/components/UiButton.vue'
 import UiIcon from '@/components/UiIcon.vue'
 import type { PhysicalPortStatus, SystemStatus } from '@/api/types'
 import { formatApiError, getRouterApi, isUnauthorizedError, unwrap } from '@/api'
+import { DeviceRouterAdapter } from '@/api/adapters/device-adapter'
 import { useAuthStore } from '@/stores/auth'
 import {
   toDeviceView,
@@ -18,7 +19,7 @@ import {
   type WanStatusView,
   type WifiStatusView,
 } from '@/api/view-map'
-import { formatBytes, formatDateTime, formatRate, formatUptime } from '@/utils/format'
+import { formatDateTime, formatRate, formatUptime } from '@/utils/format'
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
@@ -42,11 +43,21 @@ const showShell = computed(() => !bootFailed.value || ready.value)
 
 /** 逻辑 WAN（HYID 25）：与拓扑「Internet」一致 */
 const wanLinkUp = computed(() => Boolean(wan.value?.up))
-/** 物理 WAN 口（HYID 108 port_arr） */
+/** 物理 WAN 口（HYID 108 port_arr）；未核验映射时不猜 WAN 口，避免误报不一致 */
 const physicalWanUp = computed(
-  () => physicalPorts.value.find((p) => p.role === 'wan')?.linkUp ?? wanLinkUp.value,
+  () =>
+    physicalPorts.value.find((p) => p.role === 'wan' && p.mappingVerified !== false)?.linkUp ??
+    wanLinkUp.value,
+)
+const physicalMappingVerified = computed(
+  () =>
+    physicalPorts.value.length > 0 &&
+    physicalPorts.value.every((p) => p.mappingVerified !== false),
 )
 const staListCount = computed(() => devices.value.length)
+const unverifiedPhysicalPorts = computed(() =>
+  physicalPorts.value.some(p => p.mappingVerified === false || p.role === 'unknown'),
+)
 const portPlaceholders = [
   { id: 'lan1', label: 'LAN1', role: 'lan' as const },
   { id: 'lan2', label: 'LAN2', role: 'lan' as const },
@@ -54,18 +65,16 @@ const portPlaceholders = [
   { id: 'lan4', label: 'LAN4', role: 'lan' as const },
   { id: 'wan', label: 'WAN', role: 'wan' as const },
 ]
-const displayedPorts = computed(() =>
-  physicalPorts.value.length ? physicalPorts.value : portPlaceholders.map((p) => ({ ...p, linkUp: false, speedMbps: 0 })),
+// Use backend labels and roles. Array order cannot establish a chassis mapping.
+const displayedPorts = computed<PhysicalPortStatus[]>(() =>
+  physicalPorts.value.length ? physicalPorts.value : portPlaceholders.map(p => ({ ...p, linkUp: false, speedMbps: 0 })),
 )
 
 /** 首页预览最多 5 条，按实际数据行数渲染，不补空行 */
 const terminalPreview = computed(() => devices.value.slice(0, 5))
 
-function trafficLabel(bytes: number, rate: number) {
-  return rate > 0 ? formatRate(rate) : formatBytes(bytes)
-}
-
 function portStatusLabel(port: PhysicalPortStatus) {
+  if (port.linkKnown === false || port.linkUp === null) return t('dashboard.linkUnknown')
   if (!port.linkUp) return t('dashboard.portDown')
   const speed = port.speedMbps > 0 ? `${port.speedMbps}M` : ''
   return t('dashboard.portConnected', { speed: speed ? `${speed} ` : '' })
@@ -96,12 +105,40 @@ async function load(quiet = false) {
 
   const api = getRouterApi()
 
+  if (api instanceof DeviceRouterAdapter) {
+    try {
+      const data = unwrap(await api.getHomeDashboard())
+      if (seq !== loadSeq) return
+      const st: SystemStatus = {
+        cpuPercent: null,
+        memoryPercent: 0,
+        uptimeSec: data.system.uptimeSec,
+        interfaces: [],
+        wirelessClients: data.wifi.clients,
+        wiredClients: 0,
+      }
+      system.value = toSystemStatusView(data.system, st)
+      wan.value = toWanStatusView(data.wan)
+      wifi.value = toWifiStatusView(data.wifi)
+      physicalPorts.value = data.physicalPorts
+      devices.value = data.devices.map(toDeviceView)
+      if (!quiet) bootFailed.value = false
+      return
+    } catch (e) {
+      if (isUnauthorizedError(e)) {
+        await handleLoadError(e)
+        return
+      }
+      /* 旧固件无 GET home/dashboard 时继续走下方多请求路径 */
+    }
+  }
+
   /** 各接口独立落地：谁先返回谁先填卡片，不再整页等齐 */
   const infoTask = api.getSystemInfo().then((res) => {
     if (seq !== loadSeq) return
     const info = unwrap(res)
     const st: SystemStatus = {
-      cpuPercent: 0,
+      cpuPercent: import.meta.env.VITE_ROUTER_ADAPTER === 'device' ? null : 0,
       memoryPercent: 0,
       uptimeSec: info.uptimeSec,
       interfaces: [],
@@ -165,23 +202,33 @@ async function diagnose() {
   }
 }
 
-const POLL_MS_VISIBLE = 10_000
+const POLL_MS_VISIBLE =
+  import.meta.env.VITE_ROUTER_ADAPTER === 'device' ? 20_000 : 10_000
 const POLL_MS_HIDDEN = 30_000
 
+let pollStarted = false
+
 function schedulePoll() {
+  if (pollStarted) return
+  pollStarted = true
   if (timer) window.clearInterval(timer)
   const ms = document.visibilityState === 'hidden' ? POLL_MS_HIDDEN : POLL_MS_VISIBLE
   timer = window.setInterval(() => void load(true), ms)
 }
 
 function onVisibilityChange() {
-  schedulePoll()
+  if (!pollStarted) return
+  if (timer) window.clearInterval(timer)
+  const ms = document.visibilityState === 'hidden' ? POLL_MS_HIDDEN : POLL_MS_VISIBLE
+  timer = window.setInterval(() => void load(true), ms)
 }
 
 onMounted(() => {
-  void load()
-  schedulePoll()
   document.addEventListener('visibilitychange', onVisibilityChange)
+  void (async () => {
+    await load()
+    schedulePoll()
+  })()
 })
 onUnmounted(() => {
   if (timer) window.clearInterval(timer)
@@ -226,8 +273,8 @@ onUnmounted(() => {
           <div class="link">
             <div class="line" />
             <div v-if="wan" class="rates rates-traffic">
-              <span class="rate-up">↑ {{ trafficLabel(wan.txBytes, wan.txRateBps) }}</span>
-              <span class="rate-down">↓ {{ trafficLabel(wan.rxBytes, wan.rxRateBps) }}</span>
+              <span class="rate-up">↑ {{ formatRate(wan.txRateBps) }}</span>
+              <span class="rate-down">↓ {{ formatRate(wan.rxRateBps) }}</span>
             </div>
             <div v-else class="rates">
               <span class="skel skel-line" aria-hidden="true" />
@@ -339,21 +386,22 @@ onUnmounted(() => {
                 v-for="p in displayedPorts"
                 :key="p.id"
                 class="port"
-                :class="[p.role, { up: physicalPorts.length ? p.linkUp : false }]"
+                :class="[p.mappingVerified === false ? 'unknown' : p.role, { up: physicalPorts.length ? p.linkUp : false }]"
               >
                 <div class="port-ico"><UiIcon name="port" :size="18" /></div>
                 <strong>{{ p.label }}</strong>
-                <span v-if="physicalPorts.length">{{ portStatusLabel(p) }}</span>
+                <span v-if="physicalPorts.length" class="port-status" :title="portStatusLabel(p)">{{ portStatusLabel(p) }}</span>
                 <span v-else class="skel skel-line skel-port" aria-hidden="true" />
               </div>
             </div>
             <div class="legend">
-              <span><i class="lan" /> {{ t('dashboard.legendLan') }}</span>
-              <span><i class="wan" /> {{ t('dashboard.legendWan') }}</span>
+              <span v-if="!unverifiedPhysicalPorts"><i class="lan" /> {{ t('dashboard.legendLan') }}</span>
+              <span v-if="!unverifiedPhysicalPorts"><i class="wan" /> {{ t('dashboard.legendWan') }}</span>
+              <span v-else>{{ t('dashboard.physicalMappingUnverified') }}</span>
               <span><i class="down" /> {{ t('dashboard.legendDown') }}</span>
             </div>
             <div class="ports-warn-slot">
-              <p v-if="physicalPorts.length && physicalWanUp !== wanLinkUp" class="ports-warn">
+              <p v-if="physicalMappingVerified && physicalWanUp !== wanLinkUp" class="ports-warn">
                 {{ t('dashboard.wanStateMismatch') }}
               </p>
             </div>
@@ -810,16 +858,25 @@ onUnmounted(() => {
   overflow: hidden;
 }
 .port strong {
+  display: block;
+  width: 100%;
   font-size: var(--fs-xs);
+  line-height: 1.2;
+  min-height: 1.2em;
   color: var(--color-title);
+  text-align: center;
 }
 .port span {
+  display: block;
   font-size: var(--fs-xs);
   line-height: 1.25;
+  min-height: 1.25em;
   width: 100%;
   max-width: 100%;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .port-ico {
   width: 28px;

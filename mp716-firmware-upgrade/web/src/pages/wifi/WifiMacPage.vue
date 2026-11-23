@@ -16,7 +16,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const savingMode = ref(false)
 const savingList = ref(false)
@@ -77,7 +77,7 @@ async function saveMode() {
       }),
     )
     savedMode.value = mode.value
-    toast.success(t('wifiMac.appliedMode'))
+    notifySaved(result, 'wifiMac.appliedMode')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {
@@ -98,7 +98,7 @@ async function commitList(next: WirelessAclEntry[]) {
     )
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     rows.value = next
-    toast.success(t('wifiMac.appliedList'))
+    notifySaved(result, 'wifiMac.appliedList')
     closeAdd()
   } catch (e) {
     toast.error(formatApiError(e, t))
@@ -190,7 +190,7 @@ onMounted(() => void load())
 <template>
   <div>
     <p class="page-desc">{{ t('wifiMac.desc') }}</p>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <template v-else>
       <UiCard class="mb">
@@ -481,25 +481,28 @@ onMounted(() => void load())
 .modal {
   width: min(520px, 100%);
   background: var(--color-surface);
-  border-radius: 16px;
   box-shadow: 0 16px 48px rgba(15, 23, 42, 0.18);
   overflow: hidden;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .modal-head {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 18px 48px 14px;
   border-bottom: 1px solid var(--color-border);
+  justify-content: flex-start;
+  padding: 16px;
 }
 
 .modal-head h3 {
   margin: 0;
-  font-size: 18px;
   font-weight: 600;
-  color: var(--color-primary);
+  color: var(--color-title);
+  font-size: var(--fs-md);
 }
 
 .close-btn {
@@ -519,15 +522,11 @@ onMounted(() => void load())
 }
 
 .modal-body {
-  padding: 22px 24px 18px;
+  padding: 16px;
 }
 
 .scan-btn {
   flex-shrink: 0;
-  height: 40px;
-  min-width: 88px;
-  padding: 0 18px;
-  border-radius: 999px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-primary);
@@ -537,6 +536,10 @@ onMounted(() => void load())
   transition:
     border-color 0.15s ease,
     background 0.15s ease;
+  border-radius: var(--radius-sm);
+  min-width: 0;
+  height: 36px;
+  padding: 8px 16px;
 }
 
 .scan-btn:hover:not(:disabled) {
@@ -614,20 +617,23 @@ onMounted(() => void load())
 }
 
 .modal-foot {
-  display: flex;
-  justify-content: center;
   align-items: center;
-  gap: 14px;
-  padding: 16px 24px 22px;
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-soft);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 16px 16px;
 }
 
 .modal-foot :deep(.foot-btn) {
   flex: 1;
   max-width: 200px;
   min-height: 42px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
+  min-width: 0;
+  height: 36px;
+  padding: 8px 16px;
 }
 
 .link-btn {
@@ -641,29 +647,41 @@ onMounted(() => void load())
 
 @media (max-width: 640px) {
   .modal-form div.field {
-    grid-template-columns: 1fr;
+  grid-template-columns: 1fr;
   }
 
   .modal-form div.field > .label {
-    padding-top: 0;
+  padding-top: 0;
   }
 
   .mac-input-row {
-    flex-direction: column;
-    align-items: stretch;
+  flex-direction: column;
+  align-items: stretch;
   }
 
   .scan-btn {
-    width: 100%;
-  }
+  width: 100%;
+  border-radius: var(--radius-sm);
+  min-width: 0;
+  height: 36px;
+  padding: 8px 16px;
+}
 
   .modal-foot {
-    flex-direction: column;
-  }
+  flex-direction: column;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 16px 16px;
+}
 
   .modal-foot :deep(.foot-btn) {
-    max-width: none;
-    width: 100%;
-  }
+  max-width: none;
+  width: 100%;
+  border-radius: var(--radius-sm);
+  min-width: 0;
+  height: 36px;
+  padding: 8px 16px;
+}
 }
 </style>

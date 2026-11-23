@@ -7,6 +7,7 @@ import UiFormRow from '@/components/UiFormRow.vue'
 import FormActions from '@/components/FormActions.vue'
 import ApplyBanner from '@/components/ApplyBanner.vue'
 import LoadingState from '@/components/LoadingState.vue'
+import NativeServiceNotice from '@/components/NativeServiceNotice.vue'
 import { asApplyHandle, formatApiError, getRouterApi, unwrap } from '@/api'
 import type { L2tpClientConfig } from '@/api'
 import { useApplyConfirm } from '@/composables/useApplyConfirm'
@@ -14,7 +15,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const form = reactive<L2tpClientConfig>({
@@ -28,7 +29,11 @@ const form = reactive<L2tpClientConfig>({
   serverEnabled: false,
 })
 
+const isNative = import.meta.env.VITE_ROUTER_ADAPTER === 'device'
 let loadedEnabled = false
+const clientConnected = computed(() => isNative
+  ? loadedEnabled && form.enabled && form.status === 1
+  : form.status !== 0)
 let timer: ReturnType<typeof setInterval> | undefined
 
 const enabled = computed({
@@ -85,7 +90,7 @@ async function save() {
   saving.value = true
   try {
     const result = unwrap(await getRouterApi().updateL2tpClient({ ...form }))
-    toast.success(t('vpn.l2tpClientApplied'))
+    notifySaved(result, 'vpn.l2tpClientApplied')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {
@@ -106,10 +111,11 @@ onUnmounted(stopStatusPoll)
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else>
       <div class="settings-form">
+        <NativeServiceNotice :available="form.serviceAvailable" :message="form.serviceMessage" />
         <UiFormRow :label="t('vpn.l2tpClientSettings')">
           <label class="switch">
             <input v-model="enabled" type="checkbox" />
@@ -120,7 +126,7 @@ onUnmounted(stopStatusPoll)
 
         <template v-if="form.enabled">
           <UiFormRow :label="t('vpn.connectionStatus')">
-            <div class="value">{{ form.status === 0 ? t('common.disconnected') : t('common.connected') }}</div>
+            <div class="value">{{ clientConnected ? t('common.connected') : t('common.disconnected') }}</div>
           </UiFormRow>
           <UiFormRow :label="t('vpn.clientIp')">
             <div class="value">{{ form.address || '—' }}</div>

@@ -7,6 +7,8 @@ import UiField from '@/components/UiField.vue'
 import UiCard from '@/components/UiCard.vue'
 import UiSelect from '@/components/UiSelect.vue'
 import LoadingState from '@/components/LoadingState.vue'
+import ApplyBanner from '@/components/ApplyBanner.vue'
+import { useApplyConfirm } from '@/composables/useApplyConfirm'
 import { formatApiError, getRouterApi, unwrap } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import type { QuickSettingWan, QuickSettingWifi } from '@/api'
@@ -15,6 +17,9 @@ import { isIpv4 } from '@/utils/validate'
 
 const router = useRouter()
 const { t } = useI18n()
+const isNative = import.meta.env.VITE_ROUTER_ADAPTER === 'device'
+const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+async function confirmWizard() { if (await confirm() === 'confirmed') await goHome() }
 const toast = useToastStore()
 const auth = useAuthStore()
 const loading = ref(true)
@@ -45,7 +50,7 @@ const wan = reactive<QuickSettingWan>({
 
 const wanTypeOptions = computed(() => [
   { value: 'wired', label: t('wizard.wired') },
-  { value: 'mobile', label: t('wizard.cellular') },
+  ...(!isNative ? [{ value: 'mobile', label: t('wizard.cellular') }] : []),
 ])
 
 const useApnOptions = computed(() => [
@@ -80,8 +85,12 @@ const wifi = reactive<QuickSettingWifi>({
 async function goHome() {
   try {
     unwrap(await getRouterApi().completeWizardFirstBoot())
-  } catch {
-    /* skip and go home */
+  } catch (e) {
+    if (isNative) {
+      toast.error(formatApiError(e, t))
+      return
+    }
+    /* Keep the original factory skip behavior. */
   }
   auth.markWizardComplete()
   await router.replace('/')
@@ -154,6 +163,10 @@ async function finish() {
     const result = unwrap(
       await getRouterApi().applyQuickSetting({ ...wan, dns }, { ...wifi }),
     )
+    if (isNative && result.taskId && result.rollbackSec) {
+      await begin({ applyId: result.taskId, timeoutSec: result.rollbackSec, phase: result.phase })
+      return
+    }
     if (result.progressSec > 0) {
       progressSec.value = result.progressSec
       progressOpen.value = true
@@ -182,6 +195,7 @@ onMounted(() => void load())
 
 <template>
   <div class="wizard-page">
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirmWizard" @cancel="cancel" />
     <div class="wizard-head">
       <h1>{{ t('wizard.title') }}</h1>
       <p class="hint">{{ t('wizard.hint') }}</p>
@@ -194,6 +208,7 @@ onMounted(() => void load())
         <h2 class="section">{{ t('wizard.networkSection') }}</h2>
         <UiField :label="t('wan.accessMode')">
           <UiSelect v-model="wan.wanType" :options="wanTypeOptions" />
+          <small v-if="isNative">{{ t('wan.nativeWiredOnly') }}</small>
         </UiField>
 
         <template v-if="wan.wanType === 'mobile'">

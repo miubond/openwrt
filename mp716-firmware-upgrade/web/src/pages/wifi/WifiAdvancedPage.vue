@@ -14,7 +14,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 
@@ -62,7 +62,7 @@ async function save() {
   saving.value = true
   try {
     const result = unwrap(await getRouterApi().updateWifiAdvanced({ ...form }))
-    toast.success(t('wifiAdvanced.applied'))
+    notifySaved(result, 'wifiAdvanced.applied')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {
@@ -77,7 +77,7 @@ onMounted(() => void load())
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else :title="t('wifiAdvanced.title')">
       <div class="settings-form">

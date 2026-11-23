@@ -45,6 +45,7 @@ export default {
     statusLimited: 'Limited',
     apiMode: 'API {mode}',
     delete: 'Delete',
+    deleting: 'Deleting…',
     edit: 'Edit',
     add: 'Add',
     addRule: 'Add rule',
@@ -87,6 +88,9 @@ export default {
     required: '{label} is required',
     macFormat: 'MAC must be XX:XX:XX:XX:XX:XX',
     detect: {
+      nativeHostFormat: 'Enter an IPv4 address or DNS hostname without a scheme, path or port',
+      nativeHostMaxLen: 'Hostname must be at most 253 characters',
+      nativeSourceFormat: 'Source must be a local IPv4 address',
       hostRequired: 'IP or domain is required!',
       hostFormat: 'Invalid IP or domain. Valid format is xxx.yyy.zzz (e.g. baidu.com, www.baidu.com)!',
       hostMaxLen: 'IP or domain must be at most 63 characters!',
@@ -101,6 +105,7 @@ export default {
     },
   },
   toolDetect: {
+    sourceAutoHint: 'Leave empty to select the source address automatically',
     host: 'IP or Domain Name',
     source: 'Source IP Address',
     pingCount: 'Ping Count',
@@ -273,6 +278,7 @@ export default {
     dryRunValidateOk: 'Offline validation passed; real flash upgrade is not enabled',
   },
   dashboard: {
+    physicalMappingUnverified: 'Port roles are unverified; P0–P4 are switch port indices',
     topology: 'Network Topology',
     runningOk: 'Network is healthy',
     diagnose: 'Diagnose',
@@ -355,6 +361,14 @@ export default {
     limited: 'Limited by hardware/firmware capability. Entry is reserved in this build.',
   },
   apply: {
+    savedApplying: 'Configuration saved and applying. Wait for the device result.',
+    savedAwaitingConfirm: 'Configuration applied and awaiting confirmation. Automatic rollback remains active.',
+    inProgressTitle: 'Applying configuration',
+    inProgressDesc: 'Wait for the device to apply its services before confirming.',
+    rollingBackTitle: 'Restoring configuration',
+    rollingBackDesc: 'Wait for the device to finish restoring its services.',
+    failedTitle: 'Configuration operation failed',
+    failedDesc: 'Restoration is not confirmed. Retry rollback and check the device.',
     pending: 'You have unsaved configuration changes',
     discard: 'Discard',
     applyNow: 'Apply changes',
@@ -395,6 +409,10 @@ export default {
     sectionNetwork: 'Network',
   },
   wifiBasic: {
+    keepCurrentMode: 'Keep current {mode}',
+    keepCurrentEncryption: 'Keep current encryption ({encryption})',
+    preserveEncryptionHint: 'Keep the current encryption configuration or select a supported method before changing its password.',
+    nativeModeHint: 'Wireless modes follow device capabilities. 11B is not enabled.',
     title: '2.4G Basic Settings',
     enabled: 'Wireless',
     ssid: 'SSID',
@@ -481,6 +499,8 @@ export default {
     noFile: 'Select a configuration file',
     fileTooBig: 'File must not exceed 2 MB!',
     importOk: 'Configuration imported; do not power off the device',
+    restoring: 'Restoring… Do not power off the device',
+    restoringAbout: 'About {n} seconds remaining',
   },
   sysReboot: {
     subtitle: 'Click the button below to reboot the device.',
@@ -543,6 +563,7 @@ export default {
     secondaryDns: 'Secondary DNS',
   },
   wan: {
+    nativeWiredOnly: 'This native build supports wired WAN; cellular hardware is not validated.',
     desc: 'Configure how this device connects to the Internet.',
     help: 'Page help',
     helpBody:
@@ -665,10 +686,12 @@ export default {
     connectedHours: '{h} h {m} min',
   },
   vpn: {
+    serviceUnavailable: 'This firmware does not include the VPN service. Disabled settings can be saved; enabling it requires compatible firmware.',
     addUser: 'Add user',
     editUser: 'Edit user',
-    deleteUserTitle: 'Delete this user?',
-    deleteUserBody: 'The full user table will be submitted immediately after deletion.',
+    deleteUserTitle: 'Confirm delete',
+    deleteUserName: 'Delete user “{name}”?',
+    deleteUserBody: 'Changes will be submitted and take effect immediately.',
     userSaved: 'User saved',
     errUsername: 'Enter a username',
     userType: 'User type',
@@ -791,6 +814,11 @@ export default {
     submitted: 'QoS settings submitted',
   },
   devices: {
+    search: 'Search device name, IP or MAC',
+    noMatch: 'No matching devices', details: 'Device details', interface: 'Interface',
+    linkLabel: 'Connection', statusLabel: 'Status',
+    link: { all: 'All connections', ethernet: 'Ethernet', wifi: 'Wi-Fi', unknown: 'Unknown' },
+    status: { all: 'All states', online: 'Online', offline: 'Offline' },
     pageDesc:
       'Access control entry points match main security policies. To disconnect clients, go to Online devices.',
     wifiAclTitle: 'Wireless access control',

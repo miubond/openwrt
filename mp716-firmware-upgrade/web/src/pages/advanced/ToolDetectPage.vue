@@ -10,8 +10,12 @@ import { formatApiError, getRouterApi, unwrap } from '@/api'
 import type { DhcpDetectServer, DiagnosticType } from '@/api'
 import { useToastStore } from '@/stores/toast'
 import { validateHost, validateRange, validateSource } from '@/utils/detect-input'
+import { validateNativeHost, validateNativeSource } from '@/utils/native-detect-input'
 
 const route = useRoute()
+const native = import.meta.env.VITE_ROUTER_ADAPTER === 'device'
+const validateTarget = native ? validateNativeHost : validateHost
+const validateSourceAddress = native ? validateNativeSource : validateSource
 const { t } = useI18n()
 const toast = useToastStore()
 const running = ref(false)
@@ -67,7 +71,7 @@ function resetForm() {
 }
 
 function waitMs(type: DiagnosticType) {
-  return type === 'ping' ? 3000 : 5000
+  return type === 'ping' ? 1500 : 2500
 }
 
 function applyErrors() {
@@ -77,8 +81,8 @@ function applyErrors() {
   errors.hops = ''
   errors.timeout = ''
   if (kind.value === 'ping') {
-    errors.target = validateHost(form.target, t)
-    errors.source = validateSource(form.source, t)
+    errors.target = validateTarget(form.target, t)
+    errors.source = validateSourceAddress(form.source, t)
     errors.count = validateRange(
       form.count,
       1,
@@ -89,7 +93,7 @@ function applyErrors() {
     return !errors.target && !errors.source && !errors.count
   }
   if (kind.value === 'traceroute') {
-    errors.target = validateHost(form.target, t)
+    errors.target = validateTarget(form.target, t)
     errors.hops = validateRange(
       form.hops,
       1,
@@ -216,7 +220,7 @@ onUnmounted(() => {
           <UiField layout="horizontal" :label="t('toolDetect.host')" :error="errors.target || null">
             <input v-model="form.target" autocomplete="off" @input="errors.target = ''" />
           </UiField>
-          <UiField layout="horizontal" :label="t('toolDetect.source')" :error="errors.source || null">
+          <UiField layout="horizontal" :label="t('toolDetect.source')" :hint="native ? t('toolDetect.sourceAutoHint') : undefined" :error="errors.source || null">
             <input v-model="form.source" autocomplete="off" @input="errors.source = ''" />
           </UiField>
           <UiField layout="horizontal" :label="t('toolDetect.pingCount')" :error="errors.count || null">

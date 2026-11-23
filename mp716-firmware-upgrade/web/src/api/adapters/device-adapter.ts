@@ -51,13 +51,21 @@ import type {
   WifiStatus,
   WirelessAclConfig,
   WirelessClient,
+  HomeDashboard,
 } from '../types'
 import { requestJson, failure } from '../http'
 import { readVerificationReport } from '../firmware-verification'
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/cgi-bin/mp716'
+const DEVICE_GET_CACHE_MS = 4_000
+const DEVICE_GET_CACHE_MS_BY_SEGMENT: Record<string, number> = {
+  'home/dashboard': 12_000,
+}
 
 type TokenProvider = () => string | null
+
+const deviceGetCache = new Map<string, { at: number; res: ApiResponse<unknown> }>()
+const deviceGetInflight = new Map<string, Promise<ApiResponse<unknown>>>()
 
 export class DeviceRouterAdapter implements RouterAPI {
   private getToken: TokenProvider
@@ -75,11 +83,41 @@ export class DeviceRouterAdapter implements RouterAPI {
     body?: unknown,
     method: 'GET' | 'POST' = body ? 'POST' : 'GET',
   ): Promise<ApiResponse<T>> {
+    if (method === 'POST') {
+      deviceGetCache.clear()
+      deviceGetInflight.clear()
+    }
+    if (method === 'GET') {
+      const now = Date.now()
+      const cacheMs = DEVICE_GET_CACHE_MS_BY_SEGMENT[segment] ?? DEVICE_GET_CACHE_MS
+      const cached = deviceGetCache.get(segment)
+      if (cached && now - cached.at < cacheMs) {
+        return cached.res as ApiResponse<T>
+      }
+      let inflight = deviceGetInflight.get(segment)
+      if (!inflight) {
+        inflight = requestJson<T>(this.path(segment), {
+          method: 'GET',
+          token: this.getToken(),
+        }).then((res) => {
+          deviceGetCache.set(segment, { at: Date.now(), res: res as ApiResponse<unknown> })
+          deviceGetInflight.delete(segment)
+          return res as ApiResponse<unknown>
+        })
+        deviceGetInflight.set(segment, inflight)
+      }
+      return inflight as Promise<ApiResponse<T>>
+    }
     return requestJson<T>(this.path(segment), {
       method,
       body,
       token: this.getToken(),
     })
+  }
+
+  /** 首页聚合：设备端只扫一次终端列表与物理口 */
+  getHomeDashboard() {
+    return this.call<HomeDashboard>('home/dashboard')
   }
 
   getPreLoginConfig() {
@@ -296,7 +334,10 @@ export class DeviceRouterAdapter implements RouterAPI {
   getFirmwareInfo() {
     return this.call<FirmwareInfo>('system/firmware')
   }
-  async uploadFirmware(file: Blob): Promise<ApiResponse<ConfigApplyResult>> {
+  async uploadFirmware(
+    file: Blob,
+    _options?: { keepSettings?: boolean; maxBytes?: number; maxSizeLabel?: string },
+  ): Promise<ApiResponse<ConfigApplyResult>> {
     const token = this.getToken()
     try {
       const response = await fetch(this.path('system/firmware-package/verify'), {
@@ -333,7 +374,7 @@ export class DeviceRouterAdapter implements RouterAPI {
     return this.call<ConfigApplyResult>('system/logs', { enabled })
   }
   clearSyslog() {
-    return this.call<null>('system/logs/clear')
+    return this.call<null>('system/logs/clear', {})
   }
   backupConfig() {
     return this.call<BackupResult>('system/backup', {})

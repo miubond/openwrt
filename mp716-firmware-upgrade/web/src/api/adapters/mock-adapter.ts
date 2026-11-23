@@ -717,7 +717,10 @@ export class MockRouterAdapter implements RouterAPI {
   async applyFirmwareV2(): Promise<ApiResponse<ConfigApplyResult>> {
     return success({ accepted: false, rollbackSec: 0, taskId: 'dry-run' })
   }
-  async uploadFirmware(file: Blob): Promise<ApiResponse<ConfigApplyResult>> {
+  async uploadFirmware(
+    file: Blob,
+    _options?: { keepSettings?: boolean; maxBytes?: number; maxSizeLabel?: string },
+  ): Promise<ApiResponse<ConfigApplyResult>> {
     if (file.size > 8 * 1024 * 1024) {
       return failure('VALIDATION', '固件文件超过 Flash 容量限制')
     }

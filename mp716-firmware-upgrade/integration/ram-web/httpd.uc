@@ -4,7 +4,11 @@
 import { connect } from 'ubus';
 import { popen, stdin } from 'fs';
 import { cursor } from 'uci';
-import { route_admin, firmware_version } from '/usr/share/mp716/admin.uc';
+import { firmware_version } from '/usr/share/mp716/build-meta.uc';
+import { route_native } from '/usr/share/mp716/dispatch.uc';
+import { capabilities } from '/usr/share/mp716/capabilities.uc';
+import { perf_enabled, perf_begin, perf_monotonic_ms, perf_shell_ms, perf_log,
+	perf_set_ubus_connect_ms, perf_set_session_access_ms } from '/usr/share/mp716/perf-diag.uc';
 
 function reply(status, body) {
 	printf('Status: %d %s\r\nContent-Type: application/json\r\n\r\n%J\n',
@@ -59,9 +63,12 @@ function verify() {
 function main() {
 	let path = split(getenv('REQUEST_URI') || '', '?')[0];
 	let method = getenv('REQUEST_METHOD');
+	if (index(path,'/cgi-bin/mp716/')!=0) return fail(404,'NOT_IMPLEMENTED','未知接口');
 	if (method == 'GET' && path == '/cgi-bin/mp716/auth/prelogin')
 		return ok({ firstBoot: 0, needAuthorized: 1 });
+	let t_ubus = perf_enabled() ? perf_monotonic_ms() : 0;
 	let ubus = connect();
+	if (t_ubus) perf_set_ubus_connect_ms(perf_monotonic_ms() - t_ubus);
 	if (!ubus)
 		return fail(503, 'INTERNAL', '设备会话服务不可用');
 	if (method == 'POST' && path == '/cgi-bin/mp716/auth/login')
@@ -70,9 +77,11 @@ function main() {
 	let token = substr(header, 0, 7) == 'Bearer ' ? substr(header, 7) : '';
 	if (!match(token, /^[0-9a-f]{32}$/) || token == '00000000000000000000000000000000')
 		return fail(401, 'UNAUTHORIZED', '会话无效或已过期');
+	let t_session = perf_enabled() ? perf_monotonic_ms() : 0;
 	let session = ubus.call('session', 'access', {
 		ubus_rpc_session: token, scope: 'ubus', object: 'mp716', function: '*',
 	});
+	if (t_session) perf_set_session_access_ms(perf_monotonic_ms() - t_session);
 	if (session?.access != true)
 		return fail(401, 'UNAUTHORIZED', '会话无效或已过期');
 	if (method == 'POST' && path == '/cgi-bin/mp716/auth/logout') {
@@ -81,6 +90,8 @@ function main() {
 	}
 	if (method == 'GET' && path == '/cgi-bin/mp716/system/ping')
 		return ok({ latencyMs: 0 });
+	if (method == 'GET' && path == '/cgi-bin/mp716/system/capabilities')
+		return ok(capabilities());
 	if (method == 'GET' && path == '/cgi-bin/mp716/network/status') {
 		let c = cursor();
 		let interfaces = {};
@@ -107,15 +118,28 @@ function main() {
 	let body = {};
 	if (method == 'POST') {
 		let size = int(getenv('CONTENT_LENGTH') || '0');
-		if (size < 0 || size > 16384) return fail(400, 'VALIDATION', '请求内容过大');
+		let limit = path == '/cgi-bin/mp716/system/restore' ? 2097152 :
+			path == '/cgi-bin/mp716/vpn/openvpn/upload' ? 360448 : 65536;
+		if (size < 0 || size > limit) return fail(400, 'VALIDATION', '请求内容过大');
 		try { body = size ? json(stdin.read(size)) : {}; }
 		catch (e) { return fail(400, 'VALIDATION', '无效的 JSON 请求'); }
 		if (type(body) != 'object') return fail(400, 'VALIDATION', '无效的请求对象');
 	}
+	let api_path = substr(path, length('/cgi-bin/mp716/'));
+	let t0 = perf_enabled() ? perf_monotonic_ms() : 0;
+	if (perf_enabled()) perf_begin(substr(token, 0, 8), api_path);
 	try {
-		let result = route_admin(ubus, method, substr(path, length('/cgi-bin/mp716/')), body, token);
-		if (result?.error) return fail(result.error == 'DEVICE_BUSY' ? 409 : 400, result.error, result.message);
-		if (result != null) return ok(result.data);
+		let result = route_native(ubus, method, api_path, body, token);
+		if (result?.error) return fail(result.error == 'DEVICE_BUSY' ? 409 : result.error == 'NOT_IMPLEMENTED' ? 404 : 400, result.error, result.message);
+		if (result != null) {
+			if (t0) {
+				let ser0 = perf_monotonic_ms();
+				let response = ok(result.data);
+				perf_log(api_path, perf_monotonic_ms() - t0, perf_monotonic_ms() - ser0);
+				return response;
+			}
+			return ok(result.data);
+		}
 	} catch (e) { return fail(500, 'INTERNAL', '设备接口执行失败', { reason: e.message || string(e) }); }
 	return fail(404, 'NOT_IMPLEMENTED', '此接口在测试固件中不可用');
 }
