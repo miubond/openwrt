@@ -20,7 +20,7 @@
 | VPN 状态 | GET `vpn/online`、POST `vpn/online/disconnect` | 仅返回真实活跃 PPP 会话，PID+启动时间校验，不能断开无关进程 |
 | OpenVPN | GET/POST `vpn/openvpn`、POST `vpn/openvpn/upload` | 真实文件内容上传；配置/证书各自类型；上传及设置都要确认/回滚 |
 | 设备信息 | GET `system/device` | `softwareVersion` 为固件版本；`webuiVersion` 应来自独立 Web 包元数据 |
-| 固件管理 | GET `system/firmware`、POST `system/firmware-package/verify` | 本阶段只能上传并校验，沿用原签名格式，不打开刷写门 |
+| 固件管理 | GET `system/firmware`、POST `system/firmware-package/verify` | 验签闭环默认开启；`flashUpgradeEnabled` 时验签→刷写闭环（见 [factory-upgrade-closed-loop.md](./factory-upgrade-closed-loop.md)）；生产默认刷写门关闭 |
 | 恢复出厂/重启 | POST `system/factory-reset`、`system/reboot` | 仅做隔离命令计划测试，保留配置阶段不在现机调用 |
 | 系统配置 | POST `system/backup/download`、`system/restore` | 原生 JSON 备份，受限文件和权限、证书备份；恢复可撤销，不接受原厂二进制包冒充原生配置 |
 | 定时重启 | GET/POST `system/sche-reboot` | 与页面 10 分钟下限一致；设备时区、周位图、倒计时 boot/uptime，确认前不得触发重启 |

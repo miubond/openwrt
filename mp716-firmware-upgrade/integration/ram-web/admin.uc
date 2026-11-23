@@ -317,7 +317,11 @@ function home_dashboard(bus, c) {
 
 function home_dashboard_cached(bus, c) {
 	let hit = read_api_cache('home_dashboard');
-	if (hit != null) return hit;
+	if (hit != null) {
+		// WAN 速率依赖两次采样，整页缓存会冻结 ratesReady/0bps；命中缓存时仍刷新 WAN。
+		hit.wan = iface_status(bus, c, 'wan');
+		return hit;
+	}
 	let data = home_dashboard(bus, c);
 	write_api_cache('home_dashboard', data);
 	return data;
