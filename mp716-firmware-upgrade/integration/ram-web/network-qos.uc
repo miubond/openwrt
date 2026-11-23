@@ -73,7 +73,7 @@ export function route_network_qos(bus, method, path, body, owner) {
 	if (!acquire()) return reject('另一个配置操作正在执行', 'DEVICE_BUSY');
 	let result;
 	try {
-		result = (function () {
+		result = (function() {
 			expire();
 			if (blocking_pending()) return reject('请先确认或撤销当前配置', 'DEVICE_BUSY');
 			dismiss_failed_pending();
@@ -96,4 +96,4 @@ export function route_network_qos(bus, method, path, body, owner) {
 	} catch (e) { result = reject(e.message || string(e), 'VALIDATION'); }
 	release();
 	return result;
-}
+};
