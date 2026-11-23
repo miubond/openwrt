@@ -2,7 +2,7 @@
 'use strict';
 
 import { connect } from 'ubus';
-import { popen, stdin } from 'fs';
+import { popen, stdin, writefile, unlink, chmod } from 'fs';
 import { cursor } from 'uci';
 import { firmware_version, firmware_build_date } from '/usr/share/mp716/build-meta.uc';
 import { route_native } from '/usr/share/mp716/dispatch.uc';
@@ -53,21 +53,52 @@ function login(ubus) {
 	return ok({ token: session.ubus_rpc_session, expiresIn: session.timeout || 600 });
 }
 
-function verify() {
-	let child = popen('/usr/sbin/mp716-package-verify', 'r');
-	if (!child)
-		return fail(500, 'INTERNAL', '无法启动固件校验器');
-	let raw = child.read('all');
-	let status = child.close();
+const FIRMWARE_VERIFY_MAX_BYTES = 8060928;
+
+function parse_verify_output(raw, status) {
 	let report;
 	try {
 		report = json(raw || '');
 	} catch (e) {
-		return fail(500, 'INTERNAL', '固件校验器返回无效结果');
+		return { error: fail(500, 'INTERNAL', '固件校验器返回无效结果') };
 	}
 	if (status != 0 || report?.ok != true || report?.signature_checked != true || report?.flash_write != false)
-		return fail(400, 'VALIDATION', report?.detail || '固件校验失败', report);
-	return ok(report);
+		return { error: fail(400, 'VALIDATION', report?.detail || report?.error || '固件校验失败', report) };
+	return { data: report };
+}
+
+function verify_firmware_report(path) {
+	let child = popen('/usr/sbin/mp716-upgraded check --image ' + path, 'r');
+	if (child) {
+		let raw = child.read('all');
+		let status = child.close();
+		try {
+			json(raw || '');
+			return parse_verify_output(raw, status);
+		} catch (e) { /* fall through to legacy verifier */ }
+	}
+	child = popen('sh -c "/usr/sbin/mp716-package-verify < ' + path + '"', 'r');
+	if (!child)
+		return { error: fail(500, 'INTERNAL', '无法启动固件校验器') };
+	return parse_verify_output(child.read('all'), child.close());
+}
+
+function verify() {
+	let size = int(getenv('CONTENT_LENGTH') || '0');
+	if (size <= 0)
+		return fail(400, 'VALIDATION', '请选择固件文件');
+	if (size > FIRMWARE_VERIFY_MAX_BYTES)
+		return fail(400, 'VALIDATION', '固件文件不能超过 8M');
+	let path = '/tmp/mp716-firmware-verify-' + sprintf('%x', time()) + '.mp716upd';
+	let raw = stdin.read(size);
+	if (length(raw) != size)
+		return fail(400, 'VALIDATION', '固件上传不完整');
+	writefile(path, raw);
+	chmod(path, 0600);
+	let out = verify_firmware_report(path);
+	unlink(path);
+	if (out.error) return out.error;
+	return ok(out.data);
 }
 
 function main() {

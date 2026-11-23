@@ -33,6 +33,27 @@ function unicast(value) { return mac(value) && index('02468aAcCeE',substr(value,
 export function factory_wan_mac(raw) {
 	try {let board=json(raw || '{}'), value=board.network?.wan?.macaddr;return unicast(value)?uc(value):'';}catch(e){return '';}
 };
+/** 原厂 get_home_system_info.device_umber：LAN MAC 去冒号大写 */
+function device_number_from_mac(value) {
+	if (!mac(value)) return '';
+	return replace(uc(value), ':', '');
+}
+/** 原厂首页 domain：UCI mp716_system.main.domain → 已启用 DDNS 的 lookup_host */
+function home_domain(c) {
+	let stored = trim(c.get('mp716_system', 'main', 'domain') || '');
+	if (length(stored)) return stored;
+	if (!stat('/etc/config/ddns')) return '';
+	let picked = '';
+	c.foreach('ddns', 'service', (s) => {
+		if (length(picked)) return;
+		let name = s['.name'];
+		if (c.get('ddns', name, 'enabled') != '1') return;
+		let host = trim(c.get('ddns', name, 'lookup_host') || '');
+		if (!length(host)) host = trim(c.get('ddns', name, 'domain') || '');
+		if (length(host)) picked = host;
+	});
+	return picked;
+}
 function integer(value, low, high) { return type(value) == 'int' && value >= low && value <= high; }
 function text(value, limit) { return type(value) == 'string' && length(value) <= limit && index(value,'\x00')<0 && !match(value, /[[:cntrl:]]/); }
 function list(value) { return type(value) == 'array' ? value : (value ? [value] : []); }
@@ -201,9 +222,16 @@ function system_info(bus, c) {
 	let free = command("df -k /overlay | tail -n 1 | awk '{print $4}'").output;
 	let zone=c.get('system','@system[0]','timezone') || 'UTC';
 	if(!match(zone,/^[A-Za-z0-9<>+,:.\/-]{1,100}$/))zone='UTC';
+	let lanMac = iface_status(bus, c, 'lan').mac;
+	if (!mac(lanMac)) lanMac = factory_wan_mac(readfile('/etc/board.json')) || '';
+	let devNo = device_number_from_mac(lanMac);
+	if (!length(devNo)) devNo = trim(c.get('mp716_system', 'main', 'device_number') || '');
+	let domain = home_domain(c);
 	return { model: 'MP716', hostname: c.get('system', '@system[0]', 'hostname') || 'MP716', firmware: firmware_version(),
 		kernel: trim(readfile('/proc/sys/kernel/osrelease') || ''), uptimeSec: int(info.uptime || 0),
 		localTime: trim(command("TZ='"+zone+"' /bin/busybox date '+%Y-%m-%d %H:%M:%S'").output), timezone:zone,
+		domain: length(domain) ? domain : null,
+		deviceNumber: length(devNo) ? devNo : null,
 		cpuLoad: map(info.load || [0,0,0], (n) => n / 65536.0),
 		memTotalKb: int((info.memory?.total || 0) / 1024), memFreeKb: int((info.memory?.available || info.memory?.free || 0) / 1024),
 		flashTotalKb: 8192, flashFreeKb: int(trim(free) || 0) };
