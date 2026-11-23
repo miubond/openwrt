@@ -41,7 +41,9 @@
   "GET wireless/advanced",
   "GET wireless/clients",
   "GET wireless/config",
+  "GET wireless/secondary",
   "GET wireless/status",
+  "GET network/cellular",
   "GET wizard/quick",
   "POST firewall/dmz",
   "POST firewall/port-forwards",
@@ -64,6 +66,7 @@
   "POST system/config-task/confirm",
   "POST system/factory-reset",
   "POST system/firmware-package/verify",
+  "POST system/upgrade",
   "POST system/logs",
   "POST system/logs/clear",
   "POST system/password",
@@ -87,6 +90,7 @@
   "POST wireless/acl",
   "POST wireless/advanced",
   "POST wireless/config",
+  "POST wireless/secondary",
   "POST wizard/complete",
   "POST wizard/quick"
 ]

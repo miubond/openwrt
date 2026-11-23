@@ -56,7 +56,15 @@ function write_ddns(c, cfg) {
 	if (!c.commit('ddns')) die('无法提交 DDNS 配置');
 }
 
+function read_cellular() {
+	return { supported: false, installed: false, reason: 'no_modem', wanModes: ['wired'] };
+}
+
 export function route_network_services(bus, method, path, body, owner) {
+	if (path == 'network/cellular') {
+		if (method == 'GET') return { data: read_cellular() };
+		return reject('蜂窝功能未安装');
+	}
 	if (path != 'network/upnp' && path != 'network/ddns') return null;
 	let c = cursor();
 	if (method == 'GET') {

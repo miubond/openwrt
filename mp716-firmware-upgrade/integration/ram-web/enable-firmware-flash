@@ -1,2 +1,2 @@
-# 存在此标记时，热更部署会在设备上创建 /etc/mp716/allow-flash-upgrade（实验室刷写门）
-# 生产镜像应删除本文件并依赖 /etc/mp716-upgrade/flash-gate 正式验收流程。
+# 仅当热更设置 DEPLOY_ENABLE_FLASH=1 时，本标记才会打进 bundle 并 touch allow-flash-upgrade。
+# 量产热更默认不打包、并删除设备上的 allow-flash-upgrade；正式刷机靠 flash-gate + platform=confirmed。

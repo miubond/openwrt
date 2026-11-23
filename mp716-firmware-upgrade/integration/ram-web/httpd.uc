@@ -286,11 +286,15 @@ function main() {
 		}
 		return ok({ interfaces: interfaces,
 			upnpEnabled: c.get('upnpd', 'config', 'enabled') == '1',
-			hardwareValidated: false, flashUpgradeEnabled: false });
+			hardwareValidated: firmware_flash_production_gate(),
+			flashUpgradeEnabled: firmware_flash_allowed(),
+			firmwareVerifyEnabled: firmware_verifier_present() });
 	}
 	if (method == 'GET' && path == '/cgi-bin/mp716/system/firmware')
 		return ok(firmware_info_payload());
 	if (method == 'POST' && path == '/cgi-bin/mp716/system/firmware-package/verify')
+		return upload_firmware_package();
+	if (method == 'POST' && path == '/cgi-bin/mp716/system/upgrade')
 		return upload_firmware_package();
 	let body = {};
 	if (method == 'POST') {

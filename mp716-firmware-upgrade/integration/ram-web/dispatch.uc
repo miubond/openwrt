@@ -12,7 +12,7 @@ function handler_chain(path) {
 	if (match(path, /^vpn\//)) return [route_vpn, route_admin];
 	if (match(path, /^tools\//)) return [route_diagnostics, route_admin];
 	if (match(path, /^firewall\//)) return [route_firewall, route_admin];
-	if (path == 'network/ddns' || path == 'network/upnp')
+	if (path == 'network/ddns' || path == 'network/upnp' || path == 'network/cellular')
 		return [route_network_services, route_admin];
 	if (path == 'network/qos/capability' || path == 'network/qos/config')
 		return [route_network_qos, route_admin];

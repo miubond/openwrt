@@ -39,6 +39,7 @@ function device_number_from_mac(value) {
 	return replace(uc(value), ':', '');
 }
 const FACTORY_HOME_DOMAIN = 'step.YunXM.net';
+const GUEST_IFACE = 'mp716_guest';
 
 /** 原厂 get_home_system_info.domain（华翼云管）；可 UCI 覆盖 */
 function home_domain(c) {
@@ -74,8 +75,23 @@ function radio(c) {
 };
 function ap(c) {
 	let result = null;
-	c.foreach('wireless', 'wifi-iface', (s) => { if (!result && s.mode == 'ap' && s.network == 'lan') result = s['.name']; });
+	c.foreach('wireless', 'wifi-iface', (s) => {
+		if (!result && s.mode == 'ap' && s.network == 'lan' && s['.name'] != GUEST_IFACE)
+			result = s['.name'];
+	});
 	return result || 'default_radio0';
+};
+function wifi_secondary_config(c) {
+	let g = GUEST_IFACE;
+	if (c.get('wireless', g) == null)
+		return { supported: true, enabled: false, ssid: '', password: '', hidden: false, isolate: true };
+	return {
+		supported: true, enabled: c.get('wireless', g, 'disabled') != '1',
+		ssid: c.get('wireless', g, 'ssid') || '',
+		password: c.get('wireless', g, 'key') ? '********' : '',
+		hidden: c.get('wireless', g, 'hidden') == '1',
+		isolate: c.get('wireless', g, 'isolate') != '0',
+	};
 };
 function wifi_interfaces(bus) {
 	let result = [];
@@ -478,6 +494,31 @@ function updates(c, path, cfg) {
 		set('wireless',ap(c),'dtim_period',string(cfg.dtim));
 		set('wireless',radio(c),'beacon_int',string(cfg.beacon));
 		set('wireless',radio(c),'rts',string(cfg.rtsThreshold)); set('wireless',radio(c),'frag',string(cfg.fragThreshold)); set('wireless',ap(c),'wmm',cfg.wmm?'1':'0');
+	} else if (path == 'wireless/secondary') {
+		packages = ['wireless']; kind = 'wireless';
+		let g = GUEST_IFACE, r = radio(c);
+		if (type(cfg.enabled) != 'bool') die('副 SSID 开关无效');
+		if (!cfg.enabled) {
+			if (c.get('wireless', g) != null) set('wireless', g, 'disabled', '1');
+		} else {
+			if (!text(cfg.ssid, 32) || !length(cfg.ssid)) die('副 SSID 名称无效');
+			let secret = cfg.password && cfg.password != '********' ? cfg.password : (c.get('wireless', g, 'key') || '');
+			if (c.get('wireless', g) == null) {
+				push(sections, ['wireless', g, 'wifi-iface']);
+				set('wireless', g, 'device', r);
+				set('wireless', g, 'mode', 'ap');
+				set('wireless', g, 'network', 'lan');
+				set('wireless', g, 'encryption', 'psk2');
+			}
+			set('wireless', g, 'ssid', cfg.ssid);
+			set('wireless', g, 'disabled', '0');
+			set('wireless', g, 'hidden', cfg.hidden ? '1' : '0');
+			set('wireless', g, 'isolate', cfg.isolate !== false ? '1' : '0');
+			if (cfg.password && cfg.password != '********') {
+				if (!(text(secret, 63) && length(secret) >= 8)) die('副 SSID 密码须 8–63 字符');
+				set('wireless', g, 'key', secret);
+			} else if (c.get('wireless', g, 'key') == null) die('请设置副 SSID 密码');
+		}
 	} else die('配置入口无效');
 	return { writes:writes, sections:sections, packages:packages, kind:kind };
 };
@@ -548,6 +589,7 @@ export function route_admin(bus, method, path, body, token) {
 		if (path == 'network/dhcp/config') return { data:dhcp_config(c) };
 		if (path == 'network/dns/config') return { data:{ mode:c.get('network','wan','peerdns')=='0'?'manual':'auto',servers:list(c.get('network','wan','dns')) } };
 		if (path == 'wireless/config') return { data:wifi_config(c) };
+		if (path == 'wireless/secondary') return { data: wifi_secondary_config(c) };
 		if (path == 'wireless/status') return { data: wifi_status(bus, c) };
 		if (path == 'wireless/clients') {
 			let hit = read_api_cache('wireless_clients');
@@ -572,7 +614,7 @@ export function route_admin(bus, method, path, body, token) {
 	}
 	let task_match = match(path,/^system\/config-task\/([a-f0-9]{32})$/);
 	let task_action = path == 'system/config-task/confirm' ? 'confirm' : path == 'system/config-task/cancel' ? 'cancel' : null;
-	let write_config = method == 'POST' && index(['network/wan/config','network/lan/config','network/dns/config','network/dhcp/config','network/dhcp/static','wireless/config','wireless/advanced','wireless/acl'],path)>=0;
+	let write_config = method == 'POST' && index(['network/wan/config','network/lan/config','network/dns/config','network/dhcp/config','network/dhcp/static','wireless/config','wireless/secondary','wireless/advanced','wireless/acl'],path)>=0;
 	let access = method == 'POST' && path == 'hosts/device-acl';
 	let wizard = method == 'POST' && index(['wizard/quick','wizard/complete'],path)>=0;
 	let disconnect = method == 'POST' && path=='hosts/disconnect';
