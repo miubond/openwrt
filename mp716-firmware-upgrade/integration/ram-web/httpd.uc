@@ -2,7 +2,7 @@
 'use strict';
 
 import { connect } from 'ubus';
-import { popen, stdin, writefile, unlink, chmod, stat, readfile } from 'fs';
+import { popen, stdin, writefile, unlink, chmod, stat, readfile, mkdir } from 'fs';
 import { cursor } from 'uci';
 import { firmware_version, firmware_build_date } from '/usr/share/mp716/build-meta.uc';
 import { route_native } from '/usr/share/mp716/dispatch.uc';
@@ -183,6 +183,49 @@ function upload_firmware_package() {
 	return ok(out.data);
 }
 
+const SESSION_CACHE_DIR = '/tmp/mp716-api-cache';
+const SESSION_CACHE_MS = 250;
+
+function session_cache_path(token) {
+	return SESSION_CACHE_DIR + '/sess_' + token + '.json';
+}
+
+function session_access_cached(token) {
+	if (!match(token, /^[0-9a-f]{32}$/)) return null;
+	let path = session_cache_path(token);
+	if (!stat(path)) return null;
+	try {
+		let row = json(readfile(path) || '{}');
+		if (type(row.at) != 'int' || type(row.ok) != 'bool') return null;
+		if (perf_monotonic_ms() - row.at > SESSION_CACHE_MS) return null;
+		return row.ok;
+	} catch (e) { return null; }
+}
+
+function session_access_store(token, ok) {
+	if (!stat(SESSION_CACHE_DIR)) mkdir(SESSION_CACHE_DIR, 0755);
+	writefile(session_cache_path(token), sprintf('%J', { at: perf_monotonic_ms(), ok: ok == true }));
+}
+
+function session_access_invalidate(token) {
+	let path = session_cache_path(token);
+	if (stat(path)) unlink(path);
+}
+
+function session_access(ubus, token, method) {
+	let cached = method == 'GET' ? session_access_cached(token) : null;
+	if (cached != null) return cached;
+	let t_session = perf_enabled() ? perf_monotonic_ms() : 0;
+	let session = ubus.call('session', 'access', {
+		ubus_rpc_session: token, scope: 'ubus', object: 'mp716', function: '*',
+	});
+	if (t_session) perf_set_session_access_ms(perf_monotonic_ms() - t_session);
+	let granted = session?.access == true;
+	if (method == 'GET') session_access_store(token, granted);
+	else session_access_invalidate(token);
+	return granted;
+}
+
 function main() {
 	let path = split(getenv('REQUEST_URI') || '', '?')[0];
 	let method = getenv('REQUEST_METHOD');
@@ -203,13 +246,10 @@ function main() {
 	let token = substr(header, 0, 7) == 'Bearer ' ? substr(header, 7) : '';
 	if (!match(token, /^[0-9a-f]{32}$/) || token == '00000000000000000000000000000000')
 		return fail(401, 'UNAUTHORIZED', '会话无效或已过期');
-	let t_session = perf_enabled() ? perf_monotonic_ms() : 0;
-	let session = ubus.call('session', 'access', {
-		ubus_rpc_session: token, scope: 'ubus', object: 'mp716', function: '*',
-	});
-	if (t_session) perf_set_session_access_ms(perf_monotonic_ms() - t_session);
-	if (session?.access != true)
+	if (!session_access(ubus, token, method))
 		return fail(401, 'UNAUTHORIZED', '会话无效或已过期');
+	if (method == 'POST')
+		session_access_invalidate(token);
 	if (method == 'POST' && path == '/cgi-bin/mp716/auth/logout') {
 		ubus.call('session', 'destroy', { ubus_rpc_session: token });
 		return ok(null);

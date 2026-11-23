@@ -1,5 +1,15 @@
 # MP716 1.0.8 Native API 性能基线与优化说明
 
+## 0. 近期优化（2026-11-23）
+
+| 层级 | 改动 | 目的 |
+|------|------|------|
+| `httpd.uc` | GET 时 `session.access` **250ms 文件缓存**（`/tmp/mp716-api-cache/sess_*.json`） | 前端并发 2～3 个 GET 时少打 rpcd |
+| `admin.uc` | `home_dashboard` 等服务端 TTL **5s→12s**（hosts/physical_ports 等同步上调） | 首页 20s 轮询更多命中聚合缓存 |
+| 前端 | `home/dashboard` 客户端缓存 **12s→18s** | 与轮询间隔对齐，减重复 CGI fork |
+
+POST 写操作仍**强制**重新校验会话并失效缓存；不改变契约与鉴权语义。
+
 ## 1. 范围与方法
 
 | 区域 | 路径 |

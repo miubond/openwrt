@@ -178,12 +178,12 @@ function hosts(bus, c) {
 const API_CACHE_DIR = '/tmp/mp716-api-cache';
 const API_CACHE_SEC = 8;
 const API_CACHE_TTL = {
-	hosts: 5,
-	physical_ports: 5,
-	home_dashboard: 5,
-	system_info: 3,
-	system_status: 3,
-	wireless_clients: 4,
+	hosts: 10,
+	physical_ports: 10,
+	home_dashboard: 12,
+	system_info: 6,
+	system_status: 6,
+	wireless_clients: 8,
 };
 
 function read_api_cache(key) {
