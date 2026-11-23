@@ -303,16 +303,21 @@ export function route_system(bus,method,path,body,owner) {
 		return {error:'VALIDATION',message:'此操作需要 POST'};
 	}
 	if(method!='POST')return {error:'VALIDATION',message:'无效请求方式'};
+	/* 配置导出为只读，不得被其他页未确认的 config-task 挡住（避免 409） */
+	if(path=='system/backup/download') {
+		return {data:{filename:'mp716-config-'+format_time(configured_localtime(c),true)+'.json',mime:'application/json',contentBase64:b64enc(backup())}};
+	}
+	if(path=='system/backup') {
+		let raw=backup(), file='/tmp/mp716-backup-'+owner+'.json';
+		writefile(file,raw); chmod(file,0600);
+		let checksum=split(command('/usr/bin/sha256sum '+file).output,' ')[0];
+		unlink(file);
+		return {data:{filename:'mp716-config.json',size:length(raw),checksum:checksum}};
+	}
 	if(!acquire())return {error:'DEVICE_BUSY',message:'另一个设备操作正在执行'};
 	let result;
 	try {result=(function(){
 		expire();if(pending())return {error:'DEVICE_BUSY',message:'请先确认或撤销当前配置'};
-		if(path=='system/backup/download')return {data:{filename:'mp716-config-'+format_time(configured_localtime(c),true)+'.json',mime:'application/json',contentBase64:b64enc(backup())}};
-		if(path=='system/backup') {
-			let raw=backup(), file='/tmp/mp716-backup-'+owner+'.json';writefile(file,raw);chmod(file,0600);
-			let checksum=split(command('/usr/bin/sha256sum '+file).output,' ')[0];unlink(file);
-			return {data:{filename:'mp716-config.json',size:length(raw),checksum:checksum}};
-		}
 		if(path=='system/restore')return restore(c,owner,body.backup);
 		if(path=='system/time') {
 			let cfg=validate_time(body.config || body);

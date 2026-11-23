@@ -12,3 +12,14 @@ export function firmware_version() {
 	}
 	return 'unknown';
 };
+
+export function firmware_build_date() {
+	for (let path in ['/etc/mp716-build.version', '/rom/etc/mp716-build.version']) {
+		let raw = readfile(path) || '';
+		let m = match(raw, /build[_=:\s]+([^\n]+)/i);
+		if (m) return trim(m[1]);
+	}
+	let rel = readfile('/etc/openwrt_release') || '';
+	let m = match(rel, /DISTRIB_DESCRIPTION='([^']+)'/);
+	return m ? trim(m[1]) : '';
+};

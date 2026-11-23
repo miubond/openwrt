@@ -4,7 +4,7 @@
 import { connect } from 'ubus';
 import { popen, stdin } from 'fs';
 import { cursor } from 'uci';
-import { firmware_version } from '/usr/share/mp716/build-meta.uc';
+import { firmware_version, firmware_build_date } from '/usr/share/mp716/build-meta.uc';
 import { route_native } from '/usr/share/mp716/dispatch.uc';
 import { capabilities } from '/usr/share/mp716/capabilities.uc';
 import { perf_enabled, perf_begin, perf_monotonic_ms, perf_shell_ms, perf_log,
@@ -74,8 +74,11 @@ function main() {
 	let path = split(getenv('REQUEST_URI') || '', '?')[0];
 	let method = getenv('REQUEST_METHOD');
 	if (index(path,'/cgi-bin/mp716/')!=0) return fail(404,'NOT_IMPLEMENTED','未知接口');
-	if (method == 'GET' && path == '/cgi-bin/mp716/auth/prelogin')
-		return ok({ firstBoot: 0, needAuthorized: 1 });
+	if (method == 'GET' && path == '/cgi-bin/mp716/auth/prelogin') {
+		let c = cursor();
+		let firstBoot = c.get('system', '@system[0]', 'mp716_wizard_complete') == '0' ? 1 : 0;
+		return ok({ firstBoot: firstBoot, needAuthorized: 1 });
+	}
 	let t_ubus = perf_enabled() ? perf_monotonic_ms() : 0;
 	let ubus = connect();
 	if (t_ubus) perf_set_ubus_connect_ms(perf_monotonic_ms() - t_ubus);
@@ -121,7 +124,7 @@ function main() {
 			hardwareValidated: false, flashUpgradeEnabled: false });
 	}
 	if (method == 'GET' && path == '/cgi-bin/mp716/system/firmware')
-		return ok({ currentVersion: firmware_version(), buildDate: '', hardware: 'MP716',
+		return ok({ currentVersion: firmware_version(), buildDate: firmware_build_date(), hardware: 'MP716',
 			canUpgrade: false, flashUpgradeEnabled: false, maxBytes: 8060928, maxSizeLabel: '8M', validationOnly: true });
 	if (method == 'POST' && path == '/cgi-bin/mp716/system/firmware-package/verify')
 		return verify();
