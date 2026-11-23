@@ -38,21 +38,25 @@ function device_number_from_mac(value) {
 	if (!mac(value)) return '';
 	return replace(uc(value), ':', '');
 }
-/** 原厂首页 domain：UCI mp716_system.main.domain → 已启用 DDNS 的 lookup_host */
+const FACTORY_HOME_DOMAIN = 'step.YunXM.net';
+
+/** 原厂 get_home_system_info.domain（华翼云管）；可 UCI 覆盖 */
 function home_domain(c) {
 	let stored = trim(c.get('mp716_system', 'main', 'domain') || '');
 	if (length(stored)) return stored;
-	if (!stat('/etc/config/ddns')) return '';
-	let picked = '';
-	c.foreach('ddns', 'service', (s) => {
-		if (length(picked)) return;
-		let name = s['.name'];
-		if (c.get('ddns', name, 'enabled') != '1') return;
-		let host = trim(c.get('ddns', name, 'lookup_host') || '');
-		if (!length(host)) host = trim(c.get('ddns', name, 'domain') || '');
-		if (length(host)) picked = host;
-	});
-	return picked;
+	if (stat('/etc/config/ddns')) {
+		let picked = '';
+		c.foreach('ddns', 'service', (s) => {
+			if (length(picked)) return;
+			let name = s['.name'];
+			if (c.get('ddns', name, 'enabled') != '1') return;
+			let host = trim(c.get('ddns', name, 'lookup_host') || '');
+			if (!length(host)) host = trim(c.get('ddns', name, 'domain') || '');
+			if (length(host)) picked = host;
+		});
+		if (length(picked)) return picked;
+	}
+	return FACTORY_HOME_DOMAIN;
 }
 function integer(value, low, high) { return type(value) == 'int' && value >= low && value <= high; }
 function text(value, limit) { return type(value) == 'string' && length(value) <= limit && index(value,'\x00')<0 && !match(value, /[[:cntrl:]]/); }
