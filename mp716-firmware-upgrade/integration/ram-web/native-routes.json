@@ -19,6 +19,7 @@
   "GET network/wan/config",
   "GET network/wan/status",
   "GET system/capabilities",
+  "GET system/config-task/active",
   "GET system/config-task/:id",
   "GET system/device",
   "GET system/firmware",

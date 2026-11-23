@@ -5,7 +5,7 @@ import { address, pool_bounds, sample_rates } from '/usr/share/mp716/network-val
 import { sample_cpu } from '/usr/share/mp716/system-values.uc';
 import { physical_ports, load_mapping } from '/usr/share/mp716/physical-ports.uc';
 import { command, ensure_dirs, acquire, release, expire, pending, blocking_pending, dismiss_failed_pending,
-	begin, applied, rollback, get_task, access_list, apply_access, store, STATE } from '/usr/share/mp716/admin-state.uc';
+	begin, applied, rollback, get_task, task_view, access_list, apply_access, store, STATE } from '/usr/share/mp716/admin-state.uc';
 import { firmware_version } from '/usr/share/mp716/build-meta.uc';
 
 function reject(message, code) { return { error: code || 'VALIDATION', message: message }; }
@@ -541,6 +541,11 @@ export function route_admin(bus, method, path, body, token) {
 		if (path == 'network/qos/capability') return { data:{supported:false,backend:'none',reason:'当前固件未启用 QoS'} };
 		if (path == 'network/qos/config') return { data:{enabled:false,downloadKbps:0,uploadKbps:0} };
 		if (path == 'system/logs') return { data:{enabled:true,content:command('logread -l 100').output} };
+		if (path == 'system/config-task/active') {
+			expire();
+			let t = blocking_pending();
+			return { data: t ? task_view(t) : null };
+		}
 	}
 	let task_match = match(path,/^system\/config-task\/([a-f0-9]{32})$/);
 	let task_action = path == 'system/config-task/confirm' ? 'confirm' : path == 'system/config-task/cancel' ? 'cancel' : null;

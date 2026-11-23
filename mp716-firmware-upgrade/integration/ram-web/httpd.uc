@@ -2,7 +2,7 @@
 'use strict';
 
 import { connect } from 'ubus';
-import { popen, stdin, writefile, unlink, chmod, stat } from 'fs';
+import { popen, stdin, writefile, unlink, chmod, stat, readfile } from 'fs';
 import { cursor } from 'uci';
 import { firmware_version, firmware_build_date } from '/usr/share/mp716/build-meta.uc';
 import { route_native } from '/usr/share/mp716/dispatch.uc';
@@ -59,8 +59,22 @@ function firmware_verifier_present() {
 	return !!(stat('/usr/sbin/mp716-upgraded') || stat('/usr/sbin/mp716-package-verify'));
 }
 
+function shellquote(v) {
+	return "'" + replace(v, "'", "'\\''") + "'";
+}
+
+function trim_file(path) {
+	let raw = readfile(path);
+	return raw ? trim(raw) : '';
+}
+
+function firmware_flash_production_gate() {
+	return trim_file('/etc/mp716-upgrade/flash-gate') == 'serial-recovery-verified' &&
+		trim_file('/etc/mp716-upgrade/platform') == 'confirmed';
+}
+
 function firmware_flash_allowed() {
-	return !!stat('/etc/mp716/allow-flash-upgrade');
+	return !!stat('/etc/mp716/allow-flash-upgrade') || firmware_flash_production_gate();
 }
 
 function firmware_info_payload() {
@@ -102,7 +116,51 @@ function verify_firmware_report(path) {
 	return parse_verify_output(child.read('all'), child.close());
 }
 
-function verify() {
+function firmware_upload_mode() {
+	let mode = lc(trim(getenv('HTTP_X_MP716_UPGRADE_MODE') || getenv('HTTP_X_MP716_FLASH') || 'verify'));
+	if (index(['1', 'true', 'flash', 'apply'], mode) >= 0)
+		return 'flash';
+	return 'verify';
+}
+
+function firmware_keep_settings() {
+	let v = lc(trim(getenv('HTTP_X_MP716_KEEP_SETTINGS') || '1'));
+	return index(['0', 'false', 'no'], v) < 0;
+}
+
+function apply_firmware_package(path, keep) {
+	if (!firmware_flash_allowed())
+		return fail(403, 'FORBIDDEN', '固件刷写未开启（需 allow-flash-upgrade 或正式验收门）');
+	if (!stat('/usr/sbin/mp716-sysupgrade'))
+		return fail(404, 'NOT_IMPLEMENTED', '未安装 OpenWrt sysupgrade 适配器');
+	let cmd = '/usr/sbin/mp716-sysupgrade apply ' + shellquote(path);
+	if (keep)
+		cmd += ' --keep-config';
+	if (stat('/etc/mp716/allow-flash-upgrade') && !firmware_flash_production_gate()) {
+		let gate = '/tmp/mp716-lab-flash-gate', plat = '/tmp/mp716-lab-platform';
+		writefile(gate, 'serial-recovery-verified\n');
+		writefile(plat, 'confirmed\n');
+		cmd = 'MP716_GATE_FILE=' + shellquote(gate) + ' MP716_PLATFORM_FILE=' + shellquote(plat) + ' ' + cmd;
+	}
+	let child = popen('/bin/sh -c ' + shellquote(cmd + ' 2>&1'), 'r');
+	if (!child)
+		return fail(500, 'INTERNAL', '无法启动固件刷写');
+	let output = child.read('all') || '';
+	let status = child.close();
+	unlink(path);
+	if (status == 0)
+		return ok({
+			ok: true, code: 0, signature_checked: true, flash_write: true, upgraded: true,
+			detail: 'ok', message: '固件刷写已提交，设备将重启',
+		});
+	let report;
+	try { report = json(output); } catch (e) { report = null; }
+	if (report)
+		return fail(400, 'VALIDATION', report.detail || report.error || '固件刷写失败', report);
+	return fail(400, 'VALIDATION', trim(output) || '固件刷写失败', { output: substr(output, 0, 4096) });
+}
+
+function upload_firmware_package() {
 	if (!firmware_verifier_present())
 		return fail(404, 'NOT_IMPLEMENTED', '设备未安装固件校验器');
 	let size = int(getenv('CONTENT_LENGTH') || '0');
@@ -110,12 +168,15 @@ function verify() {
 		return fail(400, 'VALIDATION', '请选择固件文件');
 	if (size > FIRMWARE_VERIFY_MAX_BYTES)
 		return fail(400, 'VALIDATION', '固件文件不能超过 8M');
-	let path = '/tmp/mp716-firmware-verify-' + sprintf('%x', time()) + '.mp716upd';
+	let path = '/tmp/mp716-firmware-upload-' + sprintf('%x', time()) + '.mp716upd';
 	let raw = stdin.read(size);
 	if (length(raw) != size)
 		return fail(400, 'VALIDATION', '固件上传不完整');
 	writefile(path, raw);
 	chmod(path, 0600);
+	let mode = firmware_upload_mode();
+	if (mode == 'flash')
+		return apply_firmware_package(path, firmware_keep_settings());
 	let out = verify_firmware_report(path);
 	unlink(path);
 	if (out.error) return out.error;
@@ -178,7 +239,7 @@ function main() {
 	if (method == 'GET' && path == '/cgi-bin/mp716/system/firmware')
 		return ok(firmware_info_payload());
 	if (method == 'POST' && path == '/cgi-bin/mp716/system/firmware-package/verify')
-		return verify();
+		return upload_firmware_package();
 	let body = {};
 	if (method == 'POST') {
 		let size = int(getenv('CONTENT_LENGTH') || '0');
