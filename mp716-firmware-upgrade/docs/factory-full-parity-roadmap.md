@@ -35,7 +35,7 @@
 
 | 能力 | 状态 |
 |------|------|
-| 网页在线刷写 | 接口存在；**flash 门关闭**，需验收后打开 |
+| 网页在线刷写 | `flashUpgradeEnabled` 时 **验签→刷写闭环** 见 [factory-upgrade-closed-loop.md](./factory-upgrade-closed-loop.md)；生产默认 flash 门关闭 |
 | 备份/恢复 | JSON 原生路径，非 stream 2/3 |
 | 语言包切换 | 前端 i18n 已支持，无单独 HYID 3/4 页 |
 
@@ -45,7 +45,7 @@
 2. **B2 网络扩展**：DDNS、静态路由、远程管理只读  
 3. **B3 无线扩展**：多 SSID / 定时（按芯片实测裁剪）  
 4. **B4 QoS**：若设备 RAM/CPU 允许，接 `sqm` 或 `qos-scripts`  
-5. **C1 升级门**：实验室开启 `flashUpgradeEnabled` + E2E  
+5. **C1 升级门**：实验室开启 `flashUpgradeEnabled` + [闭环验收](./factory-upgrade-closed-loop.md#验收清单c1参考原厂一次网页升级)  
 6. **Modem**（仅当硬件确认有蜂窝）：独立子项目，不复刻 HYID
 
 ## 验收口径

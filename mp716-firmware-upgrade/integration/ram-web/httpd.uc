@@ -128,7 +128,7 @@ function firmware_keep_settings() {
 	return index(['0', 'false', 'no'], v) < 0;
 }
 
-function apply_firmware_package(path, keep) {
+function apply_firmware_package(path, keep, verify_report) {
 	if (!firmware_flash_allowed())
 		return fail(403, 'FORBIDDEN', '固件刷写未开启（需 allow-flash-upgrade 或正式验收门）');
 	if (!stat('/usr/sbin/mp716-sysupgrade'))
@@ -148,11 +148,17 @@ function apply_firmware_package(path, keep) {
 	let output = child.read('all') || '';
 	let status = child.close();
 	unlink(path);
-	if (status == 0)
-		return ok({
+	if (status == 0) {
+		let data = {
 			ok: true, code: 0, signature_checked: true, flash_write: true, upgraded: true,
 			detail: 'ok', message: '固件刷写已提交，设备将重启',
-		});
+		};
+		if (type(verify_report) == 'object' && verify_report)
+			for (let k, v in verify_report)
+				if (k != 'flash_write' && k != 'ok' && k != 'upgraded')
+					data[k] = v;
+		return ok(data);
+	}
 	let report;
 	try { report = json(output); } catch (e) { report = null; }
 	if (report)
@@ -175,8 +181,14 @@ function upload_firmware_package() {
 	writefile(path, raw);
 	chmod(path, 0600);
 	let mode = firmware_upload_mode();
-	if (mode == 'flash')
-		return apply_firmware_package(path, firmware_keep_settings());
+	if (mode == 'flash') {
+		let pre = verify_firmware_report(path);
+		if (pre.error) {
+			unlink(path);
+			return pre.error;
+		}
+		return apply_firmware_package(path, firmware_keep_settings(), pre.data);
+	}
 	let out = verify_firmware_report(path);
 	unlink(path);
 	if (out.error) return out.error;
