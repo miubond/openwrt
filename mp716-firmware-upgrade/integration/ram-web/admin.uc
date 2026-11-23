@@ -4,8 +4,8 @@ import { readfile, writefile, stat } from 'fs';
 import { address, pool_bounds, sample_rates } from '/usr/share/mp716/network-values.uc';
 import { sample_cpu } from '/usr/share/mp716/system-values.uc';
 import { physical_ports, load_mapping } from '/usr/share/mp716/physical-ports.uc';
-import { command, ensure_dirs, acquire, release, expire, pending, begin, applied, rollback,
-	get_task, access_list, apply_access, store, STATE } from '/usr/share/mp716/admin-state.uc';
+import { command, ensure_dirs, acquire, release, expire, pending, blocking_pending, dismiss_failed_pending,
+	begin, applied, rollback, get_task, access_list, apply_access, store, STATE } from '/usr/share/mp716/admin-state.uc';
 import { firmware_version } from '/usr/share/mp716/build-meta.uc';
 
 function reject(message, code) { return { error: code || 'VALIDATION', message: message }; }
@@ -558,7 +558,8 @@ export function route_admin(bus, method, path, body, token) {
 		expire();
 		if (task_match && method == 'GET') return { data:get_task(task_match[1],token,null) };
 		if (task_action && method == 'POST') return { data:get_task(body.taskId,token,task_action) };
-		if (pending()) return reject('请先确认或撤销当前配置','DEVICE_BUSY');
+		if (blocking_pending()) return reject('请先确认或撤销当前配置','DEVICE_BUSY');
+		dismiss_failed_pending();
 		if (wizard) {
 			if (path=='wizard/complete') {
 				let t=begin(token,['system'],'none',90);

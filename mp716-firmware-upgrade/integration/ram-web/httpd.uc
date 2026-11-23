@@ -2,7 +2,7 @@
 'use strict';
 
 import { connect } from 'ubus';
-import { popen, stdin, writefile, unlink, chmod } from 'fs';
+import { popen, stdin, writefile, unlink, chmod, stat } from 'fs';
 import { cursor } from 'uci';
 import { firmware_version, firmware_build_date } from '/usr/share/mp716/build-meta.uc';
 import { route_native } from '/usr/share/mp716/dispatch.uc';
@@ -55,6 +55,25 @@ function login(ubus) {
 
 const FIRMWARE_VERIFY_MAX_BYTES = 8060928;
 
+function firmware_verifier_present() {
+	return !!(stat('/usr/sbin/mp716-upgraded') || stat('/usr/sbin/mp716-package-verify'));
+}
+
+function firmware_flash_allowed() {
+	return !!stat('/etc/mp716/allow-flash-upgrade');
+}
+
+function firmware_info_payload() {
+	let upload = firmware_verifier_present();
+	let flash = upload && firmware_flash_allowed();
+	return {
+		currentVersion: firmware_version(), buildDate: firmware_build_date(), hardware: 'MP716',
+		canUpgrade: upload, flashUpgradeEnabled: flash,
+		validationOnly: upload && !flash,
+		maxBytes: FIRMWARE_VERIFY_MAX_BYTES, maxSizeLabel: '8M',
+	};
+}
+
 function parse_verify_output(raw, status) {
 	let report;
 	try {
@@ -84,6 +103,8 @@ function verify_firmware_report(path) {
 }
 
 function verify() {
+	if (!firmware_verifier_present())
+		return fail(404, 'NOT_IMPLEMENTED', '设备未安装固件校验器');
 	let size = int(getenv('CONTENT_LENGTH') || '0');
 	if (size <= 0)
 		return fail(400, 'VALIDATION', '请选择固件文件');
@@ -155,8 +176,7 @@ function main() {
 			hardwareValidated: false, flashUpgradeEnabled: false });
 	}
 	if (method == 'GET' && path == '/cgi-bin/mp716/system/firmware')
-		return ok({ currentVersion: firmware_version(), buildDate: firmware_build_date(), hardware: 'MP716',
-			canUpgrade: false, flashUpgradeEnabled: false, maxBytes: 8060928, maxSizeLabel: '8M', validationOnly: true });
+		return ok(firmware_info_payload());
 	if (method == 'POST' && path == '/cgi-bin/mp716/system/firmware-package/verify')
 		return verify();
 	let body = {};

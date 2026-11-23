@@ -1,7 +1,7 @@
 'use strict';
 import { cursor } from 'uci';
 import { stat } from 'fs';
-import { acquire, release, expire, pending, begin, applied, rollback } from '/usr/share/mp716/admin-state.uc';
+import { acquire, release, expire, blocking_pending, dismiss_failed_pending, begin, applied, rollback } from '/usr/share/mp716/admin-state.uc';
 
 function reject(message, code) { return { error: code || 'VALIDATION', message: message }; }
 
@@ -70,7 +70,8 @@ export function route_network_services(bus, method, path, body, owner) {
 	try {
 		result = (function() {
 			expire();
-			if (pending()) return reject('请先确认或撤销当前配置', 'DEVICE_BUSY');
+			if (blocking_pending()) return reject('请先确认或撤销当前配置', 'DEVICE_BUSY');
+			dismiss_failed_pending();
 			let seconds = body?.confirmTimeoutSec == null ? 60 : int(body.confirmTimeoutSec);
 			if (seconds < 30 || seconds > 180) return reject('确认时间必须在 30–180 秒内');
 			let cfg = body?.config;

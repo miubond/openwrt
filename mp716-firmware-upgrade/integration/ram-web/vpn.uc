@@ -4,7 +4,7 @@ import { readfile, writefile, mkdir, chmod, rename, stat, glob, unlink } from 'f
 import { VPN_KINDS, defaults, validate_vpn, validate_openvpn, ip, mask_bits, number_ip } from '/usr/share/mp716/vpn-config.uc';
 import { vpn_plan } from '/usr/share/mp716/vpn-runtime.uc';
 import { check_vpn_services } from '/usr/share/mp716/vpn-services.uc';
-import { command, acquire, release, expire, pending, begin, applied, rollback, store, load } from '/usr/share/mp716/admin-state.uc';
+import { command, acquire, release, expire, pending, blocking_pending, dismiss_failed_pending, begin, applied, rollback, store, load } from '/usr/share/mp716/admin-state.uc';
 
 const CONFIG='mp716_vpn', RUNTIME='/var/run/mp716-vpn';
 // netifd prepends "pptp-" / "l2tp-" to these names. Keep the resulting
@@ -203,7 +203,7 @@ export function route_vpn(bus,method,path,body,owner) {
 		if(!acquire())return {error:'DEVICE_BUSY',message:'另一个配置正在执行'};
 		let result;
 		try {result=(function(){
-			expire();if(pending())return {error:'DEVICE_BUSY',message:'请先确认或撤销当前配置'};
+			expire();if(blocking_pending())return {error:'DEVICE_BUSY',message:'请先确认或撤销当前配置'};dismiss_failed_pending();
 			if(kind=='online/disconnect') {
 				if(!match(body.pid || '',/^[1-9][0-9]{0,7}$/))die('VPN 会话无效');
 				let row=load(RUNTIME+'/sessions/'+body.pid+'.json');

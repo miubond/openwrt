@@ -3,7 +3,7 @@ import { cursor } from 'uci';
 import { connect } from 'ubus';
 import { readfile, writefile, mkdir, chmod, rename, unlink, rmdir, stat, popen } from 'fs';
 import { validate_openvpn } from '/usr/share/mp716/vpn-config.uc';
-import { command, store, load, acquire, release, expire, pending, begin, applied, rollback, uptime } from '/usr/share/mp716/admin-state.uc';
+import { command, store, load, acquire, release, expire, pending, blocking_pending, dismiss_failed_pending, begin, applied, rollback, uptime } from '/usr/share/mp716/admin-state.uc';
 
 export const CONFIGS=['network','wireless','dhcp','system','firewall','upnpd','mp716_system','mp716_vpn','pptpd','xl2tp','ipsec','openvpn'];
 const VPN_FILES=['client.ovpn','ca.pem','client.crt','client.key','ta.key','auth'];
@@ -317,7 +317,7 @@ export function route_system(bus,method,path,body,owner) {
 	if(!acquire())return {error:'DEVICE_BUSY',message:'另一个设备操作正在执行'};
 	let result;
 	try {result=(function(){
-		expire();if(pending())return {error:'DEVICE_BUSY',message:'请先确认或撤销当前配置'};
+		expire();if(blocking_pending())return {error:'DEVICE_BUSY',message:'请先确认或撤销当前配置'};dismiss_failed_pending();
 		if(path=='system/restore')return restore(c,owner,body.backup);
 		if(path=='system/time') {
 			let cfg=validate_time(body.config || body);

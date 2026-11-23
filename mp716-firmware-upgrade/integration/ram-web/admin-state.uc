@@ -66,6 +66,17 @@ export function acquire() {
 };
 export function release() { unlink(RUNTIME + '/lock/owner'); rmdir(RUNTIME + '/lock'); };
 export function pending() { return load(PENDING); };
+/** 仅等待确认/应用中的任务会阻塞新的配置写入；failed 需用户撤销或在新任务开始时解除 */
+export function blocking_pending() {
+	let t = pending();
+	return t && t.state == 'pending' ? t : null;
+};
+export function dismiss_failed_pending() {
+	let t = pending();
+	if (!t || t.state != 'failed') return null;
+	unlink(PENDING);
+	return t;
+};
 function finish(t, state, message) {
 	t.state = state; t.phase=state; t.message = message;
 	delete t.files;
@@ -155,7 +166,8 @@ export function expire() {
 	return null;
 };
 export function begin(owner, packages, kind, timeout, extra_paths) {
-	if (pending()) die('已有配置等待确认');
+	if (blocking_pending()) die('已有配置等待确认');
+	dismiss_failed_pending();
 	let random = readfile('/proc/sys/kernel/random/uuid');
 	let id = replace(trim(random || ''), /-/g, '');
 	if (!match(id, /^[a-f0-9]{32}$/)) die('无法创建配置任务');
