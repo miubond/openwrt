@@ -285,9 +285,9 @@ export_wireguard_ram_bundle() {
 	local target_dir linux_dir kver stage name file
 	target_dir=$(find build_dir -maxdepth 1 -type d -name 'target-*' 2>/dev/null | LC_ALL=C sort | head -n1)
 	[ -n "$target_dir" ] || { echo "Missing target build directory." >&2; return 2; }
-	linux_dir=$(find "$target_dir/linux-ramips_mt76x8" -maxdepth 1 -type d -name 'linux-*' 2>/dev/null | LC_ALL=C sort | head -n1)
+	linux_dir=$(find "$target_dir/linux-ramips_mt76x8" -maxdepth 1 -type d -name 'linux-[0-9]*' 2>/dev/null | LC_ALL=C sort | tail -n1)
 	[ -n "$linux_dir" ] || { echo "Missing kernel build directory under $target_dir/linux-ramips_mt76x8." >&2; return 2; }
-	kver=$(sed -n 's/^# Linux\/mips \([^ ]*\) Kernel Configuration$/\1/p' "$linux_dir/.config")
+	kver=$(sed -n 's/^# Linux\/mips \([^ ]*\) Kernel Configuration$/\1p' "$linux_dir/.config")
 	[ -n "$kver" ] || kver=$(basename "$linux_dir" | sed 's/^linux-//')
 	stage="$output/wireguard-ram"
 	rm -rf "$stage" && mkdir -p "$stage/modules"

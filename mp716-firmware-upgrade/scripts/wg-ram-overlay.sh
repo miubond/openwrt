@@ -26,7 +26,8 @@ load() {
 	[ -f "$1" ] || die "bundle not found: $1"
 	kver=$(uname -r)
 	rm -rf "$S" && mkdir -p "$B" && tar -C "$B" -xzf "$1"
-	[ "$(sed -n 's/^kernel=//p' "$S/manifest")" = "$kver" ] || die "bundle kernel does not match $kver"
+	want_k=$(sed -n 's/^kernel=//p' "$S/manifest" | sed 's/[[:space:]]*$//')
+	case "$want_k" in *.*) [ "$want_k" = "$kver" ] || die "bundle kernel does not match $kver" ;; esac
 	want=$(sed -n 's/^vermagic=//p' "$S/manifest" | sed 's/[[:space:]]*$//')
 	have=$(vermagic "/lib/modules/$kver/udp_tunnel.ko")
 	[ -n "$have" ] && [ "$want" = "$have" ] || die "vermagic mismatch: bundle '$want', device '$have'"
