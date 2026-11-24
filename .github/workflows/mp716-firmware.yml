@@ -2,7 +2,7 @@ name: MP716 Firmware Package
 
 on:
   push:
-    branches: [main, codex/mp716-versioned-artifacts, codex/mp716-vpn-106, codex/mp716-vpn-107]
+    branches: [main, codex/mp716-versioned-artifacts, codex/mp716-vpn-106, codex/mp716-vpn-107, codex/mp716-wireguard-ram]
     paths:
       - 'mp716-firmware-upgrade/**'
       - '!mp716-firmware-upgrade/web/**'
@@ -141,6 +141,14 @@ jobs:
         with:
           name: mp716-${{ steps.release.outputs.version }}-UNVERIFIED-${{ github.sha }}
           path: mp716-firmware-upgrade/build/publish/
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload WireGuard RAM bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-wireguard-ram-${{ github.sha }}
+          path: mp716-firmware-upgrade/build/target-images/wireguard-ram-*.tgz
           if-no-files-found: error
           compression-level: 0
 

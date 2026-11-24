@@ -161,6 +161,8 @@ CONFIG_PACKAGE_strongswan-isakmp=y
 CONFIG_PACKAGE_strongswan-mod-kdf=y
 CONFIG_PACKAGE_strongswan-mod-sha2=y
 CONFIG_PACKAGE_kmod-nft-xfrm=y
+CONFIG_PACKAGE_kmod-wireguard=m
+CONFIG_PACKAGE_wireguard-tools=m
 CONFIG
 fi
 make defconfig 2>&1 | tee "$output/defconfig.log"
@@ -197,6 +199,9 @@ if [ -n "$web_input" ]; then
 fi
 for required in "${required_config[@]}"; do
 	grep -Fxq "$required=y" .config || { echo "Missing build configuration: $required" >&2; exit 2; }
+done
+for required in CONFIG_PACKAGE_kmod-wireguard CONFIG_PACKAGE_wireguard-tools; do
+	grep -Fxq "$required=m" .config || { echo "Missing build configuration: $required=m" >&2; exit 2; }
 done
 
 jobs=${JOBS:-2}
@@ -263,6 +268,35 @@ check_native_rootfs() {
 	fi
 }
 # END NATIVE ROOTFS CLOSURE
+# WireGuard is built as packages (=m) so the images stay unchanged. Its files are
+# exported as a RAM-only bundle for scripts/wg-ram-overlay.sh on a running image
+# of the same kernel; nothing from it is written to flash.
+export_wireguard_ram_bundle() {
+	local linux_dirs=(build_dir/target-*/linux-ramips_mt76x8/linux-*/) kver stage file
+	[ "${#linux_dirs[@]}" -eq 1 ] || { echo "Missing kernel build directory." >&2; return 2; }
+	kver=$(sed -n 's/^# Linux\/mips \([^ ]*\) Kernel Configuration$/\1/p' "${linux_dirs[0]}.config")
+	[ -n "$kver" ] || kver=$(basename "${linux_dirs[0]}" | sed 's/^linux-//')
+	stage="$output/wireguard-ram"
+	rm -rf "$stage" && mkdir -p "$stage/modules"
+	while IFS= read -r file; do cp "$file" "$stage/modules/"; done < <(find build_dir/target-* -type f \
+		-path '*/kmod-*/lib/modules/*' \( -name 'wireguard.ko' -o -name '*curve25519*.ko' -o -name '*chacha*.ko' \
+		-o -name '*poly1305*.ko' -o -name 'udp_tunnel.ko' -o -name 'ip6_udp_tunnel.ko' -o -name '*blake2s*.ko' \))
+	file=$(find build_dir/target-* -type f -path '*/wireguard-tools/usr/bin/wg' | head -n1)
+	[ -n "$file" ] && cp "$file" "$stage/wg" || { echo "Missing packaged /usr/bin/wg." >&2; return 2; }
+	file=$(find build_dir/target-* -type f -path '*/wireguard-tools/lib/netifd/proto/wireguard.sh' | head -n1)
+	[ -n "$file" ] && cp "$file" "$stage/wireguard.sh" || { echo "Missing packaged wireguard.sh." >&2; return 2; }
+	[ -f "$stage/modules/wireguard.ko" ] || { echo "Missing packaged wireguard.ko." >&2; return 2; }
+	grep -E '^CONFIG_[A-Z0-9_]+=y$' "${linux_dirs[0]}.config" | LC_ALL=C sort > "$stage/kernel-builtin.config"
+	{
+		echo "kernel=$kver"
+		echo "vermagic=$(grep -ao 'vermagic=[^[:cntrl:]]*' "$stage/modules/wireguard.ko" | head -n1 | cut -d= -f2-)"
+		echo "builtin_config_sha256=$(sha256sum < "$stage/kernel-builtin.config" | cut -d' ' -f1)"
+		echo "modules=$(cd "$stage/modules" && ls | tr '\n' ' ')"
+	} > "$stage/manifest"
+	tar -C "$output" -czf "$output/wireguard-ram-$kver.tgz" wireguard-ram
+	rm -rf "$stage"
+}
+export_wireguard_ram_bundle
 if [ -n "$web_input" ]; then
 	compilers=(build_dir/target-*/linux-ramips_mt76x8/linux-*/scripts/dtc/dtc)
 	[ "${#compilers[@]}" -eq 1 ] || { echo "Missing kernel device tree compiler." >&2; exit 2; }
