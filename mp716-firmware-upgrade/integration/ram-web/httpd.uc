@@ -260,6 +260,7 @@ function main() {
 		return fail(401, 'UNAUTHORIZED', '会话无效或已过期');
 	if (!session_access(ubus, token, method))
 		return fail(401, 'UNAUTHORIZED', '会话无效或已过期');
+	writefile('/tmp/mp716-ui-active', '');
 	if (method == 'POST')
 		session_access_invalidate(token);
 	if (method == 'POST' && path == '/cgi-bin/mp716/auth/logout') {

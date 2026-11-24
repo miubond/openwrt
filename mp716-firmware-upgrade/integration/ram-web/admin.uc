@@ -588,7 +588,7 @@ export function route_admin(bus, method, path, body, token) {
 		if (path == 'network/wan/config') { let v=iface_status(bus,c,'wan'), client=filter(hosts_cached(bus,c),(h)=>h.ipv4==getenv('REMOTE_ADDR'))[0],proto=c.get('network','wan','proto')||'dhcp'; return { data:{ proto:proto,ipv4:c.get('network','wan','ipaddr')||'',netmask:c.get('network','wan','netmask')||'',gateway:c.get('network','wan','gateway')||'',dns:list(c.get('network','wan','dns')),mtu:int(c.get('network','wan','mtu')||1500),pppMtu:proto=='pppoe'?int(c.get('network','wan','mtu')||1492):1492,hostname:c.get('network','wan','hostname')||'',macaddr:c.get('network','wan','macaddr')||v.mac,defaultMac:factory_wan_mac(readfile('/etc/board.json')),clientMac:client?.mac || '',username:c.get('network','wan','username')||'',password:c.get('network','wan','password')?'********':'',ac:c.get('network','wan','ac')||'',service:c.get('network','wan','service')||'',wanMode:'wired' } }; }
 		if (path == 'network/dhcp/config') return { data:dhcp_config(c) };
 		if (path == 'network/dns/config') return { data:{ mode:c.get('network','wan','peerdns')=='0'?'manual':'auto',servers:list(c.get('network','wan','dns')) } };
-		if (path == 'wireless/config') return { data:wifi_config(c) };
+		if (path == 'wireless/config') return { data:{ ...wifi_config(c), secondary:wifi_secondary_config(c) } };
 		if (path == 'wireless/secondary') return { data: wifi_secondary_config(c) };
 		if (path == 'wireless/status') return { data: wifi_status(bus, c) };
 		if (path == 'wireless/clients') {

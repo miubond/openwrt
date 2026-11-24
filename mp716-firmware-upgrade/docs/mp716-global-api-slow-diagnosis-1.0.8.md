@@ -1,5 +1,29 @@
 # MP716 1.0.8 全局 API 慢请求诊断与架构优化报告
 
+## 2026-11-24 实测修正（取代下文 §2.1 的估算）
+
+MT7628AN 单核 MIPS 24KEc 实测：
+
+| 项 | 耗时 |
+|----|------|
+| 裸 `ucode -e 1` 进程启动 | ~12ms |
+| 编译 `dispatch.uc` 依赖链（~160KB 源码） | **~1100ms / 次** |
+| 旧 CGI：`auth/prelogin`、`system/ping` 等简单 GET | **~950ms** |
+| 旧 `admin-tick`（每 5s） | 809ms（≈16% CPU 常驻） |
+
+固定开销主要来自**每请求重新编译 ucode 源码**，而非 shell 采集或 session access；本机未装 `uhttpd-mod-ucode`。
+
+**已落地**：
+
+- `mp716-ucode-compile.sh` 把 `httpd.uc` / `admin-tick.uc` 预编译为字节码，输出到 `/tmp/mp716-ucb/`（overlay 空间不足）；开机由 `mp716-admin` 生成，热更由部署脚本重建；编译失败自动回退源码。
+- `/www/cgi-bin/mp716`（源文件 `cgi-mp716`）优先执行 `httpd.ucb`。
+- `admin-tick` 仅在 60s 内有管理页访问（`/tmp/mp716-ui-active`）且缓存将过期时预热。
+- 前端：`config-task/active` 切页节流 30s；任何鉴权接口成功即续期会话信任（免守卫 ping）；`firmware` / `device` / `capabilities` 加长缓存；`wireless/config` 内含 `secondary`。
+
+**效果**：简单 GET 从 ~950ms 降至 **80–140ms**；`home/dashboard` 约 590ms（剩余为 shell 采集）。
+
+**注意**：手工修改 `/usr/share/mp716/*.uc` 后须执行 `sh /usr/share/mp716/mp716-ucode-compile.sh`，否则 CGI 仍跑旧字节码。
+
 ## 执行摘要
 
 | 维度 | 结论 |

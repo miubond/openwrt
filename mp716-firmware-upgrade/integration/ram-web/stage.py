@@ -70,7 +70,10 @@ def stage(
         if src.is_file():
             shutil.copyfile(src, exp_dir / exp_name)
             (exp_dir / exp_name).chmod(0o644)
-    for name in ("build-meta.uc", "admin.uc", "admin-state.uc", "admin-tick.uc", "apply-task.uc", "network-values.uc", "system-values.uc", "physical-ports.uc", "perf-diag.uc", "dispatch.uc", "capabilities.uc", "native-routes.json",
+    cgi = root / "www/cgi-bin/mp716"
+    shutil.copyfile(Path(__file__).with_name("cgi-mp716"), cgi)
+    cgi.chmod(0o755)
+    for name in ("mp716-ucode-compile.sh", "build-meta.uc", "admin.uc", "admin-state.uc", "admin-tick.uc", "apply-task.uc", "network-values.uc", "system-values.uc", "physical-ports.uc", "perf-diag.uc", "dispatch.uc", "capabilities.uc", "native-routes.json",
                  "system-admin.uc", "system-apply.uc", "diagnostics.uc", "diagnostic-worker.sh",
                  "firewall-admin.uc", "network-services.uc", "network-routes.uc", "network-qos.uc", "port-links.sh",
                  "vpn.uc", "vpn-config.uc", "vpn-runtime.uc", "vpn-render.uc", "vpn-hook.uc", "vpn-services.uc", "vpn-health.uc",
