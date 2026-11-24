@@ -1,6 +1,6 @@
 'use strict';
 import { cursor } from 'uci';
-import { readfile, writefile, stat } from 'fs';
+import { readfile, writefile, stat, mkdir } from 'fs';
 import { address, pool_bounds, sample_rates } from '/usr/share/mp716/network-values.uc';
 import { sample_cpu } from '/usr/share/mp716/system-values.uc';
 import { physical_ports, load_mapping } from '/usr/share/mp716/physical-ports.uc';
@@ -30,6 +30,30 @@ function maskbits(mask) {
 };
 function mac(value) { return type(value) == 'string' && match(value, /^([A-Fa-f0-9]{2}:){5}[A-Fa-f0-9]{2}$/); }
 function unicast(value) { return mac(value) && index('02468aAcCeE',substr(value,1,1))>=0 && lc(value) != '00:00:00:00:00:00'; }
+
+/** 管理会话所在终端的 MAC（用于 Wi-Fi 白名单自救） */
+function admin_client_mac() {
+	let ip = getenv('REMOTE_ADDR');
+	if (!ipv4(ip)) return null;
+	let out = command('ip -4 neigh show ' + ip + ' 2>/dev/null').output || '';
+	let m = match(out, /(([0-9a-f]{2}:){5}[0-9a-f]{2})/i);
+	if (m) return uc(m[1]);
+	out = command('grep -F ' + ip + ' /proc/net/arp 2>/dev/null | awk \'{print $4}\' | head -1').output || '';
+	let line = trim(out);
+	if (unicast(line)) return uc(line);
+	return null;
+}
+
+function ensure_admin_in_wifi_allow(cfg) {
+	if (cfg.mode != 'allow' || type(cfg.entries) != 'array') return cfg;
+	let self = admin_client_mac();
+	if (!self) return cfg;
+	let found = any(cfg.entries, (e) => uc(e.mac || '') == self);
+	if (found) return cfg;
+	let entries = map(cfg.entries, (e) => e);
+	push(entries, { id: self, mac: self, policy: 'allow' });
+	return { mode: cfg.mode, entries: entries };
+}
 export function factory_wan_mac(raw) {
 	try {let board=json(raw || '{}'), value=board.network?.wan?.macaddr;return unicast(value)?uc(value):'';}catch(e){return '';}
 };
@@ -216,7 +240,7 @@ function read_api_cache(key) {
 }
 
 function write_api_cache(key, data) {
-	command('mkdir -p ' + API_CACHE_DIR);
+	if (!stat(API_CACHE_DIR)) mkdir(API_CACHE_DIR, 0755);
 	writefile(API_CACHE_DIR + '/' + key + '.json', sprintf('%J', { at: time(), data: data }));
 }
 
@@ -260,9 +284,14 @@ function iface_status(bus, c, name) {
 };
 function system_info(bus, c) {
 	let info = bus.call('system', 'info', {}) || {};
-	let free = command("df -k /overlay | tail -n 1 | awk '{print $4}'").output;
 	let zone=c.get('system','@system[0]','timezone') || 'UTC';
 	if(!match(zone,/^[A-Za-z0-9<>+,:.\/-]{1,100}$/))zone='UTC';
+	// procd 的 localtime 已含时区偏移，root.avail 即 overlay 剩余 KB；免去 date/df 子进程
+	let lt = type(info.localtime) == 'int' ? gmtime(info.localtime) : null;
+	let localTime = lt ? sprintf('%04d-%02d-%02d %02d:%02d:%02d', lt.year, lt.mon, lt.mday, lt.hour, lt.min, lt.sec)
+		: trim(command("TZ='"+zone+"' /bin/busybox date '+%Y-%m-%d %H:%M:%S'").output);
+	let flashFree = type(info.root?.avail) == 'int' ? info.root.avail
+		: int(trim(command("df -k /overlay | tail -n 1 | awk '{print $4}'").output) || 0);
 	let lanMac = iface_status(bus, c, 'lan').mac;
 	if (!mac(lanMac)) lanMac = factory_wan_mac(readfile('/etc/board.json')) || '';
 	let devNo = device_number_from_mac(lanMac);
@@ -270,12 +299,12 @@ function system_info(bus, c) {
 	let domain = home_domain(c);
 	return { model: 'MP716', hostname: c.get('system', '@system[0]', 'hostname') || 'MP716', firmware: firmware_version(),
 		kernel: trim(readfile('/proc/sys/kernel/osrelease') || ''), uptimeSec: int(info.uptime || 0),
-		localTime: trim(command("TZ='"+zone+"' /bin/busybox date '+%Y-%m-%d %H:%M:%S'").output), timezone:zone,
+		localTime: localTime, timezone:zone,
 		domain: length(domain) ? domain : null,
 		deviceNumber: length(devNo) ? devNo : null,
 		cpuLoad: map(info.load || [0,0,0], (n) => n / 65536.0),
 		memTotalKb: int((info.memory?.total || 0) / 1024), memFreeKb: int((info.memory?.available || info.memory?.free || 0) / 1024),
-		flashTotalKb: 8192, flashFreeKb: int(trim(free) || 0) };
+		flashTotalKb: 8192, flashFreeKb: flashFree };
 };
 function system_info_cached(bus, c) {
 	let hit = read_api_cache('system_info');
@@ -485,7 +514,13 @@ function updates(c, path, cfg) {
 		let addresses = [];
 		for (let row in cfg.entries) { if (!unicast(row.mac)) die('MAC 地址无效'); push(addresses,lc(row.mac)); }
 		if (cfg.mode == 'allow' && !length(addresses)) die('白名单不能为空');
-		set('wireless',ap(c),'macfilter',cfg.mode); set('wireless',ap(c),'maclist',length(addresses)?addresses:null);
+		// OpenWrt wifi-scripts 仅接受 allow|deny；关闭过滤须 delete 选项，不能写 macfilter=disable
+		if (cfg.mode == 'disable') {
+			set('wireless',ap(c),'macfilter',null); set('wireless',ap(c),'maclist',null);
+		} else {
+			set('wireless',ap(c),'macfilter',cfg.mode);
+			set('wireless',ap(c),'maclist',length(addresses)?addresses:null);
+		}
 	} else if (path == 'wireless/advanced') {
 		packages = ['wireless']; kind = 'wireless';
 		if (!integer(cfg.beacon,20,1024) || !integer(cfg.dtim,1,255) || !integer(cfg.rtsThreshold,1,2347) || !integer(cfg.fragThreshold,256,2346)) die('无线高级参数超出范围');
@@ -568,6 +603,9 @@ export function warm_api_cache(bus) {
 	let labels = load_mapping();
 	write_api_cache('hosts', hosts(bus, c));
 	write_api_cache('physical_ports', physical_ports(command, labels));
+	write_api_cache('system_info', system_info(bus, c));
+	// 首页轮询 20s > 整页 TTL 12s，不预热则每次轮询都要现场重建
+	write_api_cache('home_dashboard', home_dashboard(bus, c));
 };
 
 export function route_admin(bus, method, path, body, token) {
@@ -666,7 +704,9 @@ export function route_admin(bus, method, path, body, token) {
 			let seconds = body.confirmTimeoutSec == null ? 90 : body.confirmTimeoutSec;
 			if (!integer(seconds,30,180)) return reject('确认时间必须在 30–180 秒内');
 			if(path=='network/dhcp/static')return{data:apply_static(c,body.bindings,token,seconds)};
-			return { data:apply_config(c,path,body.config||body,token,seconds) };
+			let cfg = body.config || body;
+			if (path == 'wireless/acl') cfg = ensure_admin_in_wifi_allow(cfg);
+			return { data:apply_config(c,path,cfg,token,seconds) };
 		}
 		if (access) {
 			if (!unicast(body.mac) || index(['add','remove'],body.action)<0) return reject('终端 MAC 或操作无效');
