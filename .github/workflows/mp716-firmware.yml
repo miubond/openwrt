@@ -123,6 +123,14 @@ jobs:
       - name: Package and verify test container
         run: bash scripts/package-ci-test.sh "$RUNNER_TEMP/mp716-test"
 
+      - name: Upload WireGuard RAM bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-wireguard-ram-${{ github.sha }}
+          path: mp716-firmware-upgrade/build/target-images/wireguard-ram-*.tgz
+          if-no-files-found: error
+          compression-level: 0
+
       - name: Stage versioned MP716 release
         id: release
         run: |
@@ -141,14 +149,6 @@ jobs:
         with:
           name: mp716-${{ steps.release.outputs.version }}-UNVERIFIED-${{ github.sha }}
           path: mp716-firmware-upgrade/build/publish/
-          if-no-files-found: error
-          compression-level: 0
-
-      - name: Upload WireGuard RAM bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: mp716-wireguard-ram-${{ github.sha }}
-          path: mp716-firmware-upgrade/build/target-images/wireguard-ram-*.tgz
           if-no-files-found: error
           compression-level: 0
 

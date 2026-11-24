@@ -433,9 +433,5 @@ images=("${sysupgrade[@]}" "${initramfs[@]}")
 cp "${images[@]}" "$output/"
 cp .config "$output/openwrt.config"
 	names=("${images[@]##*/}")
-wg_bundle=( "$output"/wireguard-ram-*.tgz )
-if [ "${#wg_bundle[@]}" -eq 1 ] && [ -f "${wg_bundle[0]}" ]; then
-	names+=( "${wg_bundle[0]##*/}" )
-fi
 (cd "$output" && sha256sum "${names[@]}" > SHA256SUMS)
 python3 "$project/scripts/record-test-build.py" "$output" "$pin" sysupgrade
