@@ -32,3 +32,37 @@ L2TP/IPSec 先安装 UDP 1701 明文拒绝规则，再允许 `reqid=902` 的真�
 - 这些服务文件不意味着现机已装包或远端互通已通过。该轮服务编排测试全部使用桩；实际守护进程启动、内核 XFRM/PPP、bind mount 和外部隧道必须在后续独立验收中验证。本轮不安装软件包、不写固件、不重启设备。
 
 纯渲染测试：`tests/vpn-runtime.uc`。本地服务编排桩测试：`tests/integration/test_vpn_service.py`。
+
+## WireGuard（仅客户端）
+
+当前产品范围：路由器作为 **WireGuard 客户端** 接入外部隧道，不提供本机 WireGuard 服务器管理界面或 API。`wireguard.uc` 仍保留服务器侧 UCI 同步代码，用于清理历史配置；`vpn.uc` 对 `wireguard/server*` 请求返回「当前版本仅支持 WireGuard 客户端」。
+
+`wireguard.uc` 持有客户端与共享逻辑（模型、校验、导入、密钥、UCI 生成、状态），不依赖 CGI 请求对象，`vpn.uc` 与 `experiment/rpcd-mp716-wireguard.uc` 复用它。协议由内核 `kmod-wireguard` 与 netifd `proto wireguard` 实现，本模块只写 UCI，不运行 `wg-quick`，也不执行配置中的脚本。
+
+接口：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `vpn/wireguard/client` | 掩码视图，附 `serviceAvailable`/`serviceMessage` |
+| GET | `vpn/wireguard/status` | 客户端接口状态、最近握手、收发字节、对端 Endpoint |
+| POST | `vpn/wireguard/client` | 走统一配置任务（锁、确认、超时回滚） |
+| POST | `vpn/wireguard/client/import` | 解析 wg-quick 客户端文件（≤8KB），保存为停用状态 |
+
+模型以 JSON 存于 `mp716_vpn.wgclient`（文件 0600）。写入时 `********` 表示保留原值，`generate` 表示在路由器上生成，预共享密钥 `''` 表示清除。查询响应只返回 `hasPrivateKey`，普通 GET **不返回私钥明文**。已保存的私钥不会被自动覆盖；启用时若无私钥会拒绝，须由用户确认后生成。密钥经 0600 临时文件传给 `wg pubkey`，用后删除，不出现在命令行或日志。导入后的私钥仅保存在路由器侧配置中，前端保存或关闭后会清空输入框。
+
+`GET vpn/wireguard/status` 区分：客户端是否已启用、接口是否 up、最近握手（`handshakeState`: none/recent/stale）、收发字节、以及经 `mp716wgc` 的 ICMP 探测（缓存约 20 秒）。**接口 up 不等于连接成功**；**握手超过 180 秒也不把隧道判死**。探测失败单独给出 `probe.state=fail` 与原因。`GET vpn/wireguard/client` 附带 `reservedNets`（LAN/WAN 等）供页面提示路由冲突。
+
+客户端启用时生成：
+
+- network：接口 `mp716wgc`，Peer 节 `mp716_vpn_wgc_peer`。
+- firewall：区 `mp716wgc`（input/forward REJECT，masq，可选 lan→wgc 转发）。WireGuard 区与 PPTP/L2TP 的 `mp716_vpn` 区互不包含；停用后删除 `mp716_vpn_wg*` 节与 `mp716wgc`。
+
+路由：分流模式只安装用户填写的 AllowedIPs（可含 IPv6），并拒绝 /0–/7 以及与 LAN、WAN、已启用 PPP 地址池重叠的网段。不要把 `0.0.0.0/0` 写进 AllowedIPs 冒充全局。全局模式必须显式勾选 `allowGlobalRoute`，以 `0.0.0.0/1` + `128.0.0.0/1`（有 IPv6 时再加 `::/1` + `8000::/1`）实现，不删除、不替换 WAN 默认路由，并写入 `lookup main` 的 ip rule 保护 LAN/WAN 直连网段。netifd 自动为 Endpoint 固定经 WAN 的主机路由。从非直连网段做 WAN 侧远程管理时仍应使用分流模式。
+
+导入拒绝 `PreUp/PostUp/PreDown/PostDown`，忽略 `Table`/`FwMark` 并给出警告；IPv6 地址与 AllowedIPs 会保留。含 `0.0.0.0/0` 或 `::/0` 的文件导入为全局模式但保持停用。
+
+提交后 reload 命令为 `ubus call network reload && /etc/init.d/firewall reload && ucode wg-health.uc`；`wg-health.uc` 最多等待 12 秒确认接口 up/down，只输出接口名和状态。
+
+依赖：`kmod-wireguard`、`wireguard-tools`（含 `/usr/bin/wg` 与 `/lib/netifd/proto/wireguard.sh`）。`capabilities.uc` 只有在三者都存在时才报告 `wireguard`；缺少任一项时可以查看和保存停用配置，但启用会被拒绝并列出缺失组件。内核模块必须随设备内核一起编译，不得安装官方源中版本号不匹配的 kmod。
+
+测试：`tests/wireguard.uc`（设备或原生环境运行，含密钥用例需 `/usr/bin/wg`）。

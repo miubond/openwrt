@@ -49,6 +49,20 @@ class NativeAdminStageTests(unittest.TestCase):
         self.assertIn('/etc/mp716-vpn/', keep)
         self.assertIn('/etc/mp716-admin/', keep)
 
+    def test_root_and_legacy_entries_share_vue_assets_and_preserve_native_api(self):
+        dist = Path(self.work.name) / 'dist'
+        (dist / 'assets').mkdir(parents=True)
+        html = b'<html><script src="/mp716/assets/app.js"></script></html>'
+        (dist / 'index.html').write_bytes(html)
+        (dist / 'assets/app.js').write_bytes(b'const api="/cgi-bin/mp716";')
+        api = (self.root / 'www/cgi-bin/mp716').read_bytes()
+        module.stage(SOURCE / 'web-input.zip', self.root, web_dist=dist)
+        self.assertEqual((self.root / 'www/index.html').read_bytes(), html)
+        self.assertEqual((self.root / 'www/mp716/index.html').read_bytes(), html)
+        self.assertEqual((self.root / 'www/mp716/assets/app.js').read_bytes(),
+                         (dist / 'assets/app.js').read_bytes())
+        self.assertEqual((self.root / 'www/cgi-bin/mp716').read_bytes(), api)
+
     @unittest.skipIf(os.name == 'nt', 'Windows does not preserve Unix executable mode bits')
     def test_hooks_and_services_are_executable(self):
         paths = list((self.root / 'usr/share/mp716').glob('*.sh'))

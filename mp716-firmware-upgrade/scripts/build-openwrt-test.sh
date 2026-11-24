@@ -161,8 +161,8 @@ CONFIG_PACKAGE_strongswan-isakmp=y
 CONFIG_PACKAGE_strongswan-mod-kdf=y
 CONFIG_PACKAGE_strongswan-mod-sha2=y
 CONFIG_PACKAGE_kmod-nft-xfrm=y
-CONFIG_PACKAGE_kmod-wireguard=m
-CONFIG_PACKAGE_wireguard-tools=m
+CONFIG_PACKAGE_kmod-wireguard=y
+CONFIG_PACKAGE_wireguard-tools=y
 CONFIG
 fi
 make defconfig 2>&1 | tee "$output/defconfig.log"
@@ -195,13 +195,14 @@ if [ -n "$web_input" ]; then
 		CONFIG_PACKAGE_strongswan-charon CONFIG_PACKAGE_strongswan-ipsec CONFIG_PACKAGE_strongswan-mod-stroke
 		CONFIG_PACKAGE_kmod-ppp CONFIG_PACKAGE_kmod-pptp CONFIG_PACKAGE_kmod-pppoe
 		CONFIG_PACKAGE_kmod-pppol2tp CONFIG_PACKAGE_kmod-mppe CONFIG_PACKAGE_kmod-tun
-		CONFIG_PACKAGE_kmod-ipsec CONFIG_PACKAGE_kmod-ipsec4 CONFIG_PACKAGE_kmod-nft-xfrm)
+		CONFIG_PACKAGE_kmod-ipsec CONFIG_PACKAGE_kmod-ipsec4 CONFIG_PACKAGE_kmod-nft-xfrm
+		CONFIG_PACKAGE_kmod-wireguard CONFIG_PACKAGE_wireguard-tools)
 fi
 for required in "${required_config[@]}"; do
 	grep -Fxq "$required=y" .config || { echo "Missing build configuration: $required" >&2; exit 2; }
 done
 for required in CONFIG_PACKAGE_kmod-wireguard CONFIG_PACKAGE_wireguard-tools; do
-	grep -Fxq "$required=m" .config || { echo "Missing build configuration: $required=m" >&2; exit 2; }
+	grep -Fxq "$required=y" .config || { echo "Missing build configuration: $required=y" >&2; exit 2; }
 done
 
 jobs=${JOBS:-2}
@@ -220,7 +221,7 @@ network_entries=(sbin/swconfig sbin/fw4 usr/sbin/nft usr/sbin/dnsmasq
 # selection alone cannot prove that an overlay, plugin or rc.d policy was shipped.
 native_entries=(usr/sbin/uhttpd sbin/rpcd usr/bin/ucode usr/bin/jsonfilter
 	usr/lib/ucode/fs.so usr/lib/ucode/ubus.so usr/lib/ucode/uci.so
-	www/mp716/index.html www/cgi-bin/mp716
+	www/index.html www/mp716/index.html www/cgi-bin/mp716
 	etc/init.d/mp716-admin etc/init.d/mp716-vpn
 	etc/rc.d/S18mp716-admin etc/rc.d/S59mp716-vpn
 	etc/uci-defaults/98-mp716-admin etc/mp716-build.version
@@ -229,10 +230,11 @@ native_entries=(usr/sbin/uhttpd sbin/rpcd usr/bin/ucode usr/bin/jsonfilter
 	etc/board.d/03_mp716_ram_web
 	usr/sbin/pppd usr/sbin/pptpd usr/sbin/pptpctrl usr/sbin/xl2tpd usr/sbin/xl2tpd-control
 	usr/sbin/openvpn usr/lib/ipsec/starter usr/lib/ipsec/charon usr/lib/ipsec/stroke
-	lib/netifd/proto/ppp.sh lib/netifd/proto/l2tp.sh
-	lib/netifd/ppp-up lib/netifd/ppp-down etc/ppp/options.pptp etc/ppp/chap-secrets)
+	lib/netifd/proto/ppp.sh lib/netifd/proto/l2tp.sh lib/netifd/proto/wireguard.sh
+	lib/netifd/ppp-up lib/netifd/ppp-down etc/ppp/options.pptp etc/ppp/chap-secrets
+	usr/bin/wg)
 for module in httpd admin admin-state admin-tick apply-task network-values system-values dispatch capabilities \
-	system-admin system-apply diagnostics vpn vpn-config vpn-runtime vpn-render vpn-hook vpn-services vpn-health; do
+	system-admin system-apply diagnostics vpn vpn-config vpn-runtime vpn-render vpn-hook vpn-services vpn-health wireguard wg-health; do
 	native_entries+=("usr/share/mp716/$module.uc")
 done
 native_entries+=(usr/share/mp716/native-routes.json)
@@ -248,7 +250,9 @@ for plugin in nonce aes des gmpdh hmac kdf kernel-netlink md5 mgf1 pubkey random
 	native_entries+=("usr/lib/ipsec/plugins/libstrongswan-$plugin.so" "etc/strongswan.d/charon/$plugin.conf")
 done
 for module in ppp_generic ppp_async pppox pppoe pptp ppp_mppe gre ip_gre \
-	l2tp_core l2tp_netlink l2tp_ppp tun xfrm_user esp4 nft_xfrm; do
+	l2tp_core l2tp_netlink l2tp_ppp tun xfrm_user esp4 nft_xfrm \
+	wireguard curve25519 chacha20poly1305 libchacha20poly1305 poly1305-mips chacha-mips \
+	udp_tunnel ip6_udp_tunnel libcurve25519-generic blake2s-generic; do
 	native_patterns+=("lib/modules/[^/]+/$module\\.ko(\\.(xz|zst|gz))?")
 done
 check_native_rootfs() {
@@ -268,9 +272,8 @@ check_native_rootfs() {
 	fi
 }
 # END NATIVE ROOTFS CLOSURE
-# WireGuard is built as packages (=m) so the images stay unchanged. Its files are
-# exported as a RAM-only bundle for scripts/wg-ram-overlay.sh on a running image
-# of the same kernel; nothing from it is written to flash.
+# WireGuard ships in the flashable rootfs (kmod-wireguard + wireguard-tools). The
+# same build also exports wireguard-ram-*.tgz for optional RAM-only experiments.
 stage_ko() {
 	local src=$1 dest=$2
 	case "$src" in

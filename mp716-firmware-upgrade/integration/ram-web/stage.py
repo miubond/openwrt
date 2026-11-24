@@ -56,6 +56,9 @@ def stage(
         if not (web_dist / "index.html").is_file():
             raise SystemExit(f"Missing built Vue frontend: {web_dist}")
         shutil.copytree(web_dist, root / "www/mp716", dirs_exist_ok=True)
+        # Serve the native Vue entry directly at the management IP. Assets and
+        # the legacy /mp716/ entry keep their existing, API-independent paths.
+        shutil.copyfile(web_dist / "index.html", root / "www/index.html")
     gateway = root / "usr/share/mp716/httpd.uc"
     gateway.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("httpd.uc"), gateway)
@@ -63,6 +66,7 @@ def stage(
     for name in ("admin.uc", "admin-state.uc", "admin-tick.uc", "apply-task.uc", "network-values.uc", "system-values.uc", "physical-ports.uc", "dispatch.uc", "capabilities.uc", "native-routes.json",
                  "system-admin.uc", "system-apply.uc", "diagnostics.uc", "diagnostic-worker.sh",
                  "vpn.uc", "vpn-config.uc", "vpn-runtime.uc", "vpn-render.uc", "vpn-hook.uc", "vpn-services.uc", "vpn-health.uc",
+                 "wireguard.uc", "wg-health.uc",
                  "vpn-ppp-up.sh", "vpn-ppp-down.sh", "vpn-openvpn-up.sh", "vpn-openvpn-down.sh"):
         shutil.copyfile(Path(__file__).with_name(name), gateway.with_name(name))
         gateway.with_name(name).chmod(0o755 if name.endswith(".sh") else 0o644)
