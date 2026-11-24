@@ -161,6 +161,8 @@ CONFIG_PACKAGE_strongswan-isakmp=y
 CONFIG_PACKAGE_strongswan-mod-kdf=y
 CONFIG_PACKAGE_strongswan-mod-sha2=y
 CONFIG_PACKAGE_kmod-nft-xfrm=y
+CONFIG_PACKAGE_kmod-wireguard=y
+CONFIG_PACKAGE_wireguard-tools=y
 CONFIG
 fi
 make defconfig 2>&1 | tee "$output/defconfig.log"
@@ -193,7 +195,8 @@ if [ -n "$web_input" ]; then
 		CONFIG_PACKAGE_strongswan-charon CONFIG_PACKAGE_strongswan-ipsec CONFIG_PACKAGE_strongswan-mod-stroke
 		CONFIG_PACKAGE_kmod-ppp CONFIG_PACKAGE_kmod-pptp CONFIG_PACKAGE_kmod-pppoe
 		CONFIG_PACKAGE_kmod-pppol2tp CONFIG_PACKAGE_kmod-mppe CONFIG_PACKAGE_kmod-tun
-		CONFIG_PACKAGE_kmod-ipsec CONFIG_PACKAGE_kmod-ipsec4 CONFIG_PACKAGE_kmod-nft-xfrm)
+		CONFIG_PACKAGE_kmod-ipsec CONFIG_PACKAGE_kmod-ipsec4 CONFIG_PACKAGE_kmod-nft-xfrm
+		CONFIG_PACKAGE_kmod-wireguard CONFIG_PACKAGE_wireguard-tools)
 fi
 for required in "${required_config[@]}"; do
 	grep -Fxq "$required=y" .config || { echo "Missing build configuration: $required" >&2; exit 2; }
@@ -218,16 +221,17 @@ native_entries=(usr/sbin/uhttpd sbin/rpcd usr/bin/ucode usr/bin/jsonfilter
 	www/mp716/index.html www/cgi-bin/mp716
 	etc/init.d/mp716-admin etc/init.d/mp716-vpn
 	etc/rc.d/S18mp716-admin etc/rc.d/S59mp716-vpn
-	etc/uci-defaults/98-mp716-admin etc/mp716-build.version
+	etc/uci-defaults/98-mp716-admin etc/mp716-build.version etc/mp716-build.date
+	usr/share/mp716/build-meta.uc
 	lib/upgrade/keep.d/mp716-admin usr/share/rpcd/acl.d/mp716.json
 	usr/sbin/mp716-package-verify usr/sbin/mp716-upgraded usr/sbin/mp716-dhcp-discover
 	etc/board.d/03_mp716_ram_web
 	usr/sbin/pppd usr/sbin/pptpd usr/sbin/pptpctrl usr/sbin/xl2tpd usr/sbin/xl2tpd-control
 	usr/sbin/openvpn usr/lib/ipsec/starter usr/lib/ipsec/charon usr/lib/ipsec/stroke
-	lib/netifd/proto/ppp.sh lib/netifd/proto/l2tp.sh
+	lib/netifd/proto/ppp.sh lib/netifd/proto/l2tp.sh lib/netifd/proto/wireguard.sh usr/bin/wg
 	lib/netifd/ppp-up lib/netifd/ppp-down etc/ppp/options.pptp etc/ppp/chap-secrets)
 for module in httpd admin admin-state admin-tick apply-task network-values system-values dispatch capabilities \
-	system-admin system-apply diagnostics vpn vpn-config vpn-runtime vpn-render vpn-hook vpn-services vpn-health; do
+	system-admin system-apply diagnostics vpn vpn-config vpn-runtime vpn-render vpn-hook vpn-services vpn-health wireguard wg-health; do
 	native_entries+=("usr/share/mp716/$module.uc")
 done
 native_entries+=(usr/share/mp716/native-routes.json)
@@ -243,7 +247,7 @@ for plugin in nonce aes des gmpdh hmac kdf kernel-netlink md5 mgf1 pubkey random
 	native_entries+=("usr/lib/ipsec/plugins/libstrongswan-$plugin.so" "etc/strongswan.d/charon/$plugin.conf")
 done
 for module in ppp_generic ppp_async pppox pppoe pptp ppp_mppe gre ip_gre \
-	l2tp_core l2tp_netlink l2tp_ppp tun xfrm_user esp4 nft_xfrm; do
+	l2tp_core l2tp_netlink l2tp_ppp tun xfrm_user esp4 nft_xfrm wireguard; do
 	native_patterns+=("lib/modules/[^/]+/$module\\.ko(\\.(xz|zst|gz))?")
 done
 check_native_rootfs() {
@@ -263,6 +267,31 @@ check_native_rootfs() {
 	fi
 }
 # END NATIVE ROOTFS CLOSURE
+# RAM-only WireGuard bundle for a running image of the same kernel: insmod and
+# overlay mounts under /tmp via scripts/wg-ram-overlay.sh, never written to flash.
+export_wireguard_ram_bundle() {
+	local roots=(build_dir/target-*/root-ramips) linux_dirs root kver stage
+	[ "${#roots[@]}" -eq 1 ] || { echo "Missing target rootfs staging directory." >&2; return 2; }
+	root=${roots[0]}
+	kver=$(basename "$root"/lib/modules/*)
+	stage="$output/wireguard-ram"
+	rm -rf "$stage" && mkdir -p "$stage/modules"
+	cp "$root/usr/bin/wg" "$root/lib/netifd/proto/wireguard.sh" "$stage/"
+	find "$root/lib/modules/$kver" -maxdepth 1 -type f \
+		\( -name 'wireguard.ko' -o -name '*curve25519*.ko' -o -name '*chacha*.ko' -o -name '*poly1305*.ko' \
+		-o -name 'udp_tunnel.ko' -o -name 'ip6_udp_tunnel.ko' -o -name '*blake2s*.ko' \) -exec cp {} "$stage/modules/" \;
+	[ -f "$stage/modules/wireguard.ko" ] || { echo "Missing wireguard.ko in target rootfs." >&2; return 2; }
+	linux_dirs=(build_dir/target-*/linux-ramips_mt76x8/linux-*/)
+	{
+		echo "kernel=$kver"
+		echo "vermagic=$(grep -ao 'vermagic=[^[:cntrl:]]*' "$stage/modules/wireguard.ko" | head -n1 | cut -d= -f2-)"
+		echo "builtin_config_sha256=$(grep -E '^CONFIG_[A-Z0-9_]+=y$' "${linux_dirs[0]}.config" | LC_ALL=C sort | sha256sum | cut -d' ' -f1)"
+	} > "$stage/manifest"
+	grep -E '^CONFIG_[A-Z0-9_]+=y$' "${linux_dirs[0]}.config" | LC_ALL=C sort > "$stage/kernel-builtin.config"
+	tar -C "$output" -czf "$output/wireguard-ram-$kver.tgz" wireguard-ram
+	rm -rf "$stage"
+}
+export_wireguard_ram_bundle
 if [ -n "$web_input" ]; then
 	compilers=(build_dir/target-*/linux-ramips_mt76x8/linux-*/scripts/dtc/dtc)
 	[ "${#compilers[@]}" -eq 1 ] || { echo "Missing kernel device tree compiler." >&2; exit 2; }

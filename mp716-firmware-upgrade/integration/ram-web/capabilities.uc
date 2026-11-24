@@ -12,7 +12,8 @@ export function capabilities() {
 			trim(readfile('/etc/mp716-upgrade/flash-gate')||'')=='serial-recovery-verified' &&
 			trim(readfile('/etc/mp716-upgrade/platform')||'')=='confirmed'),wanModes:['wired'],wifiModes:['11g','11n','11bg','11bgn'],
 		services:{ntp:!!stat('/etc/init.d/sysntpd'),pptp:!!stat('/usr/sbin/pppd') && !!stat('/lib/netifd/proto/ppp.sh') && !!stat('/etc/ppp/options.pptp') && length(glob('/usr/lib/pppd/*/pptp.so')||[])>0,
-			pptpd:!!stat('/usr/sbin/pptpd'),l2tp:!!stat('/usr/sbin/xl2tpd'),ipsec:!!stat('/usr/lib/ipsec/starter'),openvpn:!!stat('/usr/sbin/openvpn')},
+			pptpd:!!stat('/usr/sbin/pptpd'),l2tp:!!stat('/usr/sbin/xl2tpd'),ipsec:!!stat('/usr/lib/ipsec/starter'),openvpn:!!stat('/usr/sbin/openvpn'),
+			wireguard:!!stat('/usr/bin/wg') && !!stat('/lib/netifd/proto/wireguard.sh') && (!!stat('/sys/module/wireguard') || length(glob('/lib/modules/*/wireguard.ko')||[])>0)},
 		bundle:{staticRoutes:true,firewall:true,portForward:true,dmz:true,upnp:!!stat('/etc/config/upnpd'),ddns:!!stat('/etc/config/ddns'),
 			qos:sqm_ready(),dnsPage:true,multiSsid:true,urlFilter:false,macFilterGlobal:false,remoteManage:false,cellular:false},
 		cellular:{supported:false,reason:'no_modem',note:'MP716 当前镜像未集成蜂窝驱动；WAN 仅有线'},

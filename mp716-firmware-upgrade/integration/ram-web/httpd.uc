@@ -291,8 +291,13 @@ function main() {
 			flashUpgradeEnabled: firmware_flash_allowed(),
 			firmwareVerifyEnabled: firmware_verifier_present() });
 	}
-	if (method == 'GET' && path == '/cgi-bin/mp716/system/firmware')
-		return ok(firmware_info_payload());
+	if (method == 'GET' && path == '/cgi-bin/mp716/system/firmware') {
+		try {
+			return ok(firmware_info_payload());
+		} catch (e) {
+			return fail(500, 'INTERNAL', '无法读取固件信息', { reason: e.message || sprintf('%s', e) });
+		}
+	}
 	if (method == 'POST' && path == '/cgi-bin/mp716/system/firmware-package/verify')
 		return upload_firmware_package();
 	if (method == 'POST' && path == '/cgi-bin/mp716/system/upgrade')
@@ -322,7 +327,7 @@ function main() {
 			}
 			return ok(result.data);
 		}
-	} catch (e) { return fail(500, 'INTERNAL', '设备接口执行失败', { reason: e.message || string(e) }); }
+	} catch (e) { return fail(500, 'INTERNAL', '设备接口执行失败', { reason: e.message || sprintf('%s', e) }); }
 	return fail(404, 'NOT_IMPLEMENTED', '此接口在测试固件中不可用');
 }
 

@@ -76,12 +76,12 @@ function write_routes(c, rows) {
 	for (let row in rows) {
 		let item = normalize_row(row, idx++);
 		if (!match(item.id, /^mp716_rt_/)) die('静态路由 ID 无效');
-		if (!c.add('network', 'route', item.id)) die('无法创建静态路由');
+		if (!c.set('network', item.id, 'route')) die('无法创建静态路由');
 		c.set('network', item.id, 'interface', item.interface);
 		c.set('network', item.id, 'target', item.target);
 		c.set('network', item.id, 'netmask', item.netmask);
 		c.set('network', item.id, 'gateway', item.gateway);
-		c.set('network', item.id, 'metric', string(item.metric));
+		c.set('network', item.id, 'metric', sprintf('%d', item.metric));
 		c.set('network', item.id, 'disabled', item.enabled ? '0' : '1');
 	}
 	if (!c.commit('network')) die('无法提交静态路由');
@@ -113,7 +113,7 @@ export function route_network_routes(bus, method, path, body, owner) {
 				return applied(t);
 			} catch (e) { rollback(t); die(e); }
 		})();
-	} catch (e) { result = reject(e.message || string(e), 'VALIDATION'); }
+	} catch (e) { result = reject(e.message || sprintf('%s', e), 'VALIDATION'); }
 	release();
 	return result;
 };

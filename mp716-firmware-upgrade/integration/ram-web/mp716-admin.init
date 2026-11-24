@@ -4,7 +4,11 @@ STOP=90
 USE_PROCD=1
 start_service() {
 	/bin/sh /usr/share/mp716/mp716-ucode-compile.sh
-	/usr/bin/ucode /usr/share/mp716/admin-tick.uc
+	if [ "$action" = boot ]; then
+		MP716_BOOT=1 /usr/bin/ucode /usr/share/mp716/admin-tick.uc
+	else
+		/usr/bin/ucode /usr/share/mp716/admin-tick.uc
+	fi
 	procd_open_instance
 	procd_set_param command /bin/sh -c 'T=/tmp/mp716-ucb/admin-tick.ucb; [ -r "$T" ] || T=/usr/share/mp716/admin-tick.uc; while sleep 5; do /usr/bin/ucode "$T"; done'
 	procd_set_param respawn 3600 5 5

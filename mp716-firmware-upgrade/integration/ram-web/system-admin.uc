@@ -3,7 +3,29 @@ import { cursor } from 'uci';
 import { connect } from 'ubus';
 import { readfile, writefile, mkdir, chmod, rename, unlink, rmdir, stat, popen } from 'fs';
 import { validate_openvpn } from '/usr/share/mp716/vpn-config.uc';
-import { command, store, load, acquire, release, expire, pending, blocking_pending, dismiss_failed_pending, begin, applied, rollback, uptime } from '/usr/share/mp716/admin-state.uc';
+import { command, store, load, acquire, release, expire, pending, blocking_pending, dismiss_failed_pending, begin, applied, rollback, uptime, ensure_dirs } from '/usr/share/mp716/admin-state.uc';
+
+const ADMIN_RUNTIME = '/tmp/mp716-admin';
+
+/**
+ * 在 CGI 里用 `(...) &` 起的后台任务会随 CGI 退出被 SIGHUP/进程组清理杀掉；
+ * 必须用 start-stop-daemon -b（setsid + 脱离）托管延时动作。
+ */
+function detached(name, body) {
+	ensure_dirs();
+	let script = ADMIN_RUNTIME + '/' + name + '.sh';
+	if (writefile(script, '#!/bin/sh\n' + body) == null) return false;
+	chmod(script, 0700);
+	return command('/sbin/start-stop-daemon -S -b -x ' + script).code == 0;
+}
+function request_reboot() {
+	if (detached('reboot-request', 'sync\nsleep 3\nexec /sbin/reboot\n')) return true;
+	return command('/sbin/reboot >/dev/null 2>&1').code == 0;
+}
+function request_factory_reset() {
+	if (detached('factory-reset', 'sync\nsleep 3\n/sbin/firstboot -y && exec /sbin/reboot\n')) return true;
+	return command('/sbin/firstboot -y && /sbin/reboot >/dev/null 2>&1').code == 0;
+}
 
 export const CONFIGS=['network','wireless','dhcp','system','firewall','upnpd','mp716_system','mp716_vpn','pptpd','xl2tp','ipsec','openvpn'];
 const VPN_FILES=['client.ovpn','ca.pem','client.crt','client.key','ta.key','auth'];
@@ -367,11 +389,15 @@ export function route_system(bus,method,path,body,owner) {
 			let action=c.get('mp716_system','main','logging')=='0'?'stop':'restart';
 			if(command('/etc/init.d/log '+action+' >/dev/null 2>&1').code!=0)die('无法清空日志');return {data:null};
 		}
-		if(path=='system/reboot') {command('(sleep 3; /sbin/reboot) >/tmp/mp716-admin/reboot.log 2>&1 &');return {data:{accepted:true,rollbackSec:0}};}
+		if(path=='system/reboot') {
+			if (!request_reboot()) die('无法提交重启请求');
+			return {data:{accepted:true,rollbackSec:0}};
+		}
 		if(path=='system/factory-reset') {
 			if(body.confirmToken!='RESET')die('请确认恢复出厂设置');
-			command('(sleep 3; /sbin/firstboot -y && /sbin/reboot) >/tmp/mp716-admin/reset.log 2>&1 &');return {data:{accepted:true,rollbackSec:0}};
+			if (!request_factory_reset()) die('无法提交恢复出厂请求');
+			return {data:{accepted:true,rollbackSec:0}};
 		}
-	})();}catch(e){result={error:'VALIDATION',message:e.message || string(e)};}
+	})();}catch(e){result={error:'VALIDATION',message:e.message || sprintf('%s', e)};}
 	release();return result;
 };

@@ -12,7 +12,7 @@ function read_upnp(c) {
 function write_upnp(c, cfg) {
 	if (!stat('/etc/config/upnpd')) die('设备未安装 UPnP 服务');
 	if (!c.get('upnpd', 'config')) {
-		if (!c.add('upnpd', 'config')) die('无法初始化 UPnP 配置');
+		if (!c.set('upnpd', 'config', 'upnpd')) die('无法初始化 UPnP 配置');
 		c.set('upnpd', 'config', 'internal_iface', 'lan');
 		c.set('upnpd', 'config', 'external_iface', 'wan');
 	}
@@ -41,7 +41,7 @@ function read_ddns(c) {
 function write_ddns(c, cfg) {
 	if (!stat('/etc/config/ddns')) die('设备未安装 DDNS 服务');
 	if (!c.get('ddns', 'mp716_wan')) {
-		if (!c.add('ddns', 'service', 'mp716_wan')) die('无法创建 DDNS 条目');
+		if (!c.set('ddns', 'mp716_wan', 'service')) die('无法创建 DDNS 条目');
 	}
 	let name = 'mp716_wan';
 	c.set('ddns', name, 'enabled', cfg.enabled ? '1' : '0');
@@ -93,7 +93,7 @@ export function route_network_services(bus, method, path, body, owner) {
 				return applied(t);
 			} catch (e) { rollback(t); die(e); }
 		})();
-	} catch (e) { result = reject(e.message || string(e), 'VALIDATION'); }
+	} catch (e) { result = reject(e.message || sprintf('%s', e), 'VALIDATION'); }
 	release();
 	return result;
 };

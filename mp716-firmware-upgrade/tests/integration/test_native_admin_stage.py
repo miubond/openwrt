@@ -37,6 +37,33 @@ class NativeAdminStageTests(unittest.TestCase):
         self.assertIn('POST system/sche-reboot', routes)
         self.assertIn('POST vpn/openvpn/upload', routes)
 
+    def test_firmware_build_date_is_a_utc_timestamp_not_openwrt_description(self):
+        version = (PROJECT / 'config/firmware.version').read_text(encoding='ascii').strip()
+        stamp = (self.root / 'etc/mp716-build.date').read_text(encoding='ascii').strip()
+        self.assertEqual((self.root / 'etc/mp716-build.version').read_text(encoding='ascii').strip(), version)
+        self.assertRegex(stamp, r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$')
+        meta = (self.root / 'usr/share/mp716/build-meta.uc').read_text(encoding='utf-8')
+        self.assertIn("'/etc/mp716-build.date'", meta)
+        self.assertNotIn('DISTRIB_DESCRIPTION', meta)
+        self.assertNotIn('(?:', meta)
+
+    def test_firmware_build_date_honors_source_date_epoch(self):
+        previous = os.environ.get('SOURCE_DATE_EPOCH')
+        os.environ['SOURCE_DATE_EPOCH'] = '1700000000'
+
+        def restore_epoch():
+            if previous is None:
+                os.environ.pop('SOURCE_DATE_EPOCH', None)
+            else:
+                os.environ['SOURCE_DATE_EPOCH'] = previous
+
+        self.addCleanup(restore_epoch)
+        module.stage(SOURCE / 'web-input.zip', self.root)
+        self.assertEqual(
+            (self.root / 'etc/mp716-build.date').read_text(encoding='ascii').strip(),
+            '2023-11-14 22:13:20',
+        )
+
     def test_native_services_survive_boot_and_upgrade_configuration_retention(self):
         defaults = (self.root / 'etc/uci-defaults/98-mp716-admin').read_text()
         for service in ('mp716-admin', 'mp716-vpn'):

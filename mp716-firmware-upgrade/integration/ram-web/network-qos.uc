@@ -49,12 +49,12 @@ function write_qos(c, cfg) {
 	if (cfg.enabled && (down < 1 || up < 1)) die('启用 QoS 时需设置正数上下行限速（Kbps）');
 	if (down < 0 || up < 0 || down > 100000000 || up > 100000000) die('限速值超出范围');
 	if (!c.get('sqm', QUEUE)) {
-		if (!c.add('sqm', 'queue', QUEUE)) die('无法初始化 sqm 队列');
+		if (!c.set('sqm', QUEUE, 'queue')) die('无法初始化 sqm 队列');
 	}
 	c.set('sqm', QUEUE, 'interface', 'wan');
 	c.set('sqm', QUEUE, 'enabled', cfg.enabled ? '1' : '0');
-	c.set('sqm', QUEUE, 'download', string(down));
-	c.set('sqm', QUEUE, 'upload', string(up));
+	c.set('sqm', QUEUE, 'download', sprintf('%d', down));
+	c.set('sqm', QUEUE, 'upload', sprintf('%d', up));
 	c.set('sqm', QUEUE, 'qdisc', 'cake');
 	c.set('sqm', QUEUE, 'script', 'piece_of_cake.qos');
 	if (!c.commit('sqm')) die('无法提交 QoS 配置');
@@ -93,7 +93,7 @@ export function route_network_qos(bus, method, path, body, owner) {
 				return applied(t);
 			} catch (e) { rollback(t); die(e); }
 		})();
-	} catch (e) { result = reject(e.message || string(e), 'VALIDATION'); }
+	} catch (e) { result = reject(e.message || sprintf('%s', e), 'VALIDATION'); }
 	release();
 	return result;
 };

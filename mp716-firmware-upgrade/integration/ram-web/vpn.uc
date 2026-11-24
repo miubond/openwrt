@@ -5,6 +5,12 @@ import { VPN_KINDS, defaults, validate_vpn, validate_openvpn, ip, mask_bits, num
 import { vpn_plan } from '/usr/share/mp716/vpn-runtime.uc';
 import { check_vpn_services } from '/usr/share/mp716/vpn-services.uc';
 import { command, acquire, release, expire, pending, blocking_pending, dismiss_failed_pending, begin, applied, rollback, store, load } from '/usr/share/mp716/admin-state.uc';
+import { WG_CLIENT_IF, WG_SERVER_IF, wg_models, wg_context, wg_require, wg_service_info, wg_sync, wg_status, cidr4,
+	validate_client, client_view, parse_client_conf, wg_reserved_list } from '/usr/share/mp716/wireguard.uc';
+const WG_CLIENT_ONLY_MSG='当前版本仅支持 WireGuard 客户端';
+function reject_wireguard_server(sub) {
+	if(sub=='server' || index(sub,'server/')==0)die(WG_CLIENT_ONLY_MSG);
+}
 
 const CONFIG='mp716_vpn', RUNTIME='/var/run/mp716-vpn';
 // netifd prepends "pptp-" / "l2tp-" to these names. Keep the resulting
@@ -32,7 +38,7 @@ function owned(c,pkg,name,type) {
 	c.set(pkg,name,'mp716_managed','1');
 }
 function cleanup(c,pkg) {
-	let names=[];c.foreach(pkg,null,(s)=>{if(s.mp716_managed=='1' && (match(s['.name'],/^mp716_vpn_/) || index(['mp716pptp','mp716l2tp'],s['.name'])>=0))push(names,s['.name']);});
+	let names=[];c.foreach(pkg,null,(s)=>{if(s.mp716_managed=='1' && (match(s['.name'],/^mp716_vpn_/) || index(['mp716pptp','mp716l2tp',WG_CLIENT_IF,WG_SERVER_IF],s['.name'])>=0))push(names,s['.name']);});
 	for(let name in names)c.delete(pkg,name);
 }
 function configure(c,pkg,name,section_type,options) {
@@ -88,6 +94,8 @@ export function sync_network(c,m,bus) {
 			configure(c,'firewall','mp716_vpn_esp','rule',{name:'MP716-ESP',src:'wan',proto:'esp',target:'ACCEPT'});
 		}
 	}
+	// cleanup() removed every managed section; rebuild WireGuard ones on any VPN save.
+	if(m.wg)wg_sync(c,m.wg,configure);
 };
 function check_services(kind,cfg) {
 	if(!cfg.enabled)return;
@@ -110,7 +118,7 @@ function online() {
 function public_config(bus,c,kind,m) {
 	let cfg={...m[kind]};
 	try {check_services(kind,{...m[kind],enabled:true});cfg.serviceAvailable=true;cfg.serviceMessage='';}
-	catch(e) {cfg.serviceAvailable=false;cfg.serviceMessage=e.message || string(e);}
+	catch(e) {cfg.serviceAvailable=false;cfg.serviceMessage=e.message || sprintf('%s', e);}
 	if(kind=='users') {
 		cfg.users=map(cfg.users,(u)=>({...u,password:'********'}));cfg.pptpStart=m.pptpd.startIp;cfg.pptpEnd=m.pptpd.endIp;cfg.l2tpStart=m.xl2tpd.startIp;cfg.l2tpEnd=m.xl2tpd.endIp;
 	}else {
@@ -138,8 +146,8 @@ function check_pool(bus,cfg) {
 		}
 	}
 }
-function transaction(c,owner,fn,extra) {
-	let t=begin(owner,[CONFIG,'network','firewall'],'vpn',90,extra);
+function transaction(c,owner,fn,extra,kind) {
+	let t=begin(owner,[CONFIG,'network','firewall'],kind || 'vpn',90,extra);
 	try {ensure(c);if(!c.load('network')||!c.load('firewall'))die('VPN 所需的网络或防火墙配置不存在');fn();if(!c.commit(CONFIG)||!c.commit('network')||!c.commit('firewall'))die('无法提交 VPN 配置');
 		// Client credentials also appear in netifd's UCI package. Restrict that
 		// file as well as the private model; rollback restores original modes.
@@ -188,22 +196,59 @@ function upload_files(body,owner) {
 	} catch(e) {unlink(dir+'/input.gz');unlink(dir+'/archive.tar');die(e);}
 	unlink(dir+'/input.gz');unlink(dir+'/archive.tar');return files;
 }
+function wireguard_ctx(c,bus,m,editing) {
+	let ctx=wg_context(c,bus,m), cl=m.wg.wgclient, sv=m.wg.wgserver;
+	if(editing!='wgclient' && cl.enabled)for(let a in cl.addresses){let n=cidr4(a);if(n)push(ctx.reserved,{label:'WireGuard 客户端',net:n});}
+	if(editing!='wgserver' && sv.enabled){let n=cidr4(sv.address);if(n)push(ctx.reserved,{label:'WireGuard 服务器',net:n});}
+	return ctx;
+}
+function wireguard_get(bus,sub,m) {
+	reject_wireguard_server(sub);
+	if(sub=='client') {
+		let view=wg_service_info(client_view(m.wg.wgclient));
+		view.reservedNets=wg_reserved_list(wireguard_ctx(cursor(),bus,m,'wgclient'));
+		return {data:view};
+	}
+	if(sub=='status')return {data:wg_status(bus,m.wg)};
+	return null;
+}
+function wireguard_post(bus,c,owner,sub,body,m) {
+	let kind, cfg, warnings=[];
+	if((body?.config || body)?.enabled===true)wg_require();
+	if(sub=='client' || sub=='client/import') {
+		let input=body?.config || body;
+		if(sub=='client/import') {let parsed=parse_client_conf(body?.text);input=parsed.config;warnings=parsed.warnings;}
+		kind='wgclient';cfg=validate_client(input,m.wg.wgclient,wireguard_ctx(c,bus,m,kind));
+	} else {
+		reject_wireguard_server(sub);
+		return {error:'NOT_IMPLEMENTED',message:'未知 WireGuard 接口'};
+	}
+	if(cfg.enabled)wg_require();
+	m.wg[kind]=cfg;
+	let result=transaction(c,owner,()=>{save(c,kind,cfg);sync_network(c,m,bus);},null,'wireguard');
+	if(length(warnings))result.data.warnings=warnings;
+	return result;
+}
 export function route_vpn(bus,method,path,body,owner) {
 	if(index(path,'vpn/')!=0)return null;
 	if(!match(owner || '',/^[a-f0-9]{32}$/))return {error:'VALIDATION',message:'无效会话'};
 	let kind=substr(path,4), c=cursor();
 	try {
 		let m=models(c);
+		m.wg=wg_models(c);
 		if(method=='GET') {
 			if(kind=='online')return {data:online()};
 			if(index(VPN_KINDS,kind)>=0)return {data:public_config(bus,c,kind,m)};
+			if(index(kind,'wireguard/')==0)return wireguard_get(bus,substr(kind,10),m);
 			return null;
 		}
 		if(method!='POST')return {error:'VALIDATION',message:'无效请求方式'};
+		if(index(kind,'wireguard/server')==0)reject_wireguard_server(substr(kind,10));
 		if(!acquire())return {error:'DEVICE_BUSY',message:'另一个配置正在执行'};
 		let result;
 		try {result=(function(){
 			expire();if(blocking_pending())return {error:'DEVICE_BUSY',message:'请先确认或撤销当前配置'};dismiss_failed_pending();
+			if(index(kind,'wireguard/')==0)return wireguard_post(bus,c,owner,substr(kind,10),body,m);
 			if(kind=='online/disconnect') {
 				if(!match(body.pid || '',/^[1-9][0-9]{0,7}$/))die('VPN 会话无效');
 				let row=load(RUNTIME+'/sessions/'+body.pid+'.json');
@@ -231,7 +276,7 @@ export function route_vpn(bus,method,path,body,owner) {
 			for(let name in VPN_KINDS)m[name]=validate_vpn(name,m[name],null,m);
 			vpn_plan(m,readfile,'');
 			return transaction(c,owner,()=>{save(c,kind,cfg);sync_network(c,m,bus);});
-		})();}catch(e){result={error:'VALIDATION',message:e.message || string(e)};}
+		})();}catch(e){result={error:'VALIDATION',message:e.message || sprintf('%s', e)};}
 		release();return result;
-	}catch(e){return {error:'VALIDATION',message:e.message || string(e)};}
+	}catch(e){return {error:'VALIDATION',message:e.message || sprintf('%s', e)};}
 };

@@ -41,7 +41,7 @@ function write_rules(c, rows) {
 	let idx = 0;
 	for (let r in rows) {
 		let name = 'mp716_rule_' + idx++;
-		if (!c.add('firewall', 'rule')) die('无法创建防火墙规则');
+		if (!c.set('firewall', name, 'rule')) die('无法创建防火墙规则');
 		c.set('firewall', name, 'name', r.name || name);
 		c.set('firewall', name, 'enabled', r.enabled == false ? '0' : '1');
 		c.set('firewall', name, 'src', r.src || 'lan');
@@ -59,15 +59,15 @@ function write_forwards(c, rows) {
 	let idx = 0;
 	for (let r in rows) {
 		let name = 'mp716_pf_' + idx++;
-		if (!c.add('firewall', 'redirect')) die('无法创建端口转发');
+		if (!c.set('firewall', name, 'redirect')) die('无法创建端口转发');
 		c.set('firewall', name, 'name', r.name || name);
 		c.set('firewall', name, 'enabled', r.enabled == false ? '0' : '1');
 		c.set('firewall', name, 'src', 'wan');
 		c.set('firewall', name, 'dest', 'lan');
 		c.set('firewall', name, 'proto', r.proto || 'tcp');
-		c.set('firewall', name, 'src_dport', string(int(r.extPort || 0)));
+		c.set('firewall', name, 'src_dport', sprintf('%d', int(r.extPort || 0)));
 		c.set('firewall', name, 'dest_ip', r.intIp || '');
-		c.set('firewall', name, 'dest_port', string(int(r.intPort || 0)));
+		c.set('firewall', name, 'dest_port', sprintf('%d', int(r.intPort || 0)));
 		c.set('firewall', name, 'target', 'DNAT');
 	}
 	if (!c.commit('firewall')) die('无法提交端口转发');
@@ -89,7 +89,7 @@ function write_dmz(c, cfg) {
 	if (cfg.enabled) {
 		let ip = cfg.hostIp || '';
 		if (!match(ip, /^[0-9]{1,3}(\.[0-9]{1,3}){3}$/)) die('DMZ 主机 IP 无效');
-		if (!c.add('firewall', 'redirect')) die('无法创建 DMZ 规则');
+		if (!c.set('firewall', 'mp716_dmz', 'redirect')) die('无法创建 DMZ 规则');
 		c.set('firewall', 'mp716_dmz', 'name', 'MP716-DMZ');
 		c.set('firewall', 'mp716_dmz', 'enabled', '1');
 		c.set('firewall', 'mp716_dmz', 'src', 'wan');
@@ -137,7 +137,7 @@ export function route_firewall(bus, method, path, body, owner) {
 				return applied(t);
 			} catch (e) { rollback(t); die(e); }
 		})();
-	} catch (e) { result = reject(e.message || string(e), 'VALIDATION'); }
+	} catch (e) { result = reject(e.message || sprintf('%s', e), 'VALIDATION'); }
 	release();
 	return result;
 };

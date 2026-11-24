@@ -92,5 +92,9 @@
   "POST wireless/config",
   "POST wireless/secondary",
   "POST wizard/complete",
-  "POST wizard/quick"
+  "POST wizard/quick",
+  "GET vpn/wireguard/client",
+  "GET vpn/wireguard/status",
+  "POST vpn/wireguard/client",
+  "POST vpn/wireguard/client/import",
 ]

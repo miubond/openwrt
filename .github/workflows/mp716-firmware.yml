@@ -144,6 +144,14 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+      - name: Upload WireGuard RAM bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: mp716-wireguard-ram-${{ github.sha }}
+          path: mp716-firmware-upgrade/build/target-images/wireguard-ram-*.tgz
+          if-no-files-found: error
+          compression-level: 0
+
       - name: Upload signed test container
         id: test-artifact
         uses: actions/upload-artifact@v4

@@ -1,10 +1,28 @@
 """Install the device Web snapshot and the public test key into an OpenWrt overlay."""
 
 import argparse
+import os
 import re
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from zipfile import ZipFile
+
+BUILD_STAMP = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$")
+
+
+def firmware_build_stamp() -> str:
+    raw = os.environ.get("SOURCE_DATE_EPOCH", "").strip()
+    if raw:
+        try:
+            stamp = datetime.fromtimestamp(int(raw), timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        except (OverflowError, OSError, ValueError) as exc:
+            raise SystemExit(f"Invalid SOURCE_DATE_EPOCH: {raw}") from exc
+    else:
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    if not BUILD_STAMP.fullmatch(stamp):
+        raise SystemExit("Invalid firmware build stamp")
+    return stamp
 
 
 def stage(
@@ -76,7 +94,7 @@ def stage(
     for name in ("mp716-ucode-compile.sh", "build-meta.uc", "admin.uc", "admin-state.uc", "admin-tick.uc", "apply-task.uc", "network-values.uc", "system-values.uc", "physical-ports.uc", "perf-diag.uc", "dispatch.uc", "capabilities.uc", "native-routes.json",
                  "system-admin.uc", "system-apply.uc", "diagnostics.uc", "diagnostic-worker.sh",
                  "firewall-admin.uc", "network-services.uc", "network-routes.uc", "network-qos.uc", "port-links.sh",
-                 "vpn.uc", "vpn-config.uc", "vpn-runtime.uc", "vpn-render.uc", "vpn-hook.uc", "vpn-services.uc", "vpn-health.uc",
+                 "vpn.uc", "vpn-config.uc", "vpn-runtime.uc", "vpn-render.uc", "vpn-hook.uc", "vpn-services.uc", "vpn-health.uc", "wireguard.uc", "wg-health.uc",
                  "vpn-ppp-up.sh", "vpn-ppp-down.sh", "vpn-openvpn-up.sh", "vpn-openvpn-down.sh"):
         shutil.copyfile(Path(__file__).with_name(name), gateway.with_name(name))
         gateway.with_name(name).chmod(0o755 if name.endswith(".sh") else 0o644)
@@ -102,6 +120,7 @@ def stage(
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         raise SystemExit("Invalid firmware build version")
     (root / "etc/mp716-build.version").write_text(version + "\n", encoding="ascii")
+    (root / "etc/mp716-build.date").write_text(firmware_build_stamp() + "\n", encoding="ascii")
 
 
 if __name__ == "__main__":

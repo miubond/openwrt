@@ -628,6 +628,7 @@ export interface AdminPasswordChange {
 
 export interface FirmwareInfo {
   currentVersion: string
+  /** UTC 发布时间，格式 YYYY-MM-DD HH:MM:SS */
   buildDate: string
   hardware: string
   canUpgrade: boolean
