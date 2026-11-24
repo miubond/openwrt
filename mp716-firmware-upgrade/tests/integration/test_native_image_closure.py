@@ -28,7 +28,7 @@ for entry in "${native_entries[@]}"; do printf '%s%s\n' "$TEST_PREFIX" "$entry";
 for plugin in pptp pppoe pppol2tp; do
  printf '%susr/lib/pppd/2.5.2/%s.so\n' "$TEST_PREFIX" "$plugin" >> "$listing"
 done
-for module in ppp_generic ppp_async pppox pppoe pptp ppp_mppe gre ip_gre l2tp_core l2tp_netlink l2tp_ppp tun xfrm_user esp4 nft_xfrm; do
+for module in ppp_generic ppp_async pppox pppoe pptp ppp_mppe gre ip_gre l2tp_core l2tp_netlink l2tp_ppp tun xfrm_user esp4 nft_xfrm wireguard; do
  printf '%slib/modules/6.12.112/%s.ko%s\n' "$TEST_PREFIX" "$module" "$TEST_COMPRESSION" >> "$listing"
 done
 # Stock init scripts are retained for inspection; their rc.d links are forbidden.
@@ -65,6 +65,13 @@ printf '%setc/init.d/openvpn\n' "$TEST_PREFIX" >> "$listing"
         result = self.check_listing(r'''sed -i '/\/nft_xfrm.ko$/d' "$listing"''')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('nft_xfrm', result.stderr)
+
+    def test_missing_wireguard_kernel_module_or_tool_is_rejected(self):
+        for pattern, name in [(r'\/wireguard.ko$', 'wireguard'), (r'usr\/bin\/wg$', 'usr/bin/wg')]:
+            with self.subTest(name=name):
+                result = self.check_listing(f"sed -i '/{pattern}/d' \"$listing\"")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(name, result.stderr)
 
     def test_stock_vpn_start_and_stop_links_are_rejected_in_both_images(self):
         for prefix in ['', 'squashfs-root/']:

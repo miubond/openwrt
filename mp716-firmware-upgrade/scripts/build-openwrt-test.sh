@@ -250,9 +250,7 @@ for plugin in nonce aes des gmpdh hmac kdf kernel-netlink md5 mgf1 pubkey random
 	native_entries+=("usr/lib/ipsec/plugins/libstrongswan-$plugin.so" "etc/strongswan.d/charon/$plugin.conf")
 done
 for module in ppp_generic ppp_async pppox pppoe pptp ppp_mppe gre ip_gre \
-	l2tp_core l2tp_netlink l2tp_ppp tun xfrm_user esp4 nft_xfrm \
-	wireguard curve25519 chacha20poly1305 libchacha20poly1305 poly1305-mips chacha-mips \
-	udp_tunnel ip6_udp_tunnel libcurve25519-generic blake2s-generic; do
+	l2tp_core l2tp_netlink l2tp_ppp tun xfrm_user esp4 nft_xfrm wireguard; do
 	native_patterns+=("lib/modules/[^/]+/$module\\.ko(\\.(xz|zst|gz))?")
 done
 check_native_rootfs() {
