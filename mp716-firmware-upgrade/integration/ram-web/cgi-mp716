@@ -1,0 +1,10 @@
+#!/bin/sh
+# 生产网关：ucode（OpenWrt 25.12 + uhttpd）。优先执行预编译字节码，见 mp716-ucode-compile.sh。
+B=/tmp/mp716-ucb/httpd.ucb
+[ -r "$B" ] && exec /usr/bin/ucode "$B"
+[ -x /usr/bin/ucode ] && [ -r /usr/share/mp716/httpd.uc ] || {
+	printf 'Status: 503 Service Unavailable\r\nContent-Type: application/json\r\n\r\n'
+	printf '{"ok":false,"code":"NOT_IMPLEMENTED","message":"mp716 production httpd requires ucode","ts":%s}\n' "$(date +%s)"
+	exit 0
+}
+exec /usr/bin/ucode /usr/share/mp716/httpd.uc

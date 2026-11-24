@@ -221,7 +221,7 @@ network_entries=(sbin/swconfig sbin/fw4 usr/sbin/nft usr/sbin/dnsmasq
 # selection alone cannot prove that an overlay, plugin or rc.d policy was shipped.
 native_entries=(usr/sbin/uhttpd sbin/rpcd usr/bin/ucode usr/bin/jsonfilter
 	usr/lib/ucode/fs.so usr/lib/ucode/ubus.so usr/lib/ucode/uci.so
-	www/index.html www/mp716/index.html www/cgi-bin/mp716
+	www/mp716/index.html www/cgi-bin/mp716
 	etc/init.d/mp716-admin etc/init.d/mp716-vpn
 	etc/rc.d/S18mp716-admin etc/rc.d/S59mp716-vpn
 	etc/uci-defaults/98-mp716-admin etc/mp716-build.version
