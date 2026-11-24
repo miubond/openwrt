@@ -15,6 +15,9 @@ if (-not (Test-Path $plink)) { throw "PuTTY plink not found: $plink" }
 if (-not (Test-Path $ImagePath)) { throw "Missing image: $ImagePath" }
 
 $remote = '/tmp/mp716-sysupgrade-ci.bin'
+# With the full service set running, sysupgrade stalled at "Saving config files" on 64 MB RAM.
+Write-Host '==> stop non-essential services and drop caches'
+& $plink -ssh "root@$RouterHost" -pw $pwd -hostkey $hk -batch "for s in mp716-admin mp716-vpn uhttpd miniupnpd odhcpd wpad sysntpd cron ipsec openvpn pptpd xl2tpd urngd; do /etc/init.d/`$s stop >/dev/null 2>&1; done; sync; echo 3 > /proc/sys/vm/drop_caches"
 Write-Host "==> upload $ImagePath -> $RouterHost`:$remote"
 & scp -O $ImagePath "root@${RouterHost}:$remote"
 Write-Host '==> sysupgrade -T'
