@@ -282,40 +282,42 @@ stage_ko() {
 	esac
 }
 export_wireguard_ram_bundle() {
-	local linux_dirs=(build_dir/target-*/linux-ramips_mt76x8/linux-*/) targets=(build_dir/target-*/) kver stage name file
-	[ "${#linux_dirs[@]}" -eq 1 ] || { echo "Missing kernel build directory." >&2; return 2; }
-	[ "${#targets[@]}" -eq 1 ] || { echo "Missing target build directory." >&2; return 2; }
-	kver=$(sed -n 's/^# Linux\/mips \([^ ]*\) Kernel Configuration$/\1/p' "${linux_dirs[0]}.config")
-	[ -n "$kver" ] || kver=$(basename "${linux_dirs[0]}" | sed 's/^linux-//')
+	local target_dir linux_dir kver stage name file
+	target_dir=$(find build_dir -maxdepth 1 -type d -name 'target-*' 2>/dev/null | LC_ALL=C sort | head -n1)
+	[ -n "$target_dir" ] || { echo "Missing target build directory." >&2; return 2; }
+	linux_dir=$(find "$target_dir/linux-ramips_mt76x8" -maxdepth 1 -type d -name 'linux-*' 2>/dev/null | LC_ALL=C sort | head -n1)
+	[ -n "$linux_dir" ] || { echo "Missing kernel build directory under $target_dir/linux-ramips_mt76x8." >&2; return 2; }
+	kver=$(sed -n 's/^# Linux\/mips \([^ ]*\) Kernel Configuration$/\1/p' "$linux_dir/.config")
+	[ -n "$kver" ] || kver=$(basename "$linux_dir" | sed 's/^linux-//')
 	stage="$output/wireguard-ram"
 	rm -rf "$stage" && mkdir -p "$stage/modules"
-	file=$(find "${targets[0]}" -type f \( \
+	file=$(find "$target_dir" -type f \( \
 		-path '*/.pkgdir/kmod-wireguard*/lib/modules/*' -o \
 		-path '*/ipkg-*/kmod-wireguard/lib/modules/*' \) \
 		\( -name wireguard.ko -o -name wireguard.ko.xz -o -name wireguard.ko.zst -o -name wireguard.ko.gz \) \
 		2>/dev/null | head -n1)
 	[ -n "$file" ] && stage_ko "$file" "$stage/modules/wireguard.ko" || {
-		echo "Missing packaged wireguard.ko (searched under ${targets[0]})." >&2; return 2; }
+		echo "Missing packaged wireguard.ko (searched under $target_dir)." >&2; return 2; }
 	for name in libcurve25519-generic chacha20poly1305 libchacha20poly1305 poly1305-mips chacha-mips \
 		udp_tunnel ip6_udp_tunnel blake2s-generic; do
-		file=$(find "${targets[0]}" -type f -path "*/lib/modules/$kver/$name.ko" 2>/dev/null | head -n1)
-		[ -z "$file" ] && file=$(find "${targets[0]}" -type f \
+		file=$(find "$target_dir" -type f -path "*/lib/modules/$kver/$name.ko" 2>/dev/null | head -n1)
+		[ -z "$file" ] && file=$(find "$target_dir" -type f \
 			\( -path "*/lib/modules/$kver/$name.ko.xz" -o -path "*/lib/modules/$kver/$name.ko.zst" \
 			-o -path "*/lib/modules/$kver/$name.ko.gz" \) 2>/dev/null | head -n1)
 		[ -z "$file" ] && continue
 		[ -f "$stage/modules/$name.ko" ] || stage_ko "$file" "$stage/modules/$name.ko" || true
 	done
-	file=$(find "${targets[0]}" -type f \( \
+	file=$(find "$target_dir" -type f \( \
 		-path '*/.pkgdir/wireguard-tools/usr/bin/wg' -o \
 		-path '*/ipkg-*/wireguard-tools/usr/bin/wg' -o \
 		-path '*/.pkgdir/wireguard-tools/usr/sbin/wg' \) 2>/dev/null | head -n1)
 	[ -n "$file" ] && cp "$file" "$stage/wg" || { echo "Missing packaged /usr/bin/wg." >&2; return 2; }
-	file=$(find "${targets[0]}" -type f \( \
+	file=$(find "$target_dir" -type f \( \
 		-path '*/.pkgdir/wireguard-tools/lib/netifd/proto/wireguard.sh' -o \
 		-path '*/.pkgdir/wireguard-tools-*/lib/netifd/proto/wireguard.sh' -o \
 		-path '*/ipkg-*/wireguard-tools/lib/netifd/proto/wireguard.sh' \) 2>/dev/null | head -n1)
 	[ -n "$file" ] && cp "$file" "$stage/wireguard.sh" || { echo "Missing packaged wireguard.sh." >&2; return 2; }
-	grep -E '^CONFIG_[A-Z0-9_]+=y$' "${linux_dirs[0]}.config" | LC_ALL=C sort > "$stage/kernel-builtin.config"
+	grep -E '^CONFIG_[A-Z0-9_]+=y$' "$linux_dir/.config" | LC_ALL=C sort > "$stage/kernel-builtin.config"
 	{
 		echo "kernel=$kver"
 		if command -v modinfo >/dev/null 2>&1; then
