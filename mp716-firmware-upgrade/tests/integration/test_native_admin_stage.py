@@ -66,7 +66,7 @@ class NativeAdminStageTests(unittest.TestCase):
 
     def test_native_services_survive_boot_and_upgrade_configuration_retention(self):
         defaults = (self.root / 'etc/uci-defaults/98-mp716-admin').read_text()
-        for service in ('mp716-admin', 'mp716-vpn'):
+        for service in ('mp716-admin', 'mp716-vpn', 'mp716-timefix'):
             self.assertIn(f'/etc/init.d/{service} enable', defaults)
             self.assertIn(f'/etc/init.d/{service} start', defaults)
             self.assertTrue((self.root / 'etc/init.d' / service).is_file())

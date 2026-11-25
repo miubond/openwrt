@@ -219,8 +219,8 @@ network_entries=(sbin/swconfig sbin/fw4 usr/sbin/nft usr/sbin/dnsmasq
 native_entries=(usr/sbin/uhttpd sbin/rpcd usr/bin/ucode usr/bin/jsonfilter
 	usr/lib/ucode/fs.so usr/lib/ucode/ubus.so usr/lib/ucode/uci.so
 	www/mp716/index.html www/cgi-bin/mp716
-	etc/init.d/mp716-admin etc/init.d/mp716-vpn
-	etc/rc.d/S18mp716-admin etc/rc.d/S59mp716-vpn
+	etc/init.d/mp716-admin etc/init.d/mp716-vpn etc/init.d/mp716-timefix
+	etc/rc.d/S18mp716-admin etc/rc.d/S59mp716-vpn etc/rc.d/S99mp716-timefix
 	etc/uci-defaults/98-mp716-admin etc/mp716-build.version etc/mp716-build.date
 	usr/share/mp716/build-meta.uc
 	lib/upgrade/keep.d/mp716-admin usr/share/rpcd/acl.d/mp716.json
@@ -235,7 +235,7 @@ for module in httpd admin admin-state admin-tick apply-task network-values syste
 	native_entries+=("usr/share/mp716/$module.uc")
 done
 native_entries+=(usr/share/mp716/native-routes.json)
-for hook in diagnostic-worker vpn-ppp-up vpn-ppp-down vpn-openvpn-up vpn-openvpn-down; do
+for hook in diagnostic-worker vpn-ppp-up vpn-ppp-down vpn-openvpn-up vpn-openvpn-down timefix; do
 	native_entries+=("usr/share/mp716/$hook.sh")
 done
 native_patterns=()

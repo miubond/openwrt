@@ -95,13 +95,16 @@ def stage(
                  "system-admin.uc", "system-apply.uc", "diagnostics.uc", "diagnostic-worker.sh",
                  "firewall-admin.uc", "network-services.uc", "network-routes.uc", "network-qos.uc", "port-links.sh",
                  "vpn.uc", "vpn-config.uc", "vpn-runtime.uc", "vpn-render.uc", "vpn-hook.uc", "vpn-services.uc", "vpn-health.uc", "wireguard.uc", "wg-health.uc",
-                 "vpn-ppp-up.sh", "vpn-ppp-down.sh", "vpn-openvpn-up.sh", "vpn-openvpn-down.sh"):
+                 "vpn-ppp-up.sh", "vpn-ppp-down.sh", "vpn-openvpn-up.sh", "vpn-openvpn-down.sh", "timefix.sh"):
         shutil.copyfile(Path(__file__).with_name(name), gateway.with_name(name))
         gateway.with_name(name).chmod(0o755 if name.endswith(".sh") else 0o644)
     vpn_init = root / "etc/init.d/mp716-vpn"
     vpn_init.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("mp716-vpn.init"), vpn_init)
     vpn_init.chmod(0o755)
+    timefix_init = root / "etc/init.d/mp716-timefix"
+    shutil.copyfile(Path(__file__).with_name("mp716-timefix.init"), timefix_init)
+    timefix_init.chmod(0o755)
     keep = root / "lib/upgrade/keep.d/mp716-admin"
     keep.parent.mkdir(parents=True, exist_ok=True)
     keep.write_text("/etc/mp716-admin/\n/etc/mp716-vpn/\n/etc/mp716-upgrade/installed.at\n", encoding="ascii")
@@ -111,7 +114,7 @@ def stage(
     init.chmod(0o755)
     defaults = root / "etc/uci-defaults/98-mp716-admin"
     defaults.parent.mkdir(parents=True, exist_ok=True)
-    defaults.write_text("#!/bin/sh\n/etc/init.d/mp716-admin enable\n/etc/init.d/mp716-vpn enable\n/etc/init.d/mp716-admin start\n/etc/init.d/mp716-vpn start\n", encoding="ascii")
+    defaults.write_text("#!/bin/sh\n/etc/init.d/mp716-admin enable\n/etc/init.d/mp716-vpn enable\n/etc/init.d/mp716-timefix enable\n/etc/init.d/mp716-admin start\n/etc/init.d/mp716-vpn start\n/etc/init.d/mp716-timefix start\n", encoding="ascii")
     defaults.chmod(0o755)
     sqm_defaults = root / "etc/uci-defaults/99-mp716-sqm-defaults"
     shutil.copyfile(Path(__file__).with_name("99-mp716-sqm-defaults"), sqm_defaults)
