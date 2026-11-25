@@ -28,7 +28,7 @@ for entry in "${native_entries[@]}"; do printf '%s%s\n' "$TEST_PREFIX" "$entry";
 for plugin in pptp pppoe pppol2tp; do
  printf '%susr/lib/pppd/2.5.2/%s.so\n' "$TEST_PREFIX" "$plugin" >> "$listing"
 done
-for module in ppp_generic ppp_async pppox pppoe pptp ppp_mppe gre ip_gre l2tp_core l2tp_netlink l2tp_ppp tun xfrm_user esp4 nft_xfrm; do
+for module in ppp_generic ppp_async pppox pppoe pptp ppp_mppe gre ip_gre l2tp_core l2tp_netlink l2tp_ppp tun xfrm_user esp4 nft_xfrm wireguard; do
  printf '%slib/modules/6.12.112/%s.ko%s\n' "$TEST_PREFIX" "$module" "$TEST_COMPRESSION" >> "$listing"
 done
 # Stock init scripts are retained for inspection; their rc.d links are forbidden.
