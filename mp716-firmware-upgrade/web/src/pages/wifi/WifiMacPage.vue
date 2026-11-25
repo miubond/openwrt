@@ -16,7 +16,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm()
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const savingMode = ref(false)
 const savingList = ref(false)
@@ -77,7 +77,7 @@ async function saveMode() {
       }),
     )
     savedMode.value = mode.value
-    toast.success(t('wifiMac.appliedMode'))
+    notifySaved(result, 'wifiMac.appliedMode')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {
@@ -90,14 +90,15 @@ async function saveMode() {
 async function commitList(next: WirelessAclEntry[]) {
   savingList.value = true
   try {
-    unwrap(
+    const result = unwrap(
       await getRouterApi().updateWirelessAcl({
         mode: mode.value,
         entries: next,
       }),
     )
+    if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     rows.value = next
-    toast.success(t('wifiMac.appliedList'))
+    notifySaved(result, 'wifiMac.appliedList')
     closeAdd()
   } catch (e) {
     toast.error(formatApiError(e, t))
@@ -189,7 +190,7 @@ onMounted(() => void load())
 <template>
   <div>
     <p class="page-desc">{{ t('wifiMac.desc') }}</p>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <template v-else>
       <UiCard class="mb">

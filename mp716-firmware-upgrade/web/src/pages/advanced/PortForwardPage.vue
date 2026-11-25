@@ -27,7 +27,7 @@ interface PortForwardUi {
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm()
+const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const form = reactive({ portForwards: [] as PortForwardUi[] })
@@ -111,7 +111,7 @@ onMounted(() => void load())
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else :title="t('portForward.title')">
       <EmptyState v-if="!form.portForwards.length" :title="t('common.emptyRules')" class="mb-3" />

@@ -28,7 +28,7 @@ function poolLimitFromIps(startIp: string, endIp: string): number {
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm()
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const savingStatic = ref(false)
@@ -37,7 +37,7 @@ const form = reactive({
   enabled: true,
   startIp: '192.168.199.1',
   endIp: '192.168.199.254',
-  leasetime: '7200',
+  leasetime: '7200' as string | number,
 })
 const minIp = ref('')
 const maxIp = ref('')
@@ -81,7 +81,7 @@ function toDhcpConfig(): DhcpConfig {
     enabled: form.enabled,
     start: Number(startIp.split('.').pop()) || 0,
     limit: poolLimitFromIps(startIp, endIp),
-    leasetime: form.leasetime.trim(),
+    leasetime: String(form.leasetime).trim(),
     gateway: '',
     dns: [],
     leases: [],
@@ -98,7 +98,7 @@ async function save() {
   saving.value = true
   try {
     const result = unwrap(await getRouterApi().updateDhcpConfig(toDhcpConfig()))
-    toast.success(t('common.configApplied'))
+    notifySaved(result, 'common.configApplied')
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load(true)
   } catch (e) {
@@ -160,9 +160,10 @@ function pickScan(row: ConnectedDevice) {
 async function commitStatic(next: StaticDhcpBinding[]) {
   savingStatic.value = true
   try {
-    unwrap(await getRouterApi().updateDhcpStaticBindings(next))
+    const result = unwrap(await getRouterApi().updateDhcpStaticBindings(next))
+    if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     staticBindings.value = next
-    toast.success(t('dhcp.staticSaved'))
+    notifySaved(result, 'dhcp.staticSaved')
     closeAdd()
   } catch (e) {
     toast.error(formatApiError(e, t))
@@ -201,7 +202,7 @@ onMounted(() => void load())
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <template v-else>
       <UiCard class="mb">

@@ -15,7 +15,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm()
+const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
 const rows = ref<FirewallRule[]>([])
@@ -72,7 +72,7 @@ onMounted(() => void load())
 <template>
   <div>
     <p class="page-desc">{{ t('firewall.pageDesc') }}</p>
-    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else :title="t('firewall.basicTitle')">
       <template #actions>
