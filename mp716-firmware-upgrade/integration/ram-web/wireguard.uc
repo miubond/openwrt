@@ -165,6 +165,23 @@ function protect_management(c,configure) {
 		pri++;
 	}
 };
+// Global mode keeps the WAN default route so the endpoint can reconnect, and
+// installs a forward reject so LAN traffic cannot use that route when the
+// tunnel is down. useDns also pauses DHCP DNS; a manual peerdns=0 is left alone.
+function hold_wan_dns(c, hold) {
+	for(let name in ['wan','wan6']) {
+		if(type(c.get('network',name))!='string')continue;
+		let mark='mp716_wg_hold_peerdns';
+		if(hold) {
+			if(c.get('network',name,mark)!='1') {
+				if(c.get('network',name,'peerdns')=='0')continue;
+				if(!c.set('network',name,mark,'1') || !c.set('network',name,'peerdns','0'))die('无法暂停 WAN 自动 DNS');
+			} else if(c.get('network',name,'peerdns')!='0' && !c.set('network',name,'peerdns','0'))die('无法暂停 WAN 自动 DNS');
+		} else if(c.get('network',name,mark)=='1') {
+			if(!c.set('network',name,'peerdns','1') || !c.delete('network',name,mark))die('无法恢复 WAN 自动 DNS');
+		}
+	}
+};
 export function wg_reserved_list(ctx) {
 	let out=[];
 	for(let r in ctx?.reserved || [])push(out,{label:r.label,cidr:dotted(r.net.network)+'/'+r.net.bits});
@@ -404,8 +421,12 @@ export function wg_sync(c,wg,configure) {
 		configure(c,'network','mp716_vpn_wgc_peer','wireguard_'+WG_CLIENT_IF,peer);
 		configure(c,'firewall','mp716_vpn_wgc_zone','zone',{name:WG_CLIENT_IF,network:[WG_CLIENT_IF],input:'REJECT',output:'ACCEPT',forward:'REJECT',masq:'1',mtu_fix:'1'});
 		configure(c,'firewall','mp716_vpn_wgc_fwd_lan','forwarding',{src:'lan',dest:WG_CLIENT_IF});
-		if(cl.routeMode=='global')protect_management(c,configure);
+		if(cl.routeMode=='global') {
+			protect_management(c,configure);
+			configure(c,'firewall','mp716_vpn_wgc_nowan','rule',{name:'MP716-WG-no-wan-leak',src:'lan',dest:'wan',proto:'all',target:'REJECT'});
+		}
 	}
+	hold_wan_dns(c, cl?.enabled==true && cl.routeMode=='global' && cl.useDns==true);
 	if(sv?.enabled) {
 		configure(c,'network',WG_SERVER_IF,'interface',{proto:'wireguard',private_key:sv.privateKey,listen_port:sprintf('%d',sv.listenPort),
 			addresses:[sv.address],mtu:sprintf('%d',sv.mtu),auto:'1'});
@@ -438,6 +459,11 @@ function wg_show(ifname,what) {
 	}
 	return rows;
 }
+function link_is_up(name) {
+	// IFF_UP is the low bit. WireGuard stays operstate "unknown" while forwarding.
+	let flags=trim(readfile('/sys/class/net/'+name+'/flags') || '');
+	return !!match(flags,/^[0-9A-Fa-fx]*[13579bBdDfF][ \t]*$/);
+}
 function iface_status(bus,name) {
 	let s=(bus?bus.call('network.interface.'+name,'status',{}):null) || {};
 	let addrs=s['ipv4-address'] || [], v6=s['ipv6-address'] || [];
@@ -447,7 +473,9 @@ function iface_status(bus,name) {
 		let msg=type(e)=='object'?(e.code || e.subsystem || ''):trim(sprintf('%s',e));
 		if(length(msg)>0 && length(msg)<120 && !match(msg,/[;|&`$]/))push(errors,msg);
 	}
-	return {up:s.up==true,address:address,error:length(errors)>0,errors:errors};
+	let link=link_is_up(name), up=s.up==true || link;
+	if(link)errors=[];
+	return {up:up,address:address,error:length(errors)>0,errors:errors};
 }
 function peer_stats(name,keys) {
 	let hs=wg_show(name,'latest-handshakes'), tr=wg_show(name,'transfer'), ep=wg_show(name,'endpoints'), now=time(), out={};

@@ -100,7 +100,7 @@ export function reload(kind,task_id) {
 		system:'/usr/bin/ucode /usr/share/mp716/system-apply.uc',vpn:'/etc/init.d/mp716-vpn reload && /usr/bin/ucode /usr/share/mp716/vpn-health.uc',firewall:'/etc/init.d/firewall reload',
 		upnpd:'/etc/init.d/miniupnpd restart 2>/dev/null || /etc/init.d/upnpd restart 2>/dev/null || true',ddns:'/etc/init.d/ddns restart 2>/dev/null || true',
 		sqm:'/etc/init.d/sqm restart 2>/dev/null || true',
-		wireguard:'/bin/ubus call network reload && /etc/init.d/firewall reload && /usr/bin/ucode /usr/share/mp716/wg-health.uc'};
+		wireguard:'/bin/ubus call network reload && /etc/init.d/firewall reload && /etc/init.d/dnsmasq reload && /usr/bin/ucode /usr/share/mp716/wg-health.uc'};
 	let kinds=kind=='all'?['network','wireless','dhcp','system','vpn','firewall']:kind=='network-wireless'?['network','wireless']:kind=='network-dhcp'?['network','dhcp']:kind=='none'?[]:[kind];
 	for(let name in kinds) {
 		let current=task_id?pending():null;
@@ -108,7 +108,10 @@ export function reload(kind,task_id) {
 			(current.cancelRequested||current.boot!=boot_id()||uptime()>=current.deadline))return {code:-2,cancelled:true,kind:name,output:''};
 		if(!commands[name])return {code:-1,kind:name,output:'Unknown apply kind'};
 		let compound=name=='vpn' || name=='wireguard';
-		let result=command('/bin/busybox timeout -s KILL 25 /bin/sh -c '+quote(compound?commands[name]:'exec '+commands[name]));
+		// VPN/WireGuard reloads netifd and firewall, then waits for the interface.
+		// 25s is shorter than that sequence on MT7628; SIGKILL leaves the iface down.
+		let limit=compound?90:25;
+		let result=command(sprintf('/bin/busybox timeout -s KILL %d /bin/sh -c ',limit)+quote(compound?commands[name]:'exec '+commands[name]));
 		if(result.code!=0)return {...result,kind:name};
 	}
 	return {code:0,output:''};

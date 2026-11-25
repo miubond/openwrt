@@ -117,7 +117,8 @@ let c={
 };
 let bus={call:()=>null};
 let m={};for(let kind in VPN_KINDS)m[kind]=defaults(kind);
-let client={...base,publicKey:K3,routeMode:'global',allowGlobalRoute:true};
+let client={...base,publicKey:K3,routeMode:'global',allowGlobalRoute:true,useDns:true,dns:['1.1.1.1','8.8.8.8']};
+records.network.wan={'.name':'wan','.type':'interface',proto:'dhcp',peerdns:'1'};
 let server={...wg_defaults('wgserver'),enabled:true,privateKey:K4,publicKey:K2,peers:[{id:'pa',name:'a',enabled:true,publicKey:K3,presharedKey:'',address:'10.72.0.2/32',allowedIPs:['192.168.50.0/24'],clientAllowedIPs:[],keepalive:0}]};
 m.wg={wgclient:client,wgserver:server};
 sync_network(c,m,bus);
@@ -125,6 +126,8 @@ let ifc=records.network[WG_CLIENT_IF], peer=records.network.mp716_vpn_wgc_peer;
 assert(ifc?.proto=='wireguard' && ifc.private_key==K1 && ifc.mp716_managed=='1' && peer?.['.type']=='wireguard_'+WG_CLIENT_IF,'client_uci_sections');
 assert(index(peer.allowed_ips,'0.0.0.0/1')>=0 && index(peer.allowed_ips,'128.0.0.0/1')>=0 && index(peer.allowed_ips,'0.0.0.0/0')<0 && ifc.defaultroute==null,'global_mode_never_replaces_default_route');
 assert(records.network.mp716_vpn_wgc_protect_lan?.lookup=='main' && records.network.mp716_vpn_wgc_protect_lan?.dest=='192.168.199.0/24','global_protects_lan_management');
+assert(records.firewall.mp716_vpn_wgc_nowan?.src=='lan' && records.firewall.mp716_vpn_wgc_nowan?.dest=='wan' && records.firewall.mp716_vpn_wgc_nowan?.proto=='all' && records.firewall.mp716_vpn_wgc_nowan?.target=='REJECT','global_blocks_lan_wan_fallback');
+assert(records.network.wan?.peerdns=='0' && records.network.wan?.mp716_wg_hold_peerdns=='1','global_dns_pauses_wan_peerdns');
 let ifs=records.network[WG_SERVER_IF], sp=records.network.mp716_vpn_wgs_pa;
 assert(ifs?.listen_port=='51820' && sp?.public_key==K3 && index(sp.allowed_ips,'10.72.0.2/32')>=0 && index(sp.allowed_ips,'192.168.50.0/24')>=0,'server_uci_sections');
 assert(records.firewall.mp716_vpn_wgs_in?.dest_port=='51820' && records.firewall.mp716_vpn_wgs_zone?.input=='REJECT' && records.firewall.mp716_vpn_wgs_dns && !records.firewall.mp716_vpn_wgs_fwd_wan,'server_firewall_defaults');
@@ -135,5 +138,6 @@ assert(records.network[WG_CLIENT_IF]?.private_key==K1 && records.network.mp716pp
 m.wg={wgclient:{...client,enabled:false},wgserver:{...server,enabled:false}};
 sync_network(c,m,bus);
 assert(!records.network[WG_CLIENT_IF] && !records.network.mp716_vpn_wgs_pa && !records.firewall.mp716_vpn_wgs_in && records.network.mp716pptp,'disable_removes_only_wireguard');
+assert(!records.firewall.mp716_vpn_wgc_nowan && records.network.wan?.peerdns=='1' && records.network.wan?.mp716_wg_hold_peerdns==null,'disable_restores_wan_dns_and_fallback');
 
 printf('%J\n',{passed:length(passed),skipped:skipped,names:passed});

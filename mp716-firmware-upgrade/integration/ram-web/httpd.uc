@@ -116,15 +116,25 @@ function verify_firmware_report(path) {
 	return parse_verify_output(child.read('all'), child.close());
 }
 
+function query_value(name) {
+	for (let part in split(getenv('QUERY_STRING') || '', '&')) {
+		let kv = split(part, '=');
+		if (kv[0] == name) return kv[1] || '';
+	}
+	return null;
+}
+
 function firmware_upload_mode() {
-	let mode = lc(trim(getenv('HTTP_X_MP716_UPGRADE_MODE') || getenv('HTTP_X_MP716_FLASH') || 'verify'));
+	// uhttpd does not forward custom X- headers to CGI. The query string does arrive.
+	let mode = lc(trim(query_value('mode') || getenv('HTTP_X_MP716_UPGRADE_MODE') || getenv('HTTP_X_MP716_FLASH') || 'verify'));
 	if (index(['1', 'true', 'flash', 'apply'], mode) >= 0)
 		return 'flash';
 	return 'verify';
 }
 
 function firmware_keep_settings() {
-	let v = lc(trim(getenv('HTTP_X_MP716_KEEP_SETTINGS') || '1'));
+	let q = query_value('keep');
+	let v = lc(trim(q != null ? q : (getenv('HTTP_X_MP716_KEEP_SETTINGS') || '1')));
 	return index(['0', 'false', 'no'], v) < 0;
 }
 
@@ -176,10 +186,28 @@ function upload_firmware_package() {
 	if (size > FIRMWARE_VERIFY_MAX_BYTES)
 		return fail(400, 'VALIDATION', '固件文件不能超过 8M');
 	let path = '/tmp/mp716-firmware-upload-' + sprintf('%x', time()) + '.mp716upd';
-	let raw = stdin.read(size);
-	if (length(raw) != size)
-		return fail(400, 'VALIDATION', '固件上传不完整');
-	writefile(path, raw);
+	// Stream to tmpfs. Holding the whole image in the ucode process as well fails the
+	// 64MB board's "payload + 8MB" memory budget.
+	let writer = popen('/bin/sh -c ' + shellquote('cat > ' + path), 'w');
+	if (!writer)
+		return fail(500, 'INTERNAL', '无法保存固件文件');
+	let got = 0;
+	while (got < size) {
+		let n = size - got;
+		if (n > 65536) n = 65536;
+		let chunk = stdin.read(n);
+		if (type(chunk) != 'string' || !length(chunk)) {
+			writer.close();
+			unlink(path);
+			return fail(400, 'VALIDATION', '固件上传不完整');
+		}
+		writer.write(chunk);
+		got += length(chunk);
+	}
+	if (writer.close() != 0) {
+		unlink(path);
+		return fail(500, 'INTERNAL', '无法保存固件文件');
+	}
 	chmod(path, 0600);
 	let mode = firmware_upload_mode();
 	if (mode == 'flash') {
