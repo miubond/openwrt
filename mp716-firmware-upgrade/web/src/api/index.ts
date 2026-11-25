@@ -27,7 +27,13 @@ function resolveAdapterKind(): AdapterKind {
   return 'mock'
 }
 
-export { currentSessionToken, setRouterApiTokenGetter } from './session'
+export {
+  currentSessionToken,
+  notifySessionInvalid,
+  setRouterApiTokenGetter,
+  setSessionInvalidHandler,
+  setSessionActiveHandler,
+} from './session'
 
 export function createRouterApi(): RouterAPI {
   return createRouterApiImpl()

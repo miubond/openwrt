@@ -14,16 +14,6 @@ const entries = computed(() => [
     desc: t('devices.wifiAclDesc'),
     to: '/wifi/mac',
   },
-  {
-    title: t('devices.firewallTitle'),
-    desc: t('devices.firewallDesc'),
-    to: '/advanced/firewall',
-  },
-  {
-    title: t('devices.portForwardTitle'),
-    desc: t('devices.portForwardDesc'),
-    to: '/advanced/port-forward',
-  },
 ])
 </script>
 

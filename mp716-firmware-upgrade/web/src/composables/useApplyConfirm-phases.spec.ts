@@ -6,7 +6,11 @@ import { useApplyConfirm } from './useApplyConfirm'
 import ApplyBanner from '@/components/ApplyBanner.vue'
 
 const api = vi.hoisted(() => ({ getConfigTaskStatus: vi.fn(), confirmConfigTask: vi.fn(), cancelConfigTask: vi.fn() }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (s: string) => s }) }))
+vi.mock('vue-i18n', () => ({
+  useI18n: () => ({
+    t: (s: string, p?: { n?: number }) => (p?.n != null ? `${s}:${p.n}` : s),
+  }),
+}))
 vi.mock('@/api', () => ({ getRouterApi: () => api, unwrap: (r: { data: unknown }) => r.data, formatApiError: (e: Error) => e.message, asApplyHandle: (r: { taskId: string; rollbackSec: number; phase?: string }) => ({ applyId: r.taskId, timeoutSec: r.rollbackSec, phase: r.phase }) }))
 let control: ReturnType<typeof useApplyConfirm>, wrapper: ReturnType<typeof mount>
 const rolledBack = vi.fn()
@@ -88,9 +92,23 @@ it('displays real service failure and disables confirmation while retaining roll
   expect(buttons[1]!.attributes('disabled')).toBeDefined()
   banner.unmount()
 })
+it('always shows the remaining countdown while waiting for confirmation', () => {
+  const banner = mount(ApplyBanner, {
+    props: { remaining: 56, applying: false, phase: 'applied', message: '服务配置已应用，等待确认' },
+  })
+  expect(banner.text()).toContain('apply.waitingDesc:56')
+  expect(banner.text()).not.toContain('服务配置已应用，等待确认')
+  banner.unmount()
+})
 it('disables both controls during the asynchronous device rollback', () => {
   const banner = mount(ApplyBanner, { props: { remaining: 0, applying: true, phase: 'rolling_back' } })
   expect(banner.text()).toContain('apply.rollingBackTitle')
   for (const button of banner.findAll('button')) expect(button.attributes('disabled')).toBeDefined()
+  banner.unmount()
+})
+it('shows loading label on keep while a confirm request is in flight', () => {
+  const banner = mount(ApplyBanner, { props: { remaining: 40, applying: true, phase: 'applied' } })
+  expect(banner.text()).toContain('common.applying')
+  expect(banner.findAll('button')[1]!.attributes('disabled')).toBeDefined()
   banner.unmount()
 })

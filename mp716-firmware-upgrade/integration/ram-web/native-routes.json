@@ -96,5 +96,5 @@
   "GET vpn/wireguard/client",
   "GET vpn/wireguard/status",
   "POST vpn/wireguard/client",
-  "POST vpn/wireguard/client/import",
+  "POST vpn/wireguard/client/import"
 ]

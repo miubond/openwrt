@@ -52,6 +52,7 @@ import type {
   WifiAdvancedConfig,
   WifiCipher,
   WifiConfig,
+  WifiSecondaryConfig,
   WifiHtMode,
   WifiMode,
   WifiSecurity,
@@ -710,28 +711,14 @@ function leaseSeconds(value: string): number | null {
 const cgiInFlight = new Map<string, Promise<ApiResponse<HuayiBody>>>()
 /** 读类 HYID 短缓存：合并路由 ping 与首页同 HYID，减轻刷新串行重复 */
 const cgiCache = new Map<string, { at: number; res: ApiResponse<HuayiBody> }>()
-const CGI_READ_CACHE_TTL_MS = 8_000
+const CGI_READ_CACHE_TTL_MS = 2_500
 const CGI_READ_CACHE_HYIDS = new Set<number>([
   HUAYI_HYID.getPreLoginConfig,
   HUAYI_HYID.getNetworkInfo,
   HUAYI_HYID.getAllStaList,
   HUAYI_HYID.getHomeSystemInfo,
   HUAYI_HYID.getHomeNetworkInfo,
-  HUAYI_HYID.getDeviceInfo,
-  HUAYI_HYID.getUpgradeInfo,
-  HUAYI_HYID.getCurrentUserInfo,
 ])
-
-function invalidateCgiReadCache(hyid?: number) {
-  if (hyid === undefined) {
-    cgiCache.clear()
-    return
-  }
-  const needle = `#${hyid}`
-  for (const key of [...cgiCache.keys()]) {
-    if (key.includes(needle)) cgiCache.delete(key)
-  }
-}
 
 function cgiRequestKey(url: string, hyid: number, extra?: Record<string, unknown>): string {
   if (!extra || Object.keys(extra).length === 0) return `${url}#${hyid}`
@@ -1628,6 +1615,51 @@ export class FactoryCgiAdapter implements RouterAPI {
     void rules
     return blocked<ConfigApplyResult>('updatePortForwards')
   }
+  getDmzConfig() {
+    return blocked<import('../types').DmzConfig>('getDmzConfig')
+  }
+  updateDmzConfig(config: import('../types').DmzConfig) {
+    void config
+    return blocked<ConfigApplyResult>('updateDmzConfig')
+  }
+  getUpnpConfig() {
+    return blocked<import('../types').UpnpConfig>('getUpnpConfig')
+  }
+  updateUpnpConfig(config: import('../types').UpnpConfig) {
+    void config
+    return blocked<ConfigApplyResult>('updateUpnpConfig')
+  }
+  getDdnsConfig() {
+    return blocked<import('../types').DdnsConfig>('getDdnsConfig')
+  }
+  updateDdnsConfig(config: import('../types').DdnsConfig) {
+    void config
+    return blocked<ConfigApplyResult>('updateDdnsConfig')
+  }
+  getSystemCapabilities() {
+    return blocked<import('../types').NativeCapabilities>('getSystemCapabilities')
+  }
+  getWireGuardClient() {
+    return blocked<import('../types').WireGuardClientConfig>('getWireGuardClient')
+  }
+  updateWireGuardClient(config: import('../types').WireGuardClientConfig) {
+    void config
+    return blocked<ConfigApplyResult>('updateWireGuardClient')
+  }
+  importWireGuardClient(text: string) {
+    void text
+    return blocked<import('../types').WireGuardImportResult>('importWireGuardClient')
+  }
+  getWireGuardStatus() {
+    return blocked<import('../types').WireGuardStatus>('getWireGuardStatus')
+  }
+  getStaticRoutes() {
+    return blocked<import('../types').NetworkStaticRoute[]>('getStaticRoutes')
+  }
+  updateStaticRoutes(routes: import('../types').NetworkStaticRoute[]) {
+    void routes
+    return blocked<ConfigApplyResult>('updateStaticRoutes')
+  }
   getQosCapability() {
     return blocked<QosCapability>('getQosCapability')
   }
@@ -1637,6 +1669,13 @@ export class FactoryCgiAdapter implements RouterAPI {
   updateQosConfig(config: QosConfig) {
     void config
     return blocked<ConfigApplyResult>('updateQosConfig')
+  }
+  getWifiSecondaryConfig() {
+    return blocked<WifiSecondaryConfig>('getWifiSecondaryConfig')
+  }
+  updateWifiSecondaryConfig(config: WifiSecondaryConfig) {
+    void config
+    return blocked<ConfigApplyResult>('updateWifiSecondaryConfig')
   }
   async getWifiAdvanced(): Promise<ApiResponse<WifiAdvancedConfig>> {
     const [basic, adv] = await Promise.all([
@@ -2135,19 +2174,14 @@ export class FactoryCgiAdapter implements RouterAPI {
   }
   async uploadFirmware(
     file: Blob,
-    options?: { keepSettings?: boolean; maxBytes?: number; maxSizeLabel?: string },
+    options?: { keepSettings?: boolean },
   ): Promise<ApiResponse<ConfigApplyResult>> {
     if (file.size < 1) return failure('VALIDATION', '请选择要上传的文件')
-    let maxBytes = options?.maxBytes ?? 0
-    let maxSizeLabel = options?.maxSizeLabel ?? ''
-    if (maxBytes < 1) {
-      const info = await this.getFirmwareInfo()
-      if (!info.ok) return info
-      maxBytes = info.data.maxBytes ?? 0
-      maxSizeLabel = info.data.maxSizeLabel ?? ''
-    }
+    const info = await this.getFirmwareInfo()
+    if (!info.ok) return info
+    const maxBytes = info.data.maxBytes ?? 0
     if (maxBytes > 0 && file.size > maxBytes) {
-      const tip = maxSizeLabel
+      const tip = info.data.maxSizeLabel
       return failure('VALIDATION', tip ? `文件不能大于${tip}!` : '文件超过升级大小限制')
     }
     const keep = options?.keepSettings === false ? '0' : '1'
@@ -2157,7 +2191,6 @@ export class FactoryCgiAdapter implements RouterAPI {
     if (!res.ok) return res
     const errcode = readErrcode(res.data)
     if (errcode === 2000) {
-      invalidateCgiReadCache(HUAYI_HYID.getUpgradeInfo)
       return success({ accepted: true, rollbackSec: 0, message: '固件已上传，设备正在升级' })
     }
     if (errcode === 4001) return failure('UNAUTHORIZED', '会话无效或已过期，请重新登录', res.data)

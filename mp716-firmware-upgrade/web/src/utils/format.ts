@@ -17,6 +17,21 @@ export function formatRate(bps: number): string {
   return `${parts.value}${parts.unit}`
 }
 
+/** 实时速率：未就绪时返回占位，避免把采样前的 0 当成真实速率 */
+export function formatLiveRate(bps: number | undefined, ratesReady: boolean | undefined, pending: string): string {
+  if (ratesReady === false) return pending
+  return formatRate(bps ?? 0)
+}
+
+export function formatLiveRateParts(
+  bps: number | undefined,
+  ratesReady: boolean | undefined,
+  pending: string,
+): { value: string; unit: string } {
+  if (ratesReady === false) return { value: pending, unit: '' }
+  return formatRateParts(bps ?? 0)
+}
+
 export function formatRateParts(bps: number): { value: string; unit: string } {
   if (!Number.isFinite(bps) || bps < 0) return { value: '—', unit: '' }
   const trim1 = (n: number) => {

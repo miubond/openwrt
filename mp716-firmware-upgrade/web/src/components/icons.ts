@@ -5,6 +5,7 @@ import {
   Bell,
   Clock,
   Cloud,
+  Copy,
   Database,
   Download,
   EthernetPort,
@@ -93,6 +94,7 @@ export const iconMap = {
   edit: SquarePen,
   pen: PenLine,
   trash: Trash2,
+  copy: Copy,
 } as const satisfies Record<string, Component>
 
 export type IconName = keyof typeof iconMap

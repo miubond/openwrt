@@ -1,10 +1,10 @@
 /**
  * 字体对齐 duoduoyun admin：
- * HarmonyOS Sans SC 优先，Noto Sans SC / PingFang / YaHei 回退。
+ * HarmonyOS Sans SC 优先；本地 PingFang / YaHei 作即时回退，避免等 CDN。
  */
 :root {
   --font-family-app:
-    'HarmonyOS Sans SC', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', '微软雅黑', system-ui,
+    'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', '微软雅黑', 'Noto Sans SC', system-ui,
     sans-serif;
   --font-family-mono: 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
     monospace;
@@ -18,7 +18,9 @@ body,
   font-family: var(--font-family-system) !important;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
+  /* 几何精度更快；自定义字体未到时先显示回退字体 */
+  text-rendering: geometricPrecision;
+  font-synthesis: none;
 }
 
 button,

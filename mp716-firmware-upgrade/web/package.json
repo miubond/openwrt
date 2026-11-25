@@ -1,14 +1,16 @@
 {
   "name": "mp716-web",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.3",
   "type": "module",
   "scripts": {
     "dev": "vite --mode development",
+    "dev:openwrt": "vite --mode openwrt --host 127.0.0.1 --port 5173 --strictPort",
     "build": "vue-tsc -b && vite build --mode production",
     "build:web": "npm run build && node firmware/scripts/stage-web-overlay.mjs",
     "build:mp716-test": "vue-tsc -b && vite build --mode mp716-test && node firmware/scripts/verify-production-bundle.mjs",
     "deploy:router": "npm run build:mp716-test && powershell -ExecutionPolicy Bypass -File firmware/scripts/deploy-wget-mp716.ps1",
+    "deploy:native": "npm run build:openwrt && powershell -ExecutionPolicy Bypass -File firmware/scripts/deploy-native-openwrt.ps1",
     "preview": "vite preview",
     "typecheck": "vue-tsc -b --pretty false",
     "test": "vitest run",

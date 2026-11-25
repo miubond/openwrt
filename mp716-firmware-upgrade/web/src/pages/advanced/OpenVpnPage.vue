@@ -16,7 +16,6 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const isNative = import.meta.env.VITE_ROUTER_ADAPTER === 'device'
 const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const loading = ref(true)
 const saving = ref(false)
@@ -136,16 +135,15 @@ onMounted(() => void load())
               </label>
             </div>
           </UiField>
-            <UiField v-if="form.mode === 0 || isNative" layout="horizontal" :label="t('vpn.username')">
-              <input v-model="form.username" maxlength="32" autocomplete="off" />
-            </UiField>
-            <UiField v-if="form.mode === 0 || isNative" layout="horizontal" :label="t('vpn.password')">
-              <input v-model="form.password" type="password" maxlength="32" autocomplete="new-password" />
-            </UiField>
-
           <template v-if="form.mode === 0">
             <UiField layout="horizontal" :label="t('vpn.hostname')">
               <input v-model="form.host" maxlength="32" autocomplete="off" />
+            </UiField>
+            <UiField layout="horizontal" :label="t('vpn.username')">
+              <input v-model="form.username" maxlength="32" autocomplete="off" />
+            </UiField>
+            <UiField layout="horizontal" :label="t('vpn.password')">
+              <input v-model="form.password" type="password" maxlength="32" autocomplete="new-password" />
             </UiField>
             <UiField layout="horizontal" :label="t('vpn.port')">
               <input v-model.number="form.port" type="number" min="80" max="65535" />

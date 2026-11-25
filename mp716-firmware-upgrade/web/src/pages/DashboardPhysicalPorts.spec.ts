@@ -21,6 +21,9 @@ vi.mock('@/api', () => ({
   formatApiError: (e: Error) => e.message,
   isUnauthorizedError: () => false,
   setRouterApiTokenGetter: vi.fn(),
+  setSessionActiveHandler: vi.fn(),
+  setSessionInvalidHandler: vi.fn(),
+  toApiError: (e: unknown) => e,
 }))
 let wrapper: ReturnType<typeof mount>
 afterEach(() => {

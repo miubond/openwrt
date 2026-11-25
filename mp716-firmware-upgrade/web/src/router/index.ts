@@ -49,6 +49,30 @@ const router = createRouter({
           meta: { title: '局域网状态', hidePageTitle: true, mainSurface: true },
         },
         { path: 'network/dhcp', name: 'network-dhcp', component: () => import('@/pages/network/DhcpPage.vue'), meta: { title: 'DHCP设置' } },
+        {
+          path: 'network/dns',
+          name: 'network-dns',
+          component: () => import('@/pages/network/DnsPage.vue'),
+          meta: { title: 'DNS 设置', bundle: true },
+        },
+        {
+          path: 'network/ddns',
+          name: 'network-ddns',
+          component: () => import('@/pages/network/DdnsPage.vue'),
+          meta: { title: '动态域名', bundle: true },
+        },
+        {
+          path: 'network/qos',
+          name: 'network-qos',
+          component: () => import('@/pages/QosPage.vue'),
+          meta: { title: 'QoS 带宽管理', bundle: true },
+        },
+        {
+          path: 'network/static-route',
+          name: 'network-static-route',
+          component: () => import('@/pages/network/StaticRoutePage.vue'),
+          meta: { title: '静态路由', bundle: true },
+        },
 
         // 无线
         { path: 'wifi/basic', name: 'wifi-basic', component: () => import('@/pages/wifi/WifiBasicPage.vue'), meta: { title: '基础设置' } },
@@ -107,6 +131,38 @@ const router = createRouter({
           name: 'vpn-openvpn',
           component: () => import('@/pages/advanced/OpenVpnPage.vue'),
           meta: { title: 'OpenVPN客户端' },
+        },
+        {
+          path: 'advanced/vpn/wireguard-client',
+          name: 'vpn-wireguard-client',
+          component: () => import('@/pages/advanced/WireGuardClientPage.vue'),
+          meta: { title: '智能加速' },
+        },
+
+        // Bundle 安全（不进 29 叶侧栏，深链 / 旧 URL 可达）
+        {
+          path: 'advanced/security/firewall',
+          name: 'security-firewall',
+          component: () => import('@/pages/advanced/FirewallBasicPage.vue'),
+          meta: { title: 'IP/端口过滤', bundle: true },
+        },
+        {
+          path: 'advanced/security/port-forward',
+          name: 'security-port-forward',
+          component: () => import('@/pages/advanced/PortForwardPage.vue'),
+          meta: { title: '端口转发', bundle: true },
+        },
+        {
+          path: 'advanced/security/dmz',
+          name: 'security-dmz',
+          component: () => import('@/pages/advanced/DmzPage.vue'),
+          meta: { title: 'DMZ主机', bundle: true },
+        },
+        {
+          path: 'advanced/security/upnp',
+          name: 'security-upnp',
+          component: () => import('@/pages/advanced/UpnpPage.vue'),
+          meta: { title: 'UPnP', bundle: true },
         },
 
         // 系统（挂在高级下）
@@ -186,21 +242,19 @@ const router = createRouter({
         },
 
         // —— 旧路径兼容 / 范围外入口收拢 ——
-        { path: 'network/dns', redirect: '/network/wan' },
-        { path: 'network/qos', redirect: '/network/wan' },
         { path: 'wifi/mac', redirect: '/wifi/acl' },
-        { path: 'wifi/clients', redirect: '/devices' },
         { path: 'devices/online', redirect: '/devices' },
         { path: 'devices/access', redirect: '/devices' },
         { path: 'devices/ratelimit', redirect: '/devices' },
-        { path: 'advanced/firewall', redirect: '/advanced/vpn/pptpd' },
-        { path: 'advanced/port-forward', redirect: '/advanced/vpn/pptpd' },
+        { path: 'advanced/firewall', redirect: '/advanced/security/firewall' },
+        { path: 'advanced/port-forward', redirect: '/advanced/security/port-forward' },
         { path: 'advanced/diagnose', redirect: '/advanced/tool/ping' },
-        { path: 'advanced/qos', redirect: '/network/wan' },
-        { path: 'advanced/dmz', redirect: '/advanced/vpn/pptpd' },
-        { path: 'advanced/static-route', redirect: '/advanced/vpn/pptpd' },
-        { path: 'advanced/ddns', redirect: '/advanced/vpn/pptpd' },
-        { path: 'advanced/upnp', redirect: '/advanced/vpn/pptpd' },
+        { path: 'wifi/clients', redirect: '/devices' },
+        { path: 'advanced/qos', redirect: '/network/qos' },
+        { path: 'advanced/dmz', redirect: '/advanced/security/dmz' },
+        { path: 'advanced/static-route', redirect: '/network/static-route' },
+        { path: 'advanced/ddns', redirect: '/network/ddns' },
+        { path: 'advanced/upnp', redirect: '/advanced/security/upnp' },
         { path: 'advanced/vpn', redirect: '/advanced/vpn/pptpd' },
         { path: 'advanced', redirect: '/advanced/vpn/pptpd' },
         { path: 'system/info', redirect: '/advanced/system/device' },
@@ -214,8 +268,8 @@ const router = createRouter({
         { path: 'wan', redirect: '/network/wan' },
         { path: 'lan', redirect: '/network/lan' },
         { path: 'wifi', redirect: '/wifi/basic' },
-        { path: 'qos', redirect: '/network/wan' },
-        { path: 'firewall', redirect: '/advanced/vpn/pptpd' },
+        { path: 'qos', redirect: '/network/qos' },
+        { path: 'firewall', redirect: '/advanced/security/firewall' },
         { path: 'logs', redirect: '/advanced/system/log' },
       ],
     },
@@ -231,7 +285,9 @@ router.beforeEach(async (to) => {
   if (!authBypass && !auth.preLoginLoaded) {
     const preLogin = auth.loadPreLogin()
     const fastPublic = to.meta.public && (to.name === 'login' || to.name === 'wizard')
-    if (fastPublic) void preLogin
+    const nativeReady =
+      import.meta.env.VITE_ROUTER_ADAPTER === 'device' && auth.authenticated
+    if (fastPublic || nativeReady) void preLogin
     else await preLogin
   }
 
@@ -256,6 +312,25 @@ router.beforeEach(async (to) => {
     if (!ok) return { name: 'login', query: { redirect: to.fullPath, expired: '1' } }
   }
   return true
+})
+
+/** 热更新后旧 index 引用已删除的 chunk → 404；自动刷新一次拉新 index */
+const CHUNK_RELOAD_FLAG = 'mp716-chunk-reload-once'
+
+router.onError((error) => {
+  const msg = error instanceof Error ? error.message : String(error)
+  const isChunk =
+    msg.includes('Failed to fetch dynamically imported module') ||
+    msg.includes('Importing a module script failed') ||
+    msg.includes('error loading dynamically imported module')
+  if (!isChunk) return
+  if (sessionStorage.getItem(CHUNK_RELOAD_FLAG) === '1') {
+    sessionStorage.removeItem(CHUNK_RELOAD_FLAG)
+    console.error('[mp716] stale web bundle; hard refresh required', error)
+    return
+  }
+  sessionStorage.setItem(CHUNK_RELOAD_FLAG, '1')
+  window.location.reload()
 })
 
 export default router

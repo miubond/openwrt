@@ -453,7 +453,6 @@ onMounted(() => void load())
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
 }
 
@@ -501,28 +500,25 @@ onMounted(() => void load())
 .modal {
   width: min(520px, 100%);
   background: var(--color-surface);
+  border-radius: 16px;
   box-shadow: 0 16px 48px rgba(15, 23, 42, 0.18);
   overflow: hidden;
-  border-radius: var(--radius);
-  border: 1px solid var(--color-border);
-  max-height: 90vh;
-  overflow-y: auto;
 }
 
 .modal-head {
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
+  padding: 18px 48px 14px;
   border-bottom: 1px solid var(--color-border);
-  justify-content: flex-start;
-  padding: 16px;
 }
 
 .modal-head h3 {
   margin: 0;
+  font-size: 18px;
   font-weight: 600;
-  color: var(--color-title);
-  font-size: var(--fs-md);
+  color: var(--color-primary);
 }
 
 .close-btn {
@@ -542,16 +538,15 @@ onMounted(() => void load())
 }
 
 .modal-body {
-  padding: 16px;
+  padding: 20px 28px 8px;
 }
 
 .modal-body :deep(.field) {
+  display: grid;
   grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
   column-gap: 16px;
   margin-bottom: 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
 }
 
 .modal-body :deep(.label) {
@@ -566,9 +561,9 @@ onMounted(() => void load())
 
 .modal-body :deep(input) {
   height: 40px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--color-bg-muted);
   color: var(--color-title);
   padding: 0 16px;
 }
@@ -582,22 +577,20 @@ onMounted(() => void load())
 
 .scan-row {
   display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
   column-gap: 16px;
   margin-bottom: 12px;
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .scan-btn {
+  height: 40px;
+  border-radius: 999px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-primary);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  border-radius: var(--radius-sm);
-  min-width: 0;
-  height: 36px;
-  padding: 8px 16px;
 }
 
 .scan-btn:hover:not(:disabled) {
@@ -671,28 +664,24 @@ onMounted(() => void load())
   margin-top: 2px;
   color: var(--color-muted);
   font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .modal-foot {
+  display: grid;
   grid-template-columns: 1fr 1fr;
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 8px 16px 16px;
+  gap: 16px;
+  padding: 8px 28px 24px;
 }
 
 .ghost-btn {
+  height: 42px;
+  border-radius: 999px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-primary);
   font-size: 15px;
   font-weight: 500;
   cursor: pointer;
-  border-radius: var(--radius-sm);
-  min-width: 0;
-  height: 36px;
-  padding: 8px 16px;
 }
 
 .ghost-btn:hover:not(:disabled) {
@@ -715,18 +704,18 @@ onMounted(() => void load())
 
 @media (max-width: 640px) {
   .scan-panel {
-  margin-left: 0;
+    margin-left: 0;
   }
 
   .modal-body :deep(.field),
   .scan-row,
   .form-group,
   .dhcp-form :deep(.field) {
-  grid-template-columns: 1fr;
+    grid-template-columns: 1fr;
   }
 
   .scan-spacer {
-  display: none;
+    display: none;
   }
 }
 </style>

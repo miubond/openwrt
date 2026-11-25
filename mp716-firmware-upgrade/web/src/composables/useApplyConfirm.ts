@@ -4,8 +4,14 @@ import { asApplyHandle, formatApiError, getRouterApi, unwrap } from '@/api'
 import type { ApplyHandle, ConfigApplyResult, ConfigTaskStatus } from '@/api'
 import { useToastStore } from '@/stores/toast'
 
+const TICK_MS = 1000
+/** 应用中 / 回滚中需较快感知阶段变化 */
+const POLL_EVERY_ACTIVE_TICKS = 1
+/** 等待确认时只靠本地倒计时，低频校对设备状态 */
+const POLL_EVERY_IDLE_TICKS = 5
+
 /** The device owns both service-application results and rollback deadlines. */
-export function useApplyConfirm(onRollback?: () => void) {
+export function useApplyConfirm(onRollback?: () => void, onConfirmed?: () => void) {
   const pending = ref<ApplyHandle | null>(null)
   const remaining = ref(0)
   const requesting = ref(false)
@@ -16,6 +22,7 @@ export function useApplyConfirm(onRollback?: () => void) {
   let generation = 0
   let operation = 0
   let pollingGeneration: number | undefined
+  let ticksSincePoll = 0
   let rollbackRequested = false
   let lastFailure = ''
   const { t } = useI18n()
@@ -33,15 +40,38 @@ export function useApplyConfirm(onRollback?: () => void) {
     remaining.value = 0
     requesting.value = false
   }
+  function pollIntervalTicks(): number {
+    const phase = pending.value?.phase
+    if (phase === 'prepared' || phase === 'applying' || phase === 'rolling_back') return POLL_EVERY_ACTIVE_TICKS
+    if (remaining.value <= 0) return POLL_EVERY_ACTIVE_TICKS
+    return POLL_EVERY_IDLE_TICKS
+  }
+  function adoptRemaining(status: ConfigTaskStatus, prevPhase: ApplyHandle['phase']) {
+    if (status.remainingSec == null) return
+    const server = Math.max(0, status.remainingSec)
+    const nextPhase = status.phase
+    const enteredApplied =
+      nextPhase === 'applied' && prevPhase != null && prevPhase !== 'applied'
+    const active =
+      nextPhase === 'prepared' || nextPhase === 'applying' || nextPhase === 'rolling_back'
+    // 等待确认阶段以本地秒表为准，避免每轮轮询把倒计时“刷”回去
+    if (enteredApplied || active || status.state !== 'pending') {
+      remaining.value = server
+    } else if (server + 2 < remaining.value) {
+      remaining.value = server
+    }
+  }
   function consume(status: ConfigTaskStatus): void {
     if (!pending.value) return
     if (status.taskId && status.taskId !== pending.value.applyId) throw new Error('设备返回了其他配置任务')
-    remaining.value = Math.max(0, status.remainingSec || 0)
+    const prevPhase = pending.value.phase
+    adoptRemaining(status, prevPhase)
     pending.value = { ...pending.value, state: status.state, phase: status.phase,
       message: status.rollbackError || status.applyError || status.message }
     if (status.state === 'confirmed') {
       finish()
       toast.success(t('apply.confirmed'))
+      onConfirmed?.()
     } else if (status.state === 'rolled_back') {
       const cancelled = rollbackRequested
       finish()
@@ -55,6 +85,21 @@ export function useApplyConfirm(onRollback?: () => void) {
       // Keep the task and its snapshot. The user may retry rollback.
     } else lastFailure = ''
   }
+  async function pollStatus(current: number, revision: number, applyId: string) {
+    if (pollingGeneration === current) return
+    pollingGeneration = current
+    ticksSincePoll = 0
+    try {
+      const res = await getRouterApi().getConfigTaskStatus(applyId)
+      if (current !== generation || revision !== operation || !res.ok) return
+      consume(res.data)
+    } catch {
+      // A dropped connection is expected after changing LAN/Wi-Fi settings.
+      // Keep the task until the actual device result becomes available.
+    } finally {
+      if (pollingGeneration === current) pollingGeneration = undefined
+    }
+  }
   async function begin(handle: ApplyHandle | ConfigApplyResult) {
     const normalized = 'applyId' in handle ? handle : asApplyHandle(handle)
     if (!normalized.applyId || normalized.timeoutSec <= 0) return
@@ -66,20 +111,16 @@ export function useApplyConfirm(onRollback?: () => void) {
     requesting.value = false
     rollbackRequested = false
     lastFailure = ''
-    timer = window.setInterval(async () => {
-      if (current !== generation || pollingGeneration === current || requesting.value) return
+    // 首秒拉一次状态，之后等待确认阶段降频；倒计时始终本地逐秒递减
+    ticksSincePoll = pollIntervalTicks()
+    timer = window.setInterval(() => {
+      if (current !== generation || requesting.value) return
       const revision = operation
       remaining.value = Math.max(0, remaining.value - 1)
-      pollingGeneration = current
-      try {
-        const res = await getRouterApi().getConfigTaskStatus(normalized.applyId)
-        if (current !== generation || revision !== operation || !res.ok) return
-        consume(res.data)
-      } catch {
-        // A dropped connection is expected after changing LAN/Wi-Fi settings.
-        // Keep the task until the actual device result becomes available.
-      } finally { if (pollingGeneration === current) pollingGeneration = undefined }
-    }, 1000)
+      ticksSincePoll += 1
+      if (ticksSincePoll < pollIntervalTicks()) return
+      void pollStatus(current, revision, normalized.applyId)
+    }, TICK_MS)
   }
   async function confirm(): Promise<ConfigTaskStatus['state'] | null> {
     if (!pending.value || !canConfirm.value) return null

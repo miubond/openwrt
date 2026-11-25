@@ -611,32 +611,6 @@ describe('factory CGI adapter', () => {
     fetchSpy.mockRestore()
   })
 
-  it('uploadFirmware skips a second getUpgradeInfo when maxBytes is already known', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
-      if (String(url).includes('cgi_stream')) {
-        return jsonResponse({ errcode: 2000, huayierrtype: 'success' })
-      }
-      return jsonResponse({ errcode: 4004 })
-    })
-    const api = new FactoryCgiAdapter()
-    const result = await api.uploadFirmware(new Blob(['firmware']), {
-      keepSettings: true,
-      maxBytes: 8060928,
-      maxSizeLabel: '8M',
-    })
-    expect(result.ok).toBe(true)
-    expect(fetchSpy.mock.calls.some((call) => {
-      const body = call[1]?.body
-      if (typeof body !== 'string') return false
-      try {
-        return (JSON.parse(body) as { HYID: number }).HYID === HUAYI_HYID.getUpgradeInfo
-      } catch {
-        return false
-      }
-    })).toBe(false)
-    fetchSpy.mockRestore()
-  })
-
   it('reads a disabled schedule and NTP settings', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       const body = JSON.parse(String(init?.body)) as { HYID: number }

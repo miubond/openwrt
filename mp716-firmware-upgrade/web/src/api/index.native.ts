@@ -3,7 +3,13 @@ import type { RouterAPI } from './router-api'
 
 export type AdapterKind = 'device'
 
-export { currentSessionToken, setRouterApiTokenGetter } from './session'
+export {
+  currentSessionToken,
+  notifySessionInvalid,
+  setRouterApiTokenGetter,
+  setSessionInvalidHandler,
+  setSessionActiveHandler,
+} from './session'
 
 export { createRouterApi }
 

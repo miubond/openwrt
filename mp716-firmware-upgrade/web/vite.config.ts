@@ -36,7 +36,7 @@ export default defineConfig(({ mode }) => {
   const isNative = mode === 'openwrt'
   const isProd = mode === 'production' || mode === 'mp716-test' || isNative
   const apiEntry = isNative ? 'src/api/index.native.ts' : 'src/api/index.prod.ts'
-  const proxyTarget = env.VITE_DEV_PROXY_TARGET || env.VITE_DEVICE_URL || 'http://192.168.199.1'
+  const proxyTarget = env.VITE_DEV_PROXY_TARGET || env.VITE_DEVICE_URL || 'http://10.251.0.140/'
   return {
     base: env.VITE_BASE_PATH || (isProd ? '/mp716/' : '/'),
     plugins: [
@@ -65,6 +65,21 @@ export default defineConfig(({ mode }) => {
                 )
               },
             },
+            ...(isNative
+              ? [
+                  {
+                    name: 'mp716-openwrt-html-cache',
+                    apply: 'build' as const,
+                    transformIndexHtml(html: string) {
+                      if (html.includes('http-equiv="Cache-Control"')) return html
+                      return html.replace(
+                        '<head>',
+                        '<head>\n    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />\n    <meta http-equiv="Pragma" content="no-cache" />',
+                      )
+                    },
+                  },
+                ]
+              : []),
           ]
         : []),
     ],

@@ -34,6 +34,7 @@ let loadedEnabled = false
 const clientConnected = computed(() => isNative
   ? loadedEnabled && form.enabled && form.status === 1
   : form.status !== 0)
+const STATUS_POLL_MS = isNative ? 15_000 : 6000
 let timer: ReturnType<typeof setInterval> | undefined
 
 const enabled = computed({
@@ -55,7 +56,7 @@ function stopStatusPoll() {
 function startStatusPoll() {
   stopStatusPoll()
   if (!loadedEnabled || !form.enabled) return
-  timer = setInterval(() => void refreshStatus(), 6000)
+  timer = setInterval(() => void refreshStatus(), STATUS_POLL_MS)
 }
 
 async function refreshStatus() {

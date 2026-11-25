@@ -9,11 +9,20 @@ vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (s: string) => s }) }))
 vi.mock('@/api', () => ({ getRouterApi: () => api, unwrap: (r: { data: unknown }) => r.data, formatApiError: (e: Error) => e.message, asApplyHandle: (r: { taskId: string; rollbackSec: number }) => ({ applyId: r.taskId, timeoutSec: r.rollbackSec }) }))
 let control: ReturnType<typeof useApplyConfirm>, wrapper: ReturnType<typeof mount>
 const rolledBack = vi.fn()
+const confirmed = vi.fn()
 beforeEach(() => {
   vi.useFakeTimers()
-  wrapper = mount(defineComponent({ setup() { control = useApplyConfirm(rolledBack); return () => null } }), { global: { plugins: [createPinia()] } })
+  wrapper = mount(defineComponent({ setup() { control = useApplyConfirm(rolledBack, confirmed); return () => null } }), { global: { plugins: [createPinia()] } })
 })
 afterEach(() => { wrapper.unmount(); vi.clearAllTimers(); vi.useRealTimers(); vi.resetAllMocks() })
+it('silently refreshes after the device confirms the task', async () => {
+  await control.begin({ applyId: 'task', timeoutSec: 90 })
+  api.confirmConfigTask.mockResolvedValue({ ok: true, data: { state: 'confirmed', remainingSec: 0 } })
+  await control.confirm()
+  expect(control.pending.value).toBeNull()
+  expect(confirmed).toHaveBeenCalledTimes(1)
+  expect(rolledBack).not.toHaveBeenCalled()
+})
 it('ignores a response from the previous task after beginning a new task', async () => {
   let resolve!: (v: unknown) => void
   api.getConfigTaskStatus.mockReturnValueOnce(new Promise(r => { resolve = r }))
@@ -33,6 +42,19 @@ it('does not overlap polling requests and retains a disconnected pending task', 
   expect(api.getConfigTaskStatus).toHaveBeenCalledTimes(1)
   reject(new Error('offline')); await flushPromises()
   expect(control.pending.value?.applyId).toBe('pending')
+})
+it('counts down locally while waiting and does not poll every second', async () => {
+  api.getConfigTaskStatus.mockResolvedValue({
+    ok: true,
+    data: { taskId: 'task', state: 'pending', phase: 'applied', remainingSec: 90 },
+  })
+  await control.begin({ applyId: 'task', timeoutSec: 90, phase: 'applied' })
+  await vi.advanceTimersByTimeAsync(4000)
+  expect(control.remaining.value).toBe(86)
+  expect(api.getConfigTaskStatus).toHaveBeenCalledTimes(1)
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(control.remaining.value).toBe(84)
+  expect(api.getConfigTaskStatus).toHaveBeenCalledTimes(2)
 })
 it('only reloads the form when device rollback is confirmed', async () => {
   await control.begin({ applyId: 'task', timeoutSec: 90 })

@@ -23,7 +23,7 @@ async function download() {
   try {
     const result = unwrap(await getRouterApi().downloadBackup())
     const raw = atob(result.contentBase64)
-    const bytes = Uint8Array.from(raw, ch => ch.charCodeAt(0))
+    const bytes = Uint8Array.from(raw, (ch) => ch.charCodeAt(0))
     const url = URL.createObjectURL(new Blob([bytes], { type: result.mime }))
     const anchor = document.createElement('a')
     anchor.href = url
@@ -32,7 +32,9 @@ async function download() {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   } catch (e) {
     toast.error(formatApiError(e, t))
-  } finally { downloading.value = false }
+  } finally {
+    downloading.value = false
+  }
 }
 
 function pickFile() {
@@ -76,7 +78,9 @@ async function upload() {
     <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <UiCard :title="t('sysBackup.downloadTitle')">
       <div class="down-btn">
-        <button :disabled="downloading" @click="download">{{ t('sysBackup.downloadBtn') }}</button>
+        <button type="button" :disabled="downloading || applying" @click="download">
+          {{ t('sysBackup.downloadBtn') }}
+        </button>
       </div>
     </UiCard>
 
@@ -105,27 +109,26 @@ async function upload() {
   gap: 24px;
 }
 
-/* 对齐原厂 .down-btn：居中描边按钮 + 主题色文字链接 */
+/* 对齐 feature/lp / 原厂 .down-btn */
 .down-btn {
   display: flex;
-  justify-content: flex-start;
+  justify-content: center;
   padding: 28px 0 16px;
 }
 
 .down-btn button {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   min-width: 180px;
   height: 36px;
   padding: 0 20px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: var(--color-bg-muted);
   color: var(--color-primary);
   font-size: var(--fs-base);
   font-weight: var(--fw-medium);
-  text-decoration: none;
   line-height: 1;
   cursor: pointer;
   transition:
@@ -134,9 +137,14 @@ async function upload() {
     color 0.15s ease;
 }
 
-.down-btn button:hover {
+.down-btn button:hover:not(:disabled) {
   border-color: var(--color-primary);
   background: var(--color-primary-soft);
+}
+
+.down-btn button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .restore-row {

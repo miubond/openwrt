@@ -6,7 +6,7 @@ import LoadingState from '@/components/LoadingState.vue'
 import { formatApiError, getRouterApi, unwrap } from '@/api'
 import { toWanStatusView, type WanStatusView } from '@/api/view-map'
 import { useToastStore } from '@/stores/toast'
-import { formatRateParts } from '@/utils/format'
+import { formatLiveRateParts } from '@/utils/format'
 
 const { t } = useI18n()
 const toast = useToastStore()
@@ -18,8 +18,13 @@ const dnsText = computed(() => {
   const list = status.value?.dns || []
   return list.length ? list.join(t('status.dnsSep')) : '—'
 })
-const uplink = computed(() => formatRateParts(status.value?.txRateBps ?? 0))
-const downlink = computed(() => formatRateParts(status.value?.rxRateBps ?? 0))
+const pending = () => t('dashboard.rateMeasuring')
+const uplink = computed(() =>
+  formatLiveRateParts(status.value?.txRateBps, status.value?.ratesReady, pending()),
+)
+const downlink = computed(() =>
+  formatLiveRateParts(status.value?.rxRateBps, status.value?.ratesReady, pending()),
+)
 
 async function load(manual = false) {
   if (manual) refreshing.value = true

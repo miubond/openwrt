@@ -13,6 +13,7 @@ const toast = useToastStore()
 const loading = ref(true)
 const users = ref<VpnOnlineUser[]>([])
 const disconnectPid = ref('')
+const POLL_MS = import.meta.env.VITE_ROUTER_ADAPTER === 'device' ? 15_000 : 5000
 let timer: ReturnType<typeof setInterval> | undefined
 
 async function load(quiet = false) {
@@ -40,8 +41,10 @@ async function confirmDisconnect() {
 }
 
 onMounted(() => {
-  void load()
-  timer = setInterval(() => void load(true), 5000)
+  void (async () => {
+    await load()
+    timer = setInterval(() => void load(true), POLL_MS)
+  })()
 })
 onUnmounted(() => {
   if (timer) clearInterval(timer)

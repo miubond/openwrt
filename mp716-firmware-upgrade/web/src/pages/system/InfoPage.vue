@@ -340,7 +340,6 @@ onMounted(() => void load())
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.01em;

@@ -87,47 +87,102 @@ onBeforeUnmount(() => {
 }
 .dialog {
   width: min(420px, 100%);
+  max-height: min(90vh, 720px);
+  overflow: auto;
   background: var(--color-surface);
-  border-radius: var(--radius);
+  border-radius: 12px;
   border: 1px solid var(--color-border);
-  padding: 1.1rem;
   color: var(--color-title);
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.2);
+}
+.dialog--md {
+  width: min(520px, 100%);
+}
+.head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: start;
+  padding: 18px 48px 12px 24px;
+  border-bottom: 1px solid var(--color-border);
+}
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-title);
+}
+.close {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.close:hover {
+  color: var(--color-title);
+  background: var(--color-bg-muted);
 }
 .content {
   color: var(--color-text);
-  margin: 0.75rem 0 1.1rem;
+  padding: 16px 24px 8px;
 }
 .foot {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 24px;
+  border-top: 1px solid var(--color-border);
 }
-button {
-  border-radius: 6px;
+.btn {
+  appearance: none;
+  min-width: 88px;
+  min-height: 36px;
+  border-radius: 999px;
   border: 1px solid transparent;
-  padding: 0.45rem 0.85rem;
+  padding: 8px 20px;
   cursor: pointer;
+  touch-action: manipulation;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .sec {
   background: var(--color-surface);
   border-color: var(--color-border);
   color: var(--color-title);
 }
+.sec:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
 .pri {
   background: var(--color-primary);
   color: #fff;
+}
+.pri:hover:not(:disabled) {
+  background: var(--color-primary-hover);
 }
 .danger {
   background: var(--color-danger);
   color: #fff;
 }
-
-.dialog { max-height: min(90vh, 720px); overflow-y: auto; }
-.dialog--md { width: min(520px, 100%); }
-.head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.title { margin: 0; font-size: var(--fs-md); line-height: var(--lh-tight); }
-.close { border: 0; padding: 0 4px; background: transparent; color: var(--color-muted); font-size: 22px; }
-.close:hover { color: var(--color-title); }
-.btn:disabled { opacity: .55; cursor: not-allowed; }
-.foot { flex-wrap: wrap; }
 </style>

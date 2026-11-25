@@ -71,7 +71,7 @@ function resetForm() {
 }
 
 function waitMs(type: DiagnosticType) {
-  return type === 'ping' ? 1500 : 2500
+  return type === 'ping' ? 3000 : 5000
 }
 
 function applyErrors() {
@@ -316,7 +316,6 @@ onUnmounted(() => {
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-title);
-  font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: 13px;
   line-height: 1.5;
   resize: vertical;
@@ -345,9 +344,6 @@ onUnmounted(() => {
   text-align: center;
   color: var(--color-muted);
   font-size: 13px;
-}
-.mac {
-  font-family: var(--font-family-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
 }
 @keyframes spin {
   to {

@@ -26,36 +26,174 @@
         } catch (e) {}
       })()
     </script>
-    <!-- mp716:cdn-fonts:start — 仅 dev；生产构建会移除此段，使用 fonts.css 系统回退 -->
+    <!-- mp716:cdn-fonts:start — 仅 dev；异步加载避免阻塞首屏；生产构建会移除此段 -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <link
-      rel="stylesheet"
+      rel="preload"
+      as="style"
       href="https://cdn.jsdelivr.net/npm/harmonyos-sans-sc-webfont-splitted@1.1.0/dist/Regular.css"
+      onload="this.onload=null;this.rel='stylesheet'"
     />
     <link
-      rel="stylesheet"
+      rel="preload"
+      as="style"
       href="https://cdn.jsdelivr.net/npm/harmonyos-sans-sc-webfont-splitted@1.1.0/dist/Medium.css"
+      onload="this.onload=null;this.rel='stylesheet'"
     />
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/harmonyos-sans-sc-webfont-splitted@1.1.0/dist/Bold.css"
-    />
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5.2.5/chinese-simplified-400.css"
-    />
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5.2.5/chinese-simplified-500.css"
-    />
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-sc@5.2.5/chinese-simplified-600.css"
-    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/harmonyos-sans-sc-webfont-splitted@1.1.0/dist/Regular.css"
+      />
+      <link
+        rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/harmonyos-sans-sc-webfont-splitted@1.1.0/dist/Medium.css"
+      />
+    </noscript>
     <!-- mp716:cdn-fonts:end -->
+    <style id="mp716-boot-style">
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #f5f7fa;
+      }
+      html.dark,
+      html[data-theme='dark'] {
+        background: #0b1220;
+      }
+      #app-boot {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        min-height: 100dvh;
+        padding: 1.5rem;
+        color: #86909c;
+        font:
+          14px/1.5 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', '微软雅黑',
+          'Noto Sans SC', system-ui, sans-serif;
+        box-sizing: border-box;
+        background:
+          radial-gradient(ellipse 70% 50% at 50% 35%, rgba(22, 119, 255, 0.12), transparent 70%),
+          radial-gradient(ellipse 90% 70% at 50% 100%, rgba(10, 31, 68, 0.06), transparent 65%),
+          #f5f7fa;
+      }
+      html.dark #app-boot,
+      html[data-theme='dark'] #app-boot {
+        color: #9ca3af;
+        background:
+          radial-gradient(ellipse 70% 50% at 50% 35%, rgba(59, 130, 246, 0.16), transparent 70%),
+          radial-gradient(ellipse 90% 70% at 50% 100%, rgba(11, 18, 32, 0.5), transparent 65%),
+          #0b1220;
+      }
+      #app-boot .boot-panel {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.65rem;
+        animation: mp716-boot-in 0.35s ease-out;
+      }
+      #app-boot .brand {
+        margin: 0;
+        color: #0a1f44;
+        font-size: 1.75rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        line-height: 1.1;
+      }
+      html.dark #app-boot .brand,
+      html[data-theme='dark'] #app-boot .brand {
+        color: #f3f4f6;
+      }
+      #app-boot .sub {
+        margin: 0 0 0.85rem;
+        color: #86909c;
+        font-size: 0.8125rem;
+        letter-spacing: 0.12em;
+      }
+      html.dark #app-boot .sub,
+      html[data-theme='dark'] #app-boot .sub {
+        color: #9ca3af;
+      }
+      #app-boot .spinner {
+        width: 2rem;
+        height: 2rem;
+        border: 2.5px solid rgba(22, 119, 255, 0.18);
+        border-top-color: #1677ff;
+        border-radius: 50%;
+        animation:
+          mp716-boot-spin 0.75s linear infinite,
+          mp716-boot-pulse 1.6s ease-in-out infinite;
+      }
+      html.dark #app-boot .spinner,
+      html[data-theme='dark'] #app-boot .spinner {
+        border-color: rgba(59, 130, 246, 0.22);
+        border-top-color: #3b82f6;
+      }
+      #app-boot .hint {
+        margin: 0.35rem 0 0;
+        font-size: 0.8125rem;
+        letter-spacing: 0.04em;
+      }
+      @keyframes mp716-boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes mp716-boot-pulse {
+        0%,
+        100% {
+          opacity: 1;
+          box-shadow: 0 0 0 0 rgba(22, 119, 255, 0.28);
+        }
+        50% {
+          opacity: 0.85;
+          box-shadow: 0 0 0 6px rgba(22, 119, 255, 0);
+        }
+      }
+      @keyframes mp716-boot-in {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div id="app-boot" role="status" aria-live="polite">
+        <div class="boot-panel">
+          <p class="brand">MP716</p>
+          <p class="sub" id="app-boot-sub">网络管理系统</p>
+          <span class="spinner" aria-hidden="true"></span>
+          <p class="hint" id="app-boot-hint">加载中…</p>
+        </div>
+      </div>
+    </div>
+    <script>
+      ;(function () {
+        try {
+          var l = localStorage.getItem('mp716.locale')
+          var hint = document.getElementById('app-boot-hint')
+          var sub = document.getElementById('app-boot-sub')
+          if (l === 'en') {
+            if (hint) hint.textContent = 'Loading…'
+            if (sub) sub.textContent = 'Network Management'
+          } else if (l === 'zh-TW') {
+            if (hint) hint.textContent = '載入中…'
+            if (sub) sub.textContent = '網路管理系統'
+          } else {
+            if (hint) hint.textContent = '加载中…'
+            if (sub) sub.textContent = '网络管理系统'
+          }
+        } catch (e) {}
+      })()
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

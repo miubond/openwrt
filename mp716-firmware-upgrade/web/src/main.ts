@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import { i18n } from '@/i18n'
+import { setUnauthorizedHandler } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { useLocaleStore } from '@/stores/locale'
@@ -21,6 +22,17 @@ function bootstrap() {
 
   const auth = useAuthStore(pinia)
   app.use(router)
+
+  setUnauthorizedHandler(() => {
+    auth.setSession(null)
+    const route = router.currentRoute.value
+    if (route.meta.public || route.name === 'login') return
+    void router.replace({
+      name: 'login',
+      query: { redirect: route.fullPath, expired: '1' },
+    })
+  })
+
   app.mount('#app')
 
   if (auth.authenticated && !auth.isSessionTrusted()) {

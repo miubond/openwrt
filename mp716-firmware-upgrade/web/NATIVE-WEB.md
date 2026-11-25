@@ -6,7 +6,20 @@
 
 原厂 014 使用既有 FactoryCgiAdapter，`npm run build:mp716-test`。原厂登录和 CGI 路径保持独立。
 
-自研 OpenWrt 使用 DeviceRouterAdapter，`npm run build:openwrt`，产物位于 `dist-openwrt/`，管理入口 `/`（页面路由 `/#/`），静态资源保持 `/mp716/`，接口 `/cgi-bin/mp716/`。固件验签走现有原生验证器，页面只能上传并校验，不能通过此入口刷写。
+自研 OpenWrt 使用 DeviceRouterAdapter，`npm run build:openwrt`，产物位于 `dist-openwrt/`，管理入口 `/`（页面路由 `/#/`），静态资源保持 `/mp716/`，接口 `/cgi-bin/mp716/`。固件上传走原生验签。实验室设备存在 `/etc/mp716/allow-flash-upgrade` 时，页面可以用 `?mode=flash` 提交刷写；没有该文件时只验签。1.0.10 镜像里的刷写脚本仍可能在 64MB 内存上返回 502 或 `low_memory`，见固件仓库的实机记录。
+
+## 1.0.10 整包与仅 Web
+
+固件 **1.0.10** 将 OpenWrt 系统、驱动、Vue 静态资源、原生 ucode 与验签服务**一起打包**。本仓库是 Web **主源码**；构建时经 `mp716-firmware-upgrade/scripts/sync-web-reference.py` 导出快照并嵌入固件。
+
+| 变更类型 | 交付方式 |
+| --- | --- |
+| 纯前端（页面、适配器、样式） | `npm run build:openwrt` → 只替换设备 `/www` 与 `/www/mp716/`，或打 `package-native-web.py` ZIP；**不**恢复原厂页面，也**不**覆盖 `/usr/share/mp716/` |
+| 内核、驱动、`admin.uc` / 路由、验签策略 | 重编固件并 sysupgrade |
+
+实验室设备已由原厂 014 迁至 1.0.10，页面热更新为 Web 0.2.3（`fc568398c6`，`index-BJVmYPkS.js`）。「保留配置」保留 Wi‑Fi、管理地址与网络 UCI，**不是**保留原厂 OS。详见固件仓库 [mp716-device-runtime-state.md](../openwrt/mp716-firmware-upgrade/docs/mp716-device-runtime-state.md)。
+
+Gitea **deploy-frontend.yml** 部署的是 `VITE_ROUTER_ADAPTER=factory` 的演示站，与嵌入固件的 `openwrt` 构建不是同一条链路。
 
 ## 仅更新页面
 

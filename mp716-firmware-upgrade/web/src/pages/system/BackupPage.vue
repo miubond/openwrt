@@ -191,6 +191,16 @@ onBeforeUnmount(() => clearProgressTimer())
   border-radius: 6px;
   overflow: hidden;
   background: var(--color-bg-muted);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.file-box:focus-within {
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
 }
 
 .name {
@@ -201,6 +211,10 @@ onBeforeUnmount(() => clearProgressTimer())
   padding: 0 12px;
   background: transparent;
   color: var(--color-title);
+}
+
+.name:focus {
+  outline: none;
 }
 
 .name::placeholder {
@@ -216,6 +230,14 @@ onBeforeUnmount(() => clearProgressTimer())
   padding: 0 16px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.select:focus {
+  outline: none;
+}
+
+.select:focus-visible {
+  background: var(--color-primary-hover, #0958d9);
 }
 
 /* 对齐原厂 .button_sumit：浅底描边上传按钮 */

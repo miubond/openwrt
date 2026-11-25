@@ -28,6 +28,11 @@ import type {
   QuickSettingWan,
   QuickSettingWifi,
   PortForwardRule,
+  DmzConfig,
+  UpnpConfig,
+  DdnsConfig,
+  NativeCapabilities,
+  NetworkStaticRoute,
   QosCapability,
   QosConfig,
   DeviceInfo,
@@ -46,26 +51,65 @@ import type {
   L2tpClientConfig,
   VpnOnlineUser,
   OpenVpnConfig,
+  WireGuardClientConfig,
+  WireGuardImportResult,
+  WireGuardStatus,
   WifiAdvancedConfig,
   WifiConfig,
+  WifiSecondaryConfig,
   WifiStatus,
   WirelessAclConfig,
   WirelessClient,
   HomeDashboard,
+  HostsOverview,
 } from '../types'
-import { requestJson, failure } from '../http'
+import { createGetScheduler, resolveDeviceGetConcurrency } from '../device-get-scheduler'
+import { notifySessionActive, notifySessionInvalid } from '../session'
+import { requestJson, failure, type RequestOptions } from '../http'
 import { readVerificationReport } from '../firmware-verification'
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/cgi-bin/mp716'
 const DEVICE_GET_CACHE_MS = 4_000
 const DEVICE_GET_CACHE_MS_BY_SEGMENT: Record<string, number> = {
-  'home/dashboard': 12_000,
+  'home/dashboard': 18_000,
+  'hosts/overview': 15_000,
+  'hosts/connected': 15_000,
+  'system/status': 5_000,
+  'system/info': 5_000,
+  'home/physical-ports': 8_000,
+  'wireless/status': 12_000,
+  'wireless/config': 30_000,
+  'network/wan/config': 30_000,
+  'network/lan/config': 30_000,
+  'network/dhcp/config': 30_000,
+  'system/firmware': 60_000,
+  'system/device': 30_000,
+  'system/capabilities': 300_000,
+  'system/config-task/active': 10_000,
+  'wireless/secondary': 30_000,
+  'vpn/pptpd': 15_000,
+  'vpn/xl2tpd': 15_000,
+  'vpn/pptp': 15_000,
+  'vpn/xl2tp': 15_000,
 }
 
 type TokenProvider = () => string | null
 
 const deviceGetCache = new Map<string, { at: number; res: ApiResponse<unknown> }>()
 const deviceGetInflight = new Map<string, Promise<ApiResponse<unknown>>>()
+/**
+ * 设备 GET 并发上限（默认 1=全局串行）。
+ * 构建时设置 VITE_DEVICE_GET_CONCURRENCY=2|3 做 A/B，保留 in-flight 去重。
+ */
+const deviceGetScheduler = createGetScheduler(
+  resolveDeviceGetConcurrency(import.meta.env.VITE_DEVICE_GET_CONCURRENCY as string | undefined),
+)
+
+function guardUnauthorized<T>(res: ApiResponse<T>, segment: string): ApiResponse<T> {
+  if (!res.ok && res.code === 'UNAUTHORIZED') notifySessionInvalid()
+  else if (res.ok && !segment.startsWith('auth/')) notifySessionActive()
+  return res
+}
 
 export class DeviceRouterAdapter implements RouterAPI {
   private getToken: TokenProvider
@@ -82,6 +126,7 @@ export class DeviceRouterAdapter implements RouterAPI {
     segment: string,
     body?: unknown,
     method: 'GET' | 'POST' = body ? 'POST' : 'GET',
+    request?: Pick<RequestOptions, 'timeoutMs'>,
   ): Promise<ApiResponse<T>> {
     if (method === 'POST') {
       deviceGetCache.clear()
@@ -96,28 +141,39 @@ export class DeviceRouterAdapter implements RouterAPI {
       }
       let inflight = deviceGetInflight.get(segment)
       if (!inflight) {
-        inflight = requestJson<T>(this.path(segment), {
-          method: 'GET',
-          token: this.getToken(),
-        }).then((res) => {
-          deviceGetCache.set(segment, { at: Date.now(), res: res as ApiResponse<unknown> })
-          deviceGetInflight.delete(segment)
-          return res as ApiResponse<unknown>
-        })
+        inflight = deviceGetScheduler.run(() =>
+          requestJson<T>(this.path(segment), {
+            method: 'GET',
+            token: this.getToken(),
+            timeoutMs: request?.timeoutMs,
+          }).then((res) => {
+            const guarded = guardUnauthorized(res, segment)
+            /** 勿缓存鉴权失败，否则登录后短时间内仍命中旧 401 */
+            if (guarded.ok || (guarded as { code?: string }).code !== 'UNAUTHORIZED') {
+              deviceGetCache.set(segment, { at: Date.now(), res: guarded as ApiResponse<unknown> })
+            }
+            deviceGetInflight.delete(segment)
+            return guarded as ApiResponse<unknown>
+          }),
+        )
         deviceGetInflight.set(segment, inflight)
       }
       return inflight as Promise<ApiResponse<T>>
     }
-    return requestJson<T>(this.path(segment), {
-      method,
-      body,
-      token: this.getToken(),
-    })
+    return guardUnauthorized(
+      await requestJson<T>(this.path(segment), {
+        method,
+        body,
+        token: this.getToken(),
+        timeoutMs: request?.timeoutMs,
+      }),
+      segment,
+    )
   }
 
   /** 首页聚合：设备端只扫一次终端列表与物理口 */
   getHomeDashboard() {
-    return this.call<HomeDashboard>('home/dashboard')
+    return this.call<HomeDashboard>('home/dashboard', undefined, 'GET', { timeoutMs: 28_000 })
   }
 
   getPreLoginConfig() {
@@ -177,8 +233,11 @@ export class DeviceRouterAdapter implements RouterAPI {
   getDhcpConfig() {
     return this.call<DhcpConfig>('network/dhcp/config')
   }
-  updateDhcpConfig(config: DhcpConfig) {
-    return this.call<ConfigApplyResult>('network/dhcp/config', { config })
+  updateDhcpConfig(config: DhcpConfig, options?: { confirmTimeoutSec?: number }) {
+    return this.call<ConfigApplyResult>('network/dhcp/config', {
+      config,
+      confirmTimeoutSec: options?.confirmTimeoutSec ?? 90,
+    })
   }
   updateDhcpStaticBindings(bindings: StaticDhcpBinding[]) {
     return this.call<ConfigApplyResult>('network/dhcp/static', { bindings })
@@ -186,8 +245,11 @@ export class DeviceRouterAdapter implements RouterAPI {
   getDnsConfig() {
     return this.call<DnsConfig>('network/dns/config')
   }
-  updateDnsConfig(config: DnsConfig) {
-    return this.call<ConfigApplyResult>('network/dns/config', { config })
+  updateDnsConfig(config: DnsConfig, options?: { confirmTimeoutSec?: number }) {
+    return this.call<ConfigApplyResult>('network/dns/config', {
+      config,
+      confirmTimeoutSec: options?.confirmTimeoutSec ?? 90,
+    })
   }
   getWifiStatus() {
     return this.call<WifiStatus>('wireless/status')
@@ -198,14 +260,29 @@ export class DeviceRouterAdapter implements RouterAPI {
   getWifiConfig() {
     return this.call<WifiConfig>('wireless/config')
   }
-  updateWifiConfig(config: WifiConfig) {
-    return this.call<ConfigApplyResult>('wireless/config', { config })
+  getWifiSecondaryConfig() {
+    return this.call<WifiSecondaryConfig>('wireless/secondary')
+  }
+  updateWifiSecondaryConfig(config: WifiSecondaryConfig, options?: { confirmTimeoutSec?: number }) {
+    return this.call<ConfigApplyResult>('wireless/secondary', {
+      config,
+      ...(options?.confirmTimeoutSec != null ? { confirmTimeoutSec: options.confirmTimeoutSec } : {}),
+    })
+  }
+  updateWifiConfig(config: WifiConfig, options?: { confirmTimeoutSec?: number }) {
+    return this.call<ConfigApplyResult>('wireless/config', {
+      config,
+      confirmTimeoutSec: options?.confirmTimeoutSec ?? 90,
+    })
   }
   getWifiAdvanced() {
     return this.call<WifiAdvancedConfig>('wireless/advanced')
   }
-  updateWifiAdvanced(config: WifiAdvancedConfig) {
-    return this.call<ConfigApplyResult>('wireless/advanced', { config })
+  updateWifiAdvanced(config: WifiAdvancedConfig, options?: { confirmTimeoutSec?: number }) {
+    return this.call<ConfigApplyResult>('wireless/advanced', {
+      config,
+      confirmTimeoutSec: options?.confirmTimeoutSec ?? 90,
+    })
   }
   getPptpClient() {
     return this.call<PptpClientConfig>('vpn/pptp')
@@ -255,6 +332,19 @@ export class DeviceRouterAdapter implements RouterAPI {
     const raw = Array.from(bytes, n => String.fromCharCode(n)).join('')
     return this.call<ConfigApplyResult>('vpn/openvpn/upload', { filename: file.name, kind, contentBase64: btoa(raw) })
   }
+  getWireGuardClient() {
+    return this.call<WireGuardClientConfig>('vpn/wireguard/client')
+  }
+  updateWireGuardClient(config: WireGuardClientConfig) {
+    return this.call<ConfigApplyResult>('vpn/wireguard/client', { config })
+  }
+  importWireGuardClient(text: string) {
+    if (text.length > 8192) return Promise.resolve(failure('VALIDATION', 'WireGuard 配置文件不能大于 8 KiB'))
+    return this.call<WireGuardImportResult>('vpn/wireguard/client/import', { text })
+  }
+  getWireGuardStatus() {
+    return this.call<WireGuardStatus>('vpn/wireguard/status')
+  }
 
   getWirelessClients() {
     return this.call<WirelessClient[]>('wireless/clients')
@@ -267,6 +357,9 @@ export class DeviceRouterAdapter implements RouterAPI {
   }
   getConnectedDevices() {
     return this.call<ConnectedDevice[]>('hosts/connected')
+  }
+  getHostsOverview() {
+    return this.call<HostsOverview>('hosts/overview')
   }
   getDeviceAclList() {
     return this.call<DeviceAclEntry[]>('hosts/device-acl')
@@ -291,6 +384,33 @@ export class DeviceRouterAdapter implements RouterAPI {
   }
   updatePortForwards(rules: PortForwardRule[]) {
     return this.call<ConfigApplyResult>('firewall/port-forwards', { rules })
+  }
+  getDmzConfig() {
+    return this.call<DmzConfig>('firewall/dmz')
+  }
+  updateDmzConfig(config: DmzConfig) {
+    return this.call<ConfigApplyResult>('firewall/dmz', { config })
+  }
+  getUpnpConfig() {
+    return this.call<UpnpConfig>('network/upnp')
+  }
+  updateUpnpConfig(config: UpnpConfig) {
+    return this.call<ConfigApplyResult>('network/upnp', { config })
+  }
+  getDdnsConfig() {
+    return this.call<DdnsConfig>('network/ddns')
+  }
+  updateDdnsConfig(config: DdnsConfig) {
+    return this.call<ConfigApplyResult>('network/ddns', { config })
+  }
+  getSystemCapabilities() {
+    return this.call<NativeCapabilities>('system/capabilities')
+  }
+  getStaticRoutes() {
+    return this.call<NetworkStaticRoute[]>('network/static-routes')
+  }
+  updateStaticRoutes(routes: NetworkStaticRoute[]) {
+    return this.call<ConfigApplyResult>('network/static-routes', { routes })
   }
   getQosCapability() {
     return this.call<QosCapability>('network/qos/capability')
@@ -336,22 +456,105 @@ export class DeviceRouterAdapter implements RouterAPI {
   }
   async uploadFirmware(
     file: Blob,
-    _options?: { keepSettings?: boolean; maxBytes?: number; maxSizeLabel?: string },
+    options?: { keepSettings?: boolean; flash?: boolean },
   ): Promise<ApiResponse<ConfigApplyResult>> {
+    const flash = options?.flash === true
+    const keep = options?.keepSettings !== false
     const token = this.getToken()
     try {
-      const response = await fetch(this.path('system/firmware-package/verify'), {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 180_000)
+      const params = new URLSearchParams()
+      if (flash) params.set('mode', 'flash')
+      if (!keep) params.set('keep', '0')
+      const query = params.toString()
+      const response = await fetch(this.path('system/firmware-package/verify') + (query ? `?${query}` : ''), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-Mp716-Upgrade-Mode': flash ? 'flash' : 'verify',
+          'X-Mp716-Keep-Settings': keep ? '1' : '0',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: file,
         credentials: 'same-origin',
+        signal: controller.signal,
       })
-      const result = await response.json()
-      if (!response.ok || result.ok !== true) return failure('VALIDATION', result.message || '固件校验失败', result.details)
+      clearTimeout(timer)
+      const result = (await response.json()) as {
+        ok?: boolean
+        message?: string
+        details?: unknown
+        data?: unknown
+      }
+      const reportPayload = result.details ?? result.data
+      if (!response.ok || result.ok !== true) {
+        const code =
+          response.status === 401
+            ? 'UNAUTHORIZED'
+            : response.status === 403
+              ? 'FORBIDDEN'
+              : 'VALIDATION'
+        if (code === 'UNAUTHORIZED') notifySessionInvalid()
+        return failure(
+          code,
+          result.message || (flash ? '固件刷写失败' : '固件校验失败'),
+          reportPayload,
+          code === 'UNAUTHORIZED' ? 'errors.unauthorized' : undefined,
+        )
+      }
       const report = readVerificationReport(result.data)
-      if (!report || report.ok !== true || report.signature_checked !== true || report.flash_write !== false) return failure('VALIDATION', '固件校验结果无效', result.data)
-      return { ok: true, data: { accepted: false, rollbackSec: 0, validated: true, flashWrite: false, message: '固件验签通过，未执行刷写', verificationReport: report }, ts: Date.now() }
+      if (flash) {
+        if (!report?.ok || !report.signature_checked || !report.flash_write) {
+          return failure('VALIDATION', '固件刷写结果无效', result.data)
+        }
+        return {
+          ok: true,
+          data: {
+            accepted: true,
+            rollbackSec: 0,
+            validated: true,
+            flashWrite: true,
+            message: (result.data as { message?: string })?.message || '固件刷写已提交，设备将重启',
+            verificationReport: report,
+          },
+          ts: Date.now(),
+        }
+      }
+      if (
+        !report ||
+        report.ok !== true ||
+        report.signature_checked !== true ||
+        report.flash_write !== false
+      ) {
+        return failure('VALIDATION', '固件校验结果无效', result.data)
+      }
+      return {
+        ok: true,
+        data: {
+          accepted: false,
+          rollbackSec: 0,
+          validated: true,
+          flashWrite: false,
+          message: '固件验签通过，未执行刷写',
+          verificationReport: report,
+        },
+        ts: Date.now(),
+      }
     } catch {
+      if (flash) {
+        return {
+          ok: true,
+          data: {
+            accepted: true,
+            rollbackSec: 0,
+            validated: true,
+            flashWrite: true,
+            message: '固件可能正在刷写，设备将重启；请稍后重新登录',
+          },
+          ts: Date.now(),
+        }
+      }
       return failure('NETWORK', '无法连接固件校验接口')
     }
   }
@@ -367,7 +570,7 @@ export class DeviceRouterAdapter implements RouterAPI {
   applyFirmwareV2() {
     return this.call<ConfigApplyResult>('system/firmware-v2/apply', { confirm: true })
   }
-  getSystemLogs(limit = 200) {
+  getSystemLogs(limit = 100) {
     return this.call<SystemLogState>(`system/logs?limit=${limit}`)
   }
   updateSyslog(enabled: boolean) {
@@ -390,6 +593,9 @@ export class DeviceRouterAdapter implements RouterAPI {
     } catch {
       return failure('VALIDATION', '请选择自研 OpenWrt 后台导出的配置备份')
     }
+  }
+  getActiveConfigTask() {
+    return this.call<ConfigTaskStatus | null>('system/config-task/active')
   }
   getConfigTaskStatus(taskId: string) {
     return this.call<ConfigTaskStatus>(`system/config-task/${encodeURIComponent(taskId)}`)

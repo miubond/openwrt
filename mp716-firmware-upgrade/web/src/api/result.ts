@@ -32,13 +32,52 @@ export class ApiCallError extends Error {
   }
 }
 
+type UnauthorizedHandler = () => void
+
+let unauthorizedHandler: UnauthorizedHandler | null = null
+let unauthorizedNotified = false
+
+/** 业务请求遇到会话失效时，由 main 注册：清 token 并跳登录页 */
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
+  unauthorizedHandler = handler
+  unauthorizedNotified = false
+}
+
+export function notifyUnauthorized() {
+  if (!unauthorizedHandler || unauthorizedNotified) return
+  unauthorizedNotified = true
+  try {
+    unauthorizedHandler()
+  } finally {
+    const reset = () => {
+      unauthorizedNotified = false
+    }
+    if (typeof window !== 'undefined') window.setTimeout(reset, 800)
+    else reset()
+  }
+}
+
 export function unwrap<T>(res: ApiResponse<T>): T {
-  if (!res.ok) throw new ApiCallError(res)
+  if (!res.ok) {
+    if (res.code === 'UNAUTHORIZED') notifyUnauthorized()
+    throw new ApiCallError(res)
+  }
   return res.data
 }
 
 export function isUnauthorizedError(err: unknown): boolean {
   return err instanceof ApiCallError && err.code === 'UNAUTHORIZED'
+}
+
+/** 设备未实现某原生路由（可回退多请求）；超时/拥塞不回退 */
+export function isMissingNativeRouteError(err: unknown): boolean {
+  if (!(err instanceof ApiCallError)) return false
+  if (err.code === 'NOT_IMPLEMENTED') return true
+  const status =
+    err.details && typeof err.details === 'object' && 'status' in err.details
+      ? Number((err.details as { status?: number }).status)
+      : undefined
+  return status === 404
 }
 
 export function toApiError(err: unknown): ApiCallError {

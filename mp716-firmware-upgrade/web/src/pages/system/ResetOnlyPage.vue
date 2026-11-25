@@ -47,12 +47,12 @@ async function doReset() {
 <style scoped>
 .actions {
   display: flex;
-  justify-content: flex-start;
+  justify-content: center;
   padding: 20px 0 8px;
 }
 
 .actions :deep(.btn) {
   min-width: 180px;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
 }
 </style>

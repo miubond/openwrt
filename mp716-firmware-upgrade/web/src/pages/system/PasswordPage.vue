@@ -125,7 +125,7 @@ async function save() {
   max-width: 360px;
   height: 40px;
   padding: 0 12px 0 16px;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: var(--color-bg-muted);
   border: 1px solid transparent;
   transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;

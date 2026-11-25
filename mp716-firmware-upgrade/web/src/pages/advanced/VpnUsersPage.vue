@@ -7,18 +7,17 @@ import UiField from '@/components/UiField.vue'
 import UiSelect from '@/components/UiSelect.vue'
 import UiIcon from '@/components/UiIcon.vue'
 import UiModal from '@/components/UiModal.vue'
-import LoadingState from '@/components/LoadingState.vue'
 import ApplyBanner from '@/components/ApplyBanner.vue'
-import { useApplyConfirm } from '@/composables/useApplyConfirm'
+import LoadingState from '@/components/LoadingState.vue'
 import { asApplyHandle, formatApiError, getRouterApi, unwrap } from '@/api'
 import type { VpnUser, VpnUserConfig } from '@/api'
+import { useApplyConfirm } from '@/composables/useApplyConfirm'
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
 const loading = ref(true)
 const saving = ref(false)
-const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const editorOpen = ref(false)
 const deleteIndex = ref(-1)
 const showPassword = ref(false)
@@ -59,6 +58,12 @@ async function load(quiet = false) {
   }
 }
 
+const refreshQuietly = () => void load(true)
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(
+  refreshQuietly,
+  refreshQuietly,
+)
+
 function openAdd() {
   draft.index = -1
   draft.type = config.value?.types[0] || 'all'
@@ -96,6 +101,18 @@ function draftUser(): VpnUser {
   }
 }
 
+async function restoreActiveTask() {
+  const api = getRouterApi()
+  if (!api.getActiveConfigTask) return
+  try {
+    const active = unwrap(await api.getActiveConfigTask())
+    if (active?.taskId && active.state === 'pending')
+      await begin(asApplyHandle({ accepted: true, taskId: active.taskId, rollbackSec: active.remainingSec || 60, phase: active.phase }))
+  } catch {
+    // ignore
+  }
+}
+
 async function persist(users: VpnUser[]) {
   if (!config.value) return
   saving.value = true
@@ -110,6 +127,7 @@ async function persist(users: VpnUser[]) {
     await load(true)
   } catch (e) {
     toast.error(formatApiError(e, t))
+    await restoreActiveTask()
   } finally {
     saving.value = false
   }
@@ -134,12 +152,23 @@ async function confirmDelete() {
   await persist(users)
 }
 
-onMounted(() => void load())
+onMounted(async () => {
+  await load()
+  await restoreActiveTask()
+})
 </script>
 
 <template>
   <div class="users-page">
-    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner
+      v-if="pending"
+      :remaining="remaining"
+      :phase="pending?.phase"
+      :message="pending?.message"
+      :applying="applying"
+      @confirm="confirm"
+      @cancel="cancel"
+    />
     <LoadingState v-if="loading" />
     <UiCard v-else icon="vpn" :title="t('nav.vpnUsers')">
       <template #actions>
@@ -214,7 +243,7 @@ onMounted(() => void load())
           <input
             v-model="draft.username"
             maxlength="32"
-            :readonly="draft.index >= 0"
+            :disabled="draft.index >= 0"
             autocomplete="off"
           />
         </UiField>
@@ -335,7 +364,6 @@ onMounted(() => void load())
 }
 
 .pwd-cell {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   max-width: 120px;
   overflow: hidden;
@@ -398,12 +426,11 @@ onMounted(() => void load())
 }
 
 .user-form :deep(.control input) {
+  background: var(--color-bg-muted);
   border-color: transparent;
+  border-radius: 999px;
   height: 40px;
   padding: 0 16px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
 }
 
 .user-form :deep(.control input:focus) {
@@ -413,19 +440,18 @@ onMounted(() => void load())
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 16%, transparent);
 }
 
-.user-form :deep(.control input[readonly]) {
+.user-form :deep(.control input:disabled) {
   color: var(--color-muted);
-  cursor: default;
+  cursor: not-allowed;
 }
 
 .user-form :deep(.control .ui-select-trigger) {
   width: 100%;
   min-height: 40px;
+  border-radius: 999px;
+  background: var(--color-bg-muted);
   border-color: transparent;
   padding: 4px 14px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
 }
 
 .user-form :deep(.control .ui-select.open .ui-select-trigger),

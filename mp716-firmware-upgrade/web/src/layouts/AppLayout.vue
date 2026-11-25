@@ -6,9 +6,11 @@ import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import UiIcon from '@/components/UiIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
-import { findPrimaryByPath, primaryNav, showSubnav, type NavChild } from '@/nav'
+import { findNavChildByPath, findPrimaryByPath, primaryNav, showSubnav, type NavChild } from '@/nav'
 import UiModal from '@/components/UiModal.vue'
-import { formatApiError, getRouterApi, unwrap } from '@/api'
+import ApplyBanner from '@/components/ApplyBanner.vue'
+import { asApplyHandle, formatApiError, getApiMode, getRouterApi, unwrap } from '@/api'
+import { useRootApplyConfirm } from '@/composables/rootApplyConfirm'
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
@@ -22,10 +24,20 @@ const rebootOpen = ref(false)
 const rebootBusy = ref(false)
 const toast = useToastStore()
 const shellRef = ref<HTMLElement | null>(null)
+const {
+  pending: globalApply,
+  remaining: globalRemaining,
+  applying: globalApplying,
+  confirm: confirmGlobalApply,
+  cancel: cancelGlobalApply,
+  begin: beginGlobalApply,
+} = useRootApplyConfirm()
 
 const currentPrimary = computed(() => findPrimaryByPath(route.path))
 const hasSub = computed(() => showSubnav(currentPrimary.value))
 const pageTitle = computed(() => {
+  const child = findNavChildByPath(route.path)
+  if (child) return t(child.labelKey)
   const name = typeof route.name === 'string' ? route.name : ''
   if (name) {
     const key = `routes.${name}`
@@ -45,6 +57,11 @@ function isChildActive(to: string) {
 
 function sectionHasActive(children: NavChild[]) {
   return children.some((c) => isChildActive(c.to))
+}
+
+const factoryMode = getApiMode() === 'factory'
+function visibleChildren(children: NavChild[]) {
+  return factoryMode ? children.filter((c) => !c.native) : children
 }
 
 async function onLogout() {
@@ -72,6 +89,33 @@ function closeTransientChrome() {
   userOpen.value = false
 }
 
+/** 每次 GET 在设备上都要起一个 CGI 进程，切页时不必每次都查待确认任务 */
+const CONFIG_TASK_SYNC_MS = 30_000
+let lastConfigTaskSync = 0
+
+async function syncGlobalConfigTask(force = false) {
+  const api = getRouterApi()
+  if (!api.getActiveConfigTask) return
+  const now = Date.now()
+  if (!force && now - lastConfigTaskSync < CONFIG_TASK_SYNC_MS) return
+  lastConfigTaskSync = now
+  try {
+    const active = unwrap(await api.getActiveConfigTask())
+    if (!active?.taskId || active.state !== 'pending') return
+    if (globalApply.value?.applyId === active.taskId) return
+    await beginGlobalApply(
+      asApplyHandle({
+        accepted: true,
+        taskId: active.taskId,
+        rollbackSec: active.remainingSec || 60,
+        phase: active.phase,
+      }),
+    )
+  } catch {
+    // 未登录或设备忙时忽略
+  }
+}
+
 function onDocumentPointerDown(e: PointerEvent) {
   const shell = shellRef.value
   if (!shell) return
@@ -94,12 +138,16 @@ function onViewportResize() {
 
 watch(
   () => route.fullPath,
-  () => closeTransientChrome(),
+  () => {
+    closeTransientChrome()
+    void syncGlobalConfigTask()
+  },
 )
 
 onMounted(() => {
   document.addEventListener('pointerdown', onDocumentPointerDown)
   window.addEventListener('resize', onViewportResize)
+  void syncGlobalConfigTask(true)
 })
 
 onBeforeUnmount(() => {
@@ -212,7 +260,7 @@ onBeforeUnmount(() => {
             >
               <div class="subnav-section-title">{{ t(section.labelKey) }}</div>
               <RouterLink
-                v-for="child in section.children"
+                v-for="child in visibleChildren(section.children)"
                 :key="child.to"
                 :to="child.to"
                 class="subnav-item"
@@ -249,6 +297,16 @@ onBeforeUnmount(() => {
       </aside>
 
       <main class="app-main" :class="{ 'is-surface': route.meta.mainSurface }">
+        <ApplyBanner
+          v-if="globalApply"
+          class="global-apply-banner"
+          :remaining="globalRemaining"
+          :applying="globalApplying"
+          :phase="globalApply.phase"
+          :message="globalApply.message"
+          @confirm="confirmGlobalApply"
+          @cancel="cancelGlobalApply"
+        />
         <h1 v-if="route.name !== 'dashboard' && !route.meta.hidePageTitle" class="page-title">{{ pageTitle }}</h1>
         <RouterView />
       </main>
@@ -749,6 +807,10 @@ onBeforeUnmount(() => {
 .app-main.is-surface {
   padding: 0;
   background: var(--color-surface);
+}
+
+.global-apply-banner {
+  margin-bottom: 12px;
 }
 
 .page-title {

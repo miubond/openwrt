@@ -6,7 +6,7 @@ import UiCard from '@/components/UiCard.vue'
 import UiButton from '@/components/UiButton.vue'
 import UiIcon from '@/components/UiIcon.vue'
 import type { PhysicalPortStatus, SystemStatus } from '@/api/types'
-import { formatApiError, getRouterApi, isUnauthorizedError, unwrap } from '@/api'
+import { formatApiError, getRouterApi, isMissingNativeRouteError, isUnauthorizedError, unwrap } from '@/api'
 import { DeviceRouterAdapter } from '@/api/adapters/device-adapter'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -19,7 +19,7 @@ import {
   type WanStatusView,
   type WifiStatusView,
 } from '@/api/view-map'
-import { formatDateTime, formatRate, formatUptime } from '@/utils/format'
+import { formatDateTime, formatLiveRate, formatUptime } from '@/utils/format'
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
@@ -43,7 +43,7 @@ const showShell = computed(() => !bootFailed.value || ready.value)
 
 /** 逻辑 WAN（HYID 25）：与拓扑「Internet」一致 */
 const wanLinkUp = computed(() => Boolean(wan.value?.up))
-/** 物理 WAN 口（HYID 108 port_arr）；未核验映射时不猜 WAN 口，避免误报不一致 */
+/** 物理 WAN 口（HYID 108 port_arr）；未核验映射时不猜 WAN */
 const physicalWanUp = computed(
   () =>
     physicalPorts.value.find((p) => p.role === 'wan' && p.mappingVerified !== false)?.linkUp ??
@@ -55,8 +55,12 @@ const physicalMappingVerified = computed(
     physicalPorts.value.every((p) => p.mappingVerified !== false),
 )
 const staListCount = computed(() => devices.value.length)
+
+function wanRateText(bps: number) {
+  return formatLiveRate(bps, wan.value?.ratesReady, t('dashboard.rateMeasuring'))
+}
 const unverifiedPhysicalPorts = computed(() =>
-  physicalPorts.value.some(p => p.mappingVerified === false || p.role === 'unknown'),
+  physicalPorts.value.some((p) => p.mappingVerified === false || p.role === 'unknown'),
 )
 const portPlaceholders = [
   { id: 'lan1', label: 'LAN1', role: 'lan' as const },
@@ -65,9 +69,11 @@ const portPlaceholders = [
   { id: 'lan4', label: 'LAN4', role: 'lan' as const },
   { id: 'wan', label: 'WAN', role: 'wan' as const },
 ]
-// Use backend labels and roles. Array order cannot establish a chassis mapping.
+/** 使用后端标签与角色；数组顺序不能推断机箱映射 */
 const displayedPorts = computed<PhysicalPortStatus[]>(() =>
-  physicalPorts.value.length ? physicalPorts.value : portPlaceholders.map(p => ({ ...p, linkUp: false, speedMbps: 0 })),
+  physicalPorts.value.length
+    ? physicalPorts.value
+    : portPlaceholders.map((p) => ({ ...p, linkUp: false, speedMbps: 0 })),
 )
 
 /** 首页预览最多 5 条，按实际数据行数渲染，不补空行 */
@@ -81,11 +87,12 @@ function portStatusLabel(port: PhysicalPortStatus) {
 }
 
 function wanAccessLabel(proto: string) {
-  const key = proto.trim()
-  if (!key) return '—'
+  const raw = proto.trim()
+  if (!raw) return '—'
+  const key = raw.toLowerCase()
   const path = `dashboard.netType.${key}`
   const mapped = t(path)
-  return mapped === path ? key : mapped
+  return mapped === path ? raw : mapped
 }
 
 async function handleLoadError(e: unknown) {
@@ -123,13 +130,22 @@ async function load(quiet = false) {
       physicalPorts.value = data.physicalPorts
       devices.value = data.devices.map(toDeviceView)
       if (!quiet) bootFailed.value = false
+      if (seq === loadSeq) devicesLoading.value = false
       return
     } catch (e) {
       if (isUnauthorizedError(e)) {
         await handleLoadError(e)
         return
       }
-      /* 旧固件无 GET home/dashboard 时继续走下方多请求路径 */
+      if (!isMissingNativeRouteError(e)) {
+        if (seq === loadSeq) devicesLoading.value = false
+        if (!quiet) {
+          bootFailed.value = true
+          toast.error(formatApiError(e, t))
+        }
+        return
+      }
+      /* 仅旧固件无 home/dashboard 时回退多请求 */
     }
   }
 
@@ -273,8 +289,8 @@ onUnmounted(() => {
           <div class="link">
             <div class="line" />
             <div v-if="wan" class="rates rates-traffic">
-              <span class="rate-up">↑ {{ formatRate(wan.txRateBps) }}</span>
-              <span class="rate-down">↓ {{ formatRate(wan.rxRateBps) }}</span>
+              <span class="rate-up">↑ {{ wanRateText(wan.txRateBps) }}</span>
+              <span class="rate-down">↓ {{ wanRateText(wan.rxRateBps) }}</span>
             </div>
             <div v-else class="rates">
               <span class="skel skel-line" aria-hidden="true" />
@@ -326,11 +342,11 @@ onUnmounted(() => {
                 <div><dt>{{ t('dashboard.netmask') }}</dt><dd>{{ wan.netmask || '—' }}</dd></div>
                 <div>
                   <dt>{{ t('dashboard.uplink') }}</dt>
-                  <dd class="rate-up">{{ formatRate(wan.txRateBps) }}</dd>
+                  <dd class="rate-up">{{ wanRateText(wan.txRateBps) }}</dd>
                 </div>
                 <div>
                   <dt>{{ t('dashboard.downlink') }}</dt>
-                  <dd class="rate-down">{{ formatRate(wan.rxRateBps) }}</dd>
+                  <dd class="rate-down">{{ wanRateText(wan.rxRateBps) }}</dd>
                 </div>
                 <div><dt>{{ t('dashboard.access') }}</dt><dd>{{ wanAccessLabel(wan.proto) }}</dd></div>
               </template>
@@ -475,8 +491,7 @@ onUnmounted(() => {
                     <td class="col-ip"><span class="skel skel-cell" aria-hidden="true" /></td>
                   </tr>
                   <tr v-else-if="!terminalPreview.length">
-                    <td class="col-idx">—</td>
-                    <td class="col-name muted-cell" colspan="3">{{ t('dashboard.noOnline') }}</td>
+                    <td class="empty-cell" colspan="4">{{ t('dashboard.noOnline') }}</td>
                   </tr>
                   <tr v-for="(d, i) in terminalPreview" :key="d.id">
                     <td class="col-idx">{{ i + 1 }}</td>
@@ -624,6 +639,12 @@ onUnmounted(() => {
   color: var(--color-muted);
   font-size: var(--fs-xs);
 }
+.terminals-table .empty-cell {
+  text-align: center;
+  color: var(--color-muted);
+  font-size: var(--fs-sm);
+  padding: 1.25rem 0.75rem;
+}
 @keyframes skel-shine {
   0% {
     background-position: 100% 0;
@@ -664,7 +685,6 @@ onUnmounted(() => {
   width: 35%;
   min-width: 0;
   text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--fs-xs);
   white-space: nowrap;
   overflow: hidden;
@@ -674,7 +694,6 @@ onUnmounted(() => {
   width: 35%;
   min-width: 0;
   text-align: right;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--fs-xs);
   white-space: nowrap;
   overflow: hidden;
@@ -775,8 +794,14 @@ onUnmounted(() => {
 .rate-down {
   color: var(--color-danger);
 }
-.info-kv dd.rate-up,
+/* 提高优先级，避免被 .info-kv dd 的标题色盖掉 */
+.info-kv dd.rate-up {
+  color: var(--color-success);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+}
 .info-kv dd.rate-down {
+  color: var(--color-danger);
   font-weight: var(--fw-semibold);
   font-variant-numeric: tabular-nums;
 }
@@ -819,7 +844,6 @@ onUnmounted(() => {
   min-width: 0;
 }
 .info-kv dd.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   letter-spacing: 0.01em;
 }
@@ -858,25 +882,16 @@ onUnmounted(() => {
   overflow: hidden;
 }
 .port strong {
-  display: block;
-  width: 100%;
   font-size: var(--fs-xs);
-  line-height: 1.2;
-  min-height: 1.2em;
   color: var(--color-title);
-  text-align: center;
 }
 .port span {
-  display: block;
   font-size: var(--fs-xs);
   line-height: 1.25;
-  min-height: 1.25em;
   width: 100%;
   max-width: 100%;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .port-ico {
   width: 28px;

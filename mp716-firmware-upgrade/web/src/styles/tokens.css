@@ -29,7 +29,7 @@
   --radius: 10px;
   --radius-sm: 6px;
   --font:
-    'HarmonyOS Sans SC', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', '微软雅黑', system-ui,
+    'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', '微软雅黑', 'Noto Sans SC', system-ui,
     sans-serif;
   --header-height: 64px;
   --subnav-width: 220px;
