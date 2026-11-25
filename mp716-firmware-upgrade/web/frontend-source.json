@@ -7,8 +7,8 @@
     "firmware/scripts/verify-production-bundle.mjs": "e011e3e3a3a62267dc134862bb22ecef26d7b1c0edf33a12d888b4e51e4291b7",
     "index.html": "3007de12ab0989eff4b0d60388cf377745b42ee40b9b36b07aa509cbca88778d",
     "native-web-contract.json": "5c43466720bd5b5a625e3e0a740e21ae8c7d6ddb9c42e3669b04cea682c93b88",
-    "package-lock.json": "9930c0bcd47274a44ef72b019c8b1cb89d7ba93d3e9b99775d402276b1420182",
-    "package.json": "07436df304f629101af0903535429576767389f121bd3c10d615353fc8cbaf38",
+    "package-lock.json": "9bee394ff90301edf00dd442199e590197c07c442540c79b493cf8ef6178a4b0",
+    "package.json": "df82c3413450a830843d8ca0aee2d6815d14eba9120301b4971883222cf23b4c",
     "packages/mp716-rpc/files/usr/libexec/rpcd/mp716": "3c09211839d56fbaa38b630ad265cb0281fb79284e8bdb1e9b320ce81a153a00",
     "public/favicon.svg": "61bc9a161de58248288e6905425d7180f0624c2865007b97d763fdac12043a66",
     "public/icons.svg": "b45fa506195cfcdef406ba9f0c77b36ddc1a7c224040926ec70abc2fdea7b93a",
@@ -185,8 +185,8 @@
     "vite.config.ts": "cc5202fe291454fa94387dfe46c7d4ec182a4e4a0974e2fb3bf0bf1d094706cc"
   },
   "generated": true,
-  "source_commit": "304310e378b32ada05ef28d96f0756e61debf11e",
+  "source_commit": "bff333ac303d21b19f47ad5a35abc5c909408021",
   "source_dirty": false,
   "source_project": "openwrt_system",
-  "source_tree_sha256": "95996d329f5343084d22c2d90d1d8453a768f58611d36c2de6ab118d288fefb9"
+  "source_tree_sha256": "5b45b02a9d94024398df4f467e20f824b7d6ce8896f69174dedaaa126ed03705"
 }
