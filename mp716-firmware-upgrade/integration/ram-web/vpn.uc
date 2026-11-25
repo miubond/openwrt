@@ -7,7 +7,7 @@ import { check_vpn_services } from '/usr/share/mp716/vpn-services.uc';
 import { command, acquire, release, expire, pending, blocking_pending, dismiss_failed_pending, begin, applied, rollback, store, load } from '/usr/share/mp716/admin-state.uc';
 import { WG_CLIENT_IF, WG_SERVER_IF, wg_models, wg_context, wg_require, wg_service_info, wg_sync, wg_status, cidr4,
 	validate_client, client_view, parse_client_conf, wg_reserved_list } from '/usr/share/mp716/wireguard.uc';
-const WG_CLIENT_ONLY_MSG='当前版本仅支持 WireGuard 客户端';
+const WG_CLIENT_ONLY_MSG='当前版本仅支持智能加速';
 function reject_wireguard_server(sub) {
 	if(sub=='server' || index(sub,'server/')==0)die(WG_CLIENT_ONLY_MSG);
 }
@@ -198,7 +198,7 @@ function upload_files(body,owner) {
 }
 function wireguard_ctx(c,bus,m,editing) {
 	let ctx=wg_context(c,bus,m), cl=m.wg.wgclient, sv=m.wg.wgserver;
-	if(editing!='wgclient' && cl.enabled)for(let a in cl.addresses){let n=cidr4(a);if(n)push(ctx.reserved,{label:'WireGuard 客户端',net:n});}
+	if(editing!='wgclient' && cl.enabled)for(let a in cl.addresses){let n=cidr4(a);if(n)push(ctx.reserved,{label:'智能加速',net:n});}
 	if(editing!='wgserver' && sv.enabled){let n=cidr4(sv.address);if(n)push(ctx.reserved,{label:'WireGuard 服务器',net:n});}
 	return ctx;
 }
