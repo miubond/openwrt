@@ -1,6 +1,6 @@
 # MP716 固件原生接口与本地 Web 联调
 
-适用：MP716 自研固件 **1.0.7**，Web **0.2.1**，接口契约 **`mp716-native/v1`**。整理日期：2026-11-20。主 Web 源码为 `D:\goweb\src\openwrt_system`，固件仓库的 `web/` 是该源码的生成快照。
+适用：MP716 自研固件 **1.0.10**，Web **0.2.3**，接口契约 **`mp716-native/v1`**。整理日期：2026-11-20，版本于 2026-11-25 按实机更新。主 Web 源码为 `D:\goweb\src\openwrt_system`，固件仓库的 `web/` 是该源码的生成快照。
 
 - [72 条接口完整清单](mp716-native-api-catalog.md)
 - [OpenAPI 3.1 JSON，可导入支持 OpenAPI 的接口工具](mp716-native-openapi.json)
@@ -12,7 +12,7 @@
 
 ## 1. 地址与原厂区别
 
-当前实验室路由器**仅运行**自研栈：OpenWrt **1.0.7** 与嵌入的 Vue 后台。原厂 014 的 Web 与 HUAYI 程序已在刷写 `firmware` 分区时被替换，**不与**自研后台同时保留。Flash 上的 Bootloader、Config、Factory 未改；「保留配置」指 UCI/身份迁移，不是保留原厂系统。见 [实机运行状态与原厂替换边界](mp716-device-runtime-state.md)。
+当前实验室路由器**仅运行**自研栈：OpenWrt **1.0.10**，页面已热更新为 Web **0.2.3**。原厂 014 的 Web 与 HUAYI 程序已在刷写 `firmware` 分区时被替换，**不与**自研后台同时保留。Flash 上的 Bootloader、Config、Factory 未改；「保留配置」指 UCI/身份迁移，不是保留原厂系统。见 [实机运行状态与原厂替换边界](mp716-device-runtime-state.md)。
 
 | 用途 | 地址或格式 |
 | --- | --- |

@@ -1,6 +1,6 @@
-# MP716 自研栈：当前实现架构（2026-11-23）
+# MP716 自研栈：当前实现架构（2026-11-25）
 
-适用实机：**OpenWrt 1.0.7**、Web **0.2.1**、API **`mp716-native/v1`**。实验室设备 **192.168.199.1**，已替换原厂华翼 Web，不并存 `cgi_huayi`。
+适用实机：**OpenWrt 1.0.10**、Web **0.2.3**、API **`mp716-native/v1`**。实验室设备 **192.168.199.1**，已替换原厂华翼 Web，不并存 `cgi_huayi`。运行边界见 [实机运行状态](mp716-device-runtime-state.md)。
 
 ## 1. 仓库与职责
 
@@ -144,4 +144,4 @@ openwrt_system 构建 web/dist → stage.py --web-dist
 - 物理口 **LAN1–WAN** 依赖每台设备的 `port-map.json`，非全局默认值。
 - 镜像与能力标记多为 **UNVERIFIED**；`flashUpgradeEnabled` 生产默认关闭。
 
-更新：与对话中 1.0.7 实机、`DEPLOY_OK`、端口映射与 dashboard 修复一致。
+更新：结构说明仍覆盖 1.0.7 起的原生栈。2026-11-25 实验室实机版本、网页热更新和刷写限制以 [实机运行状态](mp716-device-runtime-state.md) 为准。

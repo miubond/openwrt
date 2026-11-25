@@ -50,3 +50,12 @@
 - 页面备份 SHA256：`0198475f4ec00d1f309c4a681827e9e320019f3a760616ba7deabd51337ab455`。包含设备私密信息的配置备份只保存在本机，不加入 Web ZIP。
 
 访问 `http://192.168.199.1/`，若仍显示旧界面可按 Ctrl+F5。此次设备端核验使用真实 HTTP 文件及原生接口检查，没有对真实配置执行保存/应用测试。
+
+## 2026-11-25 页面再更新
+
+固件已是 1.0.10 之后，主源码 `codex/mp716-web-feature-lp` 的 `fc568398c6dc173ec065369dfecbd57e17843ef5` 再次热更新到同一台路由器。Web 版本号仍是 0.2.3。只替换了 `/www` 与 `/www/mp716/`，没有覆盖 `/usr/share/mp716/`。
+
+- 当前页面脚本：`/www/mp716/assets/index-BJVmYPkS.js`，WireGuard 页 `WireGuardClientPage-BDHKnq4c.js`。
+- 设备信息页显示软件版本 1.0.10、Web UI 0.2.3。
+- WireGuard 客户端页能打开，状态为近期握手成功，全局模式仍开着。
+- 升级时被 1.0.9 的保留列表清掉的 `/etc/mp716/allow-flash-upgrade` 已补回。1.0.10 的 `keep.d` 已包含该路径。
