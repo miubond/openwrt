@@ -147,7 +147,7 @@ function check_pool(bus,cfg) {
 	}
 }
 function transaction(c,owner,fn,extra,kind) {
-	let t=begin(owner,[CONFIG,'network','firewall'],kind || 'vpn',90,extra);
+	let t=begin(owner,[CONFIG,'network','firewall'],kind || 'vpn',150,extra);
 	try {ensure(c);if(!c.load('network')||!c.load('firewall'))die('VPN 所需的网络或防火墙配置不存在');fn();if(!c.commit(CONFIG)||!c.commit('network')||!c.commit('firewall'))die('无法提交 VPN 配置');
 		// Client credentials also appear in netifd's UCI package. Restrict that
 		// file as well as the private model; rollback restores original modes.

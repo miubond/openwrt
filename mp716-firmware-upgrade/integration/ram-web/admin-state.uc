@@ -108,7 +108,10 @@ export function reload(kind,task_id) {
 			(current.cancelRequested||current.boot!=boot_id()||uptime()>=current.deadline))return {code:-2,cancelled:true,kind:name,output:''};
 		if(!commands[name])return {code:-1,kind:name,output:'Unknown apply kind'};
 		let compound=name=='vpn' || name=='wireguard';
-		let result=command('/bin/busybox timeout -s KILL 25 /bin/sh -c '+quote(compound?commands[name]:'exec '+commands[name]));
+		// VPN/WireGuard reloads netifd and firewall, then waits for the interface.
+		// 25s is shorter than that sequence on MT7628; SIGKILL leaves the iface down.
+		let limit=compound?70:25;
+		let result=command(sprintf('/bin/busybox timeout -s KILL %d /bin/sh -c ',limit)+quote(compound?commands[name]:'exec '+commands[name]));
 		if(result.code!=0)return {...result,kind:name};
 	}
 	return {code:0,output:''};
