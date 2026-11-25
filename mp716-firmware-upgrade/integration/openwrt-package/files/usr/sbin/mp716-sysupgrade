@@ -175,7 +175,7 @@ if [ '$keep' -eq 1 ]; then
 else
 	tar -czf '$archive' -C '$root' ./etc/mp716-upgrade/sysupgrade.pending || exit 1
 fi
-exec sysupgrade $([ "$keep" -eq 0 ] && printf '%s' '-n ') -f '$archive' '$payload'
+exec sysupgrade -f '$archive' $([ "$keep" -eq 0 ] && printf '%s' '-n ') '$payload'
 EOF
 		chmod 755 "$stage/run.sh"
 		# The adapter test has to observe sysupgrade's own exit. On the router the
