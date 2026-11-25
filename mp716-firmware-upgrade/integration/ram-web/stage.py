@@ -1,6 +1,7 @@
 """Install the device Web snapshot and the public test key into an OpenWrt overlay."""
 
 import argparse
+from datetime import datetime, timedelta, timezone
 import re
 import shutil
 from pathlib import Path, PurePosixPath
@@ -90,6 +91,9 @@ def stage(
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         raise SystemExit("Invalid firmware build version")
     (root / "etc/mp716-build.version").write_text(version + "\n", encoding="ascii")
+    # Shown verbatim as the release time in the Web UI, which has no time zone label.
+    built = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
+    (root / "etc/mp716-build.date").write_text(built + "\n", encoding="ascii")
 
 
 if __name__ == "__main__":

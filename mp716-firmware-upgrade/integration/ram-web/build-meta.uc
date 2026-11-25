@@ -71,6 +71,11 @@ export function firmware_version() {
 
 export function firmware_build_date() {
 	try {
+		// Image file mtimes are pinned to SOURCE_DATE_EPOCH, so the stamp written at build time wins.
+		for (let path in ['/rom/etc/mp716-build.date', '/etc/mp716-build.date']) {
+			let stamp = parse_build_stamp(first_line(readfile(path) || ''));
+			if (stamp) return stamp;
+		}
 		let installed = parse_build_stamp(first_line(readfile('/etc/mp716-upgrade/installed.at') || ''));
 		if (installed) return installed;
 		let history = stamp_from_history();
