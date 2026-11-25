@@ -126,6 +126,11 @@ case "$cmd" in
 			set -- -n "$@"
 		fi
 		sysupgrade -T "$@"
+		# 64 MB boards cannot hold the uploaded container and the extracted image in tmpfs
+		# while procd stages the upgrade; only the verified extract is needed from here on.
+		case "$file" in /tmp/mp716-firmware-upload-*.mp716upd) rm -f -- "$file" ;; esac
+		sync
+		echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 		mkdir "$root"
 		if [ "$keep" -eq 1 ]; then
 			sysupgrade -b "$archive"
