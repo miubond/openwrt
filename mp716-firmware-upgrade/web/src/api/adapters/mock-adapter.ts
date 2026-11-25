@@ -44,13 +44,18 @@ import type {
   L2tpClientConfig,
   VpnOnlineUser,
   OpenVpnConfig,
+  WireGuardClientConfig,
+  WireGuardImportResult,
+  WireGuardStatus,
   WifiAdvancedConfig,
   WifiConfig,
+  WifiSecondaryConfig,
   PhysicalPortStatus,
   WifiStatus,
   WirelessAclConfig,
   WirelessClient,
 } from '../types'
+import { WG_SECRET_MASK } from '../types'
 import { failure, success } from '../http'
 import {
   confirmTask,
@@ -89,6 +94,30 @@ function applyTask(rollbackSec: number, prefix: string): ConfigApplyResult {
 
 let sessionToken: string | null = null
 
+/** 仅用于界面开发的伪密钥，不是有效的 Curve25519 密钥 */
+function mockWgKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  return btoa(String.fromCharCode(...bytes))
+}
+
+function wgSecret(value: string, previous: string): string {
+  if (value === WG_SECRET_MASK) return previous
+  if (value === 'generate') return mockWgKey()
+  return value
+}
+
+const mockWgClient: WireGuardClientConfig = {
+  enabled: false,
+  privateKey: '',
+  publicKey: '',
+  addresses: [],
+  dns: [],
+  useDns: false,
+  mtu: 1420,
+  routeMode: 'split',
+  allowGlobalRoute: false,
+  peer: { publicKey: '', presharedKey: '', endpointHost: '', endpointPort: 51820, allowedIPs: [], keepalive: 25 },
+}
 const mockDetect: DiagnosticPoll & { type: DiagnosticType | '' } = {
   type: '',
   flag: 0,
@@ -340,6 +369,25 @@ export class MockRouterAdapter implements RouterAPI {
     return delay(applyTask(45, 'wifi'))
   }
 
+  async getWifiSecondaryConfig(): Promise<ApiResponse<WifiSecondaryConfig>> {
+    return delay({
+      supported: true,
+      enabled: false,
+      ssid: 'MP716-Guest',
+      password: '********',
+      hidden: false,
+      isolate: true,
+    })
+  }
+
+  async updateWifiSecondaryConfig(config: WifiSecondaryConfig): Promise<ApiResponse<ConfigApplyResult>> {
+    if (config.enabled && !config.ssid?.trim()) return failure('VALIDATION', '副 SSID 不能为空')
+    if (config.enabled && config.password && config.password !== '********' && config.password.length < 8) {
+      return failure('VALIDATION', '密码长度至少 8 位')
+    }
+    return delay(applyTask(45, 'wifi-secondary'))
+  }
+
   async getWifiAdvanced(): Promise<ApiResponse<WifiAdvancedConfig>> {
     return delay({
       radioOn: true,
@@ -486,6 +534,85 @@ export class MockRouterAdapter implements RouterAPI {
     return delay(applyTask(0, 'openvpn-file'))
   }
 
+  async getWireGuardClient(): Promise<ApiResponse<WireGuardClientConfig>> {
+    const c = structuredClone(mockWgClient)
+    return delay({
+      ...c,
+      hasPrivateKey: !!c.privateKey,
+      privateKey: c.privateKey ? WG_SECRET_MASK : '',
+      peer: { ...c.peer, presharedKey: c.peer.presharedKey ? WG_SECRET_MASK : '' },
+      reservedNets: [{ label: 'lan', cidr: '192.168.199.0/24' }],
+      serviceAvailable: true,
+    })
+  }
+
+  async updateWireGuardClient(config: WireGuardClientConfig): Promise<ApiResponse<ConfigApplyResult>> {
+    if (config.routeMode === 'global' && config.enabled && !config.allowGlobalRoute)
+      return failure('VALIDATION', '全局模式会让 LAN 上网流量经隧道转发，请先勾选“允许全局路由”')
+    if (config.enabled && (!config.addresses.length || !config.peer.publicKey || !config.peer.endpointHost))
+      return failure('VALIDATION', '请填写隧道地址、对端公钥与 Endpoint')
+    const { privateKey: prevPrivate, publicKey: prevPublic } = mockWgClient
+    const prevPsk = mockWgClient.peer.presharedKey
+    const privateKey = wgSecret(config.privateKey, prevPrivate)
+    if (config.enabled && !privateKey) return failure('VALIDATION', '请先生成或填写本机私钥')
+    Object.assign(mockWgClient, structuredClone({ ...config, privateKey, reservedNets: undefined, serviceAvailable: undefined, serviceMessage: undefined }))
+    mockWgClient.publicKey = !privateKey ? '' : privateKey === prevPrivate && prevPublic ? prevPublic : mockWgKey()
+    mockWgClient.peer.presharedKey = wgSecret(config.peer.presharedKey, prevPsk)
+    return delay(applyTask(30, 'wg-client'))
+  }
+
+  async importWireGuardClient(text: string): Promise<ApiResponse<WireGuardImportResult>> {
+    if (!/\[Interface\]/i.test(text) || !/\[Peer\]/i.test(text)) return failure('VALIDATION', '无法识别的 WireGuard 配置')
+    if (/^\s*(Pre|Post)(Up|Down)\s*=/im.test(text)) return failure('VALIDATION', '出于安全原因，不支持 PostUp 等脚本指令')
+    const pick = (key: string) => new RegExp(`^\\s*${key}\\s*=\\s*(.+)$`, 'im').exec(text)?.[1]?.trim() ?? ''
+    const list = (v: string) => v.split(',').map((s) => s.trim()).filter(Boolean)
+    const allowed = list(pick('AllowedIPs'))
+    const global = allowed.includes('0.0.0.0/0') || allowed.includes('::/0')
+    const [host, port] = pick('Endpoint').split(':')
+    Object.assign(mockWgClient, {
+      enabled: false,
+      privateKey: pick('PrivateKey'),
+      publicKey: mockWgKey(),
+      addresses: list(pick('Address')),
+      dns: list(pick('DNS')),
+      useDns: global && list(pick('DNS')).length > 0,
+      routeMode: global ? 'global' : 'split',
+      allowGlobalRoute: false,
+      peer: {
+        ...mockWgClient.peer,
+        publicKey: pick('PublicKey'),
+        presharedKey: pick('PresharedKey'),
+        endpointHost: host ?? '',
+        endpointPort: Number(port) || 51820,
+        allowedIPs: allowed.filter((a) => a !== '0.0.0.0/0' && a !== '::/0'),
+      },
+    })
+    return delay({ ...applyTask(30, 'wg-import'), warnings: global ? ['配置包含 0.0.0.0/0，已设为全局模式；启用前须确认允许全局路由'] : [] })
+  }
+
+  async getWireGuardStatus(): Promise<ApiResponse<WireGuardStatus>> {
+    const enabled = mockWgClient.enabled
+    return delay({
+      available: true,
+      missing: [],
+      client: {
+        enabled,
+        up: false,
+        error: false,
+        address: '',
+        ifaceState: enabled ? 'down' : 'disabled',
+        handshakeState: 'none',
+        endpoint: '',
+        latestHandshake: 0,
+        handshakeAgeSec: -1,
+        rxBytes: 0,
+        txBytes: 0,
+        errors: [],
+        probe: { state: 'skipped', target: '', reason: enabled ? 'iface-down' : 'disabled', ageSec: -1 },
+      },
+    })
+  }
+
   async getWirelessClients(): Promise<ApiResponse<WirelessClient[]>> {
     return delay(structuredClone(mockWirelessClients))
   }
@@ -555,6 +682,84 @@ export class MockRouterAdapter implements RouterAPI {
   async updatePortForwards(rules: PortForwardRule[]): Promise<ApiResponse<ConfigApplyResult>> {
     mockPortForwards.splice(0, mockPortForwards.length, ...rules)
     return delay(applyTask(30, 'pf'))
+  }
+
+  async getDmzConfig(): Promise<ApiResponse<import('../types').DmzConfig>> {
+    return delay({ enabled: false, hostIp: '192.168.1.100' })
+  }
+
+  async updateDmzConfig(config: import('../types').DmzConfig): Promise<ApiResponse<ConfigApplyResult>> {
+    void config
+    return delay(applyTask(30, 'dmz'))
+  }
+
+  async getUpnpConfig(): Promise<ApiResponse<import('../types').UpnpConfig>> {
+    return delay({ supported: true, enabled: false })
+  }
+
+  async updateUpnpConfig(config: import('../types').UpnpConfig): Promise<ApiResponse<ConfigApplyResult>> {
+    void config
+    return delay(applyTask(30, 'upnp'))
+  }
+
+  async getDdnsConfig(): Promise<ApiResponse<import('../types').DdnsConfig>> {
+    return delay({
+      supported: true,
+      enabled: false,
+      provider: 'duckdns.org',
+      domain: '',
+      username: '',
+      hostname: '',
+    })
+  }
+
+  async updateDdnsConfig(config: import('../types').DdnsConfig): Promise<ApiResponse<ConfigApplyResult>> {
+    void config
+    return delay(applyTask(30, 'ddns'))
+  }
+
+  async getSystemCapabilities(): Promise<ApiResponse<import('../types').NativeCapabilities>> {
+    return delay({
+      apiContract: 'mp716-native/v1',
+      routes: [],
+      firmwareUpgrade: true,
+      firmwareFlashEnabled: false,
+      wanModes: ['wired'],
+      wifiModes: ['11g', '11n'],
+      services: { ntp: true, pptpd: true, l2tp: true, openvpn: true },
+      bundle: {
+        staticRoutes: true,
+        firewall: true,
+        portForward: true,
+        dmz: true,
+        upnp: true,
+        ddns: true,
+        qos: true,
+        dnsPage: true,
+      },
+      hardware: { physicalLanOrderVerified: true, cellularModemVerified: false },
+    })
+  }
+
+  async getStaticRoutes(): Promise<ApiResponse<import('../types').NetworkStaticRoute[]>> {
+    return delay([
+      {
+        id: 'mp716_rt_0',
+        enabled: true,
+        interface: 'wan',
+        target: '10.8.0.0',
+        netmask: '255.255.255.0',
+        gateway: '192.168.1.1',
+        metric: 0,
+      },
+    ])
+  }
+
+  async updateStaticRoutes(
+    routes: import('../types').NetworkStaticRoute[],
+  ): Promise<ApiResponse<ConfigApplyResult>> {
+    void routes
+    return delay(applyTask(60, 'network'))
   }
 
   async getQosCapability(): Promise<ApiResponse<import('../types').QosCapability>> {
@@ -783,6 +988,9 @@ export class MockRouterAdapter implements RouterAPI {
     return delay(applyTask(120, 'restore'))
   }
 
+  async getActiveConfigTask(): Promise<ApiResponse<ConfigTaskStatus | null>> {
+    return success(null)
+  }
   async getConfigTaskStatus(taskId: string): Promise<ApiResponse<ConfigTaskStatus>> {
     const task = getTask(taskId)
     if (!task) return failure('VALIDATION', '任务不存在')

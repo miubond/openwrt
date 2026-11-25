@@ -113,7 +113,9 @@ function formToWanConfig(form: WanPageForm, dns: string[]): WanConfig {
 }
 
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(
+  () => void load(),
+)
 const loading = ref(true)
 const saving = ref(false)
 const helpOpen = ref(false)
@@ -249,7 +251,9 @@ onMounted(() => void load())
 
     <ApplyBanner
       v-if="pending"
-      :remaining="remaining" :phase="pending?.phase" :message="pending?.message"
+      :remaining="remaining"
+      :phase="pending?.phase"
+      :message="pending?.message"
       :applying="applying"
       @confirm="confirm"
       @cancel="cancel"
@@ -257,7 +261,11 @@ onMounted(() => void load())
     <LoadingState v-if="loading" />
     <UiCard v-else>
       <div class="settings-form wan-form">
-        <UiField layout="horizontal" :label="t('wan.networkPolicy')">
+        <UiField
+          layout="horizontal"
+          :label="t('wan.networkPolicy')"
+          :hint="isNative ? t('wan.nativeWiredOnly') : undefined"
+        >
           <div class="radios">
             <label class="radio">
               <input
@@ -278,7 +286,7 @@ onMounted(() => void load())
                 :checked="form.wanMode === 'mobile'"
                 @change="onWanModeChange('mobile')"
               />
-              <span>{{ t('dashboard.netType.mobile') }}<small v-if="isNative"> — {{ t('wan.nativeWiredOnly') }}</small></span>
+              <span>{{ t('dashboard.netType.mobile') }}</span>
             </label>
           </div>
         </UiField>
@@ -424,7 +432,7 @@ onMounted(() => void load())
 }
 .radios {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 24px;
   min-height: 36px;
   align-items: center;
@@ -436,7 +444,12 @@ onMounted(() => void load())
   gap: 8px;
   color: var(--color-text);
   font-size: var(--fs-base);
+  white-space: nowrap;
   cursor: pointer;
+}
+.radio:has(input:disabled) {
+  color: var(--color-muted);
+  cursor: not-allowed;
 }
 .radio input,
 .check input {

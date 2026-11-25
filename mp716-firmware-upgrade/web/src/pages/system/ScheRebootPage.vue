@@ -15,14 +15,11 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm()
 const loading = ref(true)
 const saving = ref(false)
 const clock = ref(0)
 const remainTick = ref(0)
-const routerTime = ref('')
-let deviceClockBase: number | null = null
-let deviceClockLoadedAt = 0
 
 const weekdays = computed(() => [
   { label: t('sysScheReboot.weekMon'), bit: 2 },
@@ -84,15 +81,6 @@ function formatUnix(seconds: number) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
-function formatDeviceClock() {
-  if (deviceClockBase === null) return ''
-  // Treat the device wall-clock fields as UTC solely for arithmetic. No browser
-  // timezone conversion is applied to the router's configured local clock.
-  const date = new Date(deviceClockBase + Math.floor((Date.now() - deviceClockLoadedAt) / 1000) * 1000)
-  const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`
-}
-
 function formatRemaining(seconds: number) {
   const safe = Math.max(0, Math.floor(seconds))
   const day = Math.floor(safe / 86400)
@@ -122,11 +110,6 @@ async function load() {
   loading.value = true
   try {
     Object.assign(form, unwrap(await getRouterApi().getScheReboot()))
-    const local = form.localTime || ''
-    const encoded = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(local) ? Date.parse(local.replace(' ', 'T') + 'Z') : NaN
-    deviceClockBase = Number.isFinite(encoded) ? encoded : null
-    deviceClockLoadedAt = Date.now()
-    routerTime.value = formatDeviceClock()
     clock.value = form.timeDay
     remainTick.value = form.remainingSec > 0 ? form.remainingSec : 0
   } catch (e) {
@@ -157,7 +140,7 @@ async function save() {
   saving.value = true
   try {
     const result = unwrap(await getRouterApi().updateScheReboot({ ...form }))
-    notifySaved(result, 'sysScheReboot.applied')
+    toast.success(t('sysScheReboot.applied'))
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {
@@ -171,7 +154,6 @@ onMounted(() => {
   void load()
   timer = setInterval(() => {
     if (form.mode !== 0 && clock.value > 0) clock.value += 1
-    routerTime.value = formatDeviceClock()
     if (remainTick.value > 0) remainTick.value -= 1
   }, 1000)
 })
@@ -182,7 +164,7 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <UiCard v-else :subtitle="t('sysScheReboot.subtitle')">
       <div class="settings-form">
@@ -226,7 +208,7 @@ onUnmounted(() => {
 
         <template v-if="form.mode !== 0">
           <UiField layout="horizontal" :label="t('sysScheReboot.systemTime')">
-            <input :value="routerTime || formatUnix(clock)" readonly />
+            <input :value="formatUnix(clock)" readonly />
           </UiField>
           <UiField
             v-if="form.remainingSec !== 0 && remainTick > 0"

@@ -102,8 +102,8 @@ onBeforeUnmount(() => {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 18px 48px 12px;
+  justify-content: start;
+  padding: 18px 48px 12px 24px;
   border-bottom: 1px solid var(--color-border);
 }
 .title {
@@ -141,7 +141,7 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 12px 24px 20px;
+  padding: 12px 24px;
   border-top: 1px solid var(--color-border);
 }
 .btn {

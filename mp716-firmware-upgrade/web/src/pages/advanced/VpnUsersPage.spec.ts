@@ -4,7 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import VpnUsersPage from './VpnUsersPage.vue'
 import type { VpnUserConfig } from '@/api/types'
 
-const api = vi.hoisted(() => ({ getVpnUsers: vi.fn(), updateVpnUsers: vi.fn(), getConfigTaskStatus: vi.fn(), confirmConfigTask: vi.fn(), cancelConfigTask: vi.fn() }))
+const api = vi.hoisted(() => ({ getVpnUsers: vi.fn(), getActiveConfigTask: vi.fn(), updateVpnUsers: vi.fn(), getConfigTaskStatus: vi.fn(), confirmConfigTask: vi.fn(), cancelConfigTask: vi.fn() }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (s: string) => s }) }))
 vi.mock('@/api', () => ({ getRouterApi: () => api, unwrap: (r: { data: unknown }) => r.data, asApplyHandle: (r: { taskId: string; rollbackSec: number }) => ({ applyId: r.taskId, timeoutSec: r.rollbackSec }), formatApiError: (e: Error) => e.message }))
 const original: VpnUserConfig = { users: [{ type: 'all', username: 'existing', password: '********', address: '', comment: '', routes: '' }], types: ['all', 'pptp', 'l2tp'], pptpStart: '10.71.60.10', pptpEnd: '10.71.60.100', l2tpStart: '10.71.61.10', l2tpEnd: '10.71.61.100' }
@@ -12,6 +12,7 @@ let current: VpnUserConfig, wrapper: ReturnType<typeof mount>
 beforeEach(() => {
   vi.useFakeTimers(); current = structuredClone(original)
   api.getVpnUsers.mockImplementation(async () => ({ ok: true, data: { ...current, users: current.users.map(u => ({ ...u, password: '********' })) } }))
+  api.getActiveConfigTask.mockResolvedValue({ ok: true, data: null })
   api.updateVpnUsers.mockImplementation(async (next: VpnUserConfig) => { current = JSON.parse(JSON.stringify(next)); return { ok: true, data: { accepted: true, taskId: 'users', rollbackSec: 90 } } })
   api.confirmConfigTask.mockResolvedValue({ ok: true, data: { state: 'confirmed' } })
   api.cancelConfigTask.mockImplementation(async () => { current = structuredClone(original); return { ok: true, data: { state: 'rolled_back' } } })
@@ -37,9 +38,10 @@ it('adds a user through its editor, then restores the prior list on rollback', a
 it('deletes a user only after the delete confirmation and supports rollback', async () => {
   await open(); await wrapper.get('button[aria-label="common.delete"]').trigger('click')
   expect(api.updateVpnUsers).not.toHaveBeenCalled()
-  await button('common.confirm').trigger('click'); await flushPromises()
+  await button('common.delete').trigger('click'); await flushPromises()
   expect(api.updateVpnUsers).toHaveBeenCalledWith(expect.objectContaining({ users: [] }))
-  expect(wrapper.find('tbody').exists()).toBe(false)
+  expect(wrapper.get('tbody').text()).toContain('common.emptyUsers')
+  expect(wrapper.get('tbody').text()).not.toContain('existing')
   await button('apply.rollback').trigger('click'); await flushPromises()
   expect(wrapper.get('tbody').text()).toContain('existing')
 })

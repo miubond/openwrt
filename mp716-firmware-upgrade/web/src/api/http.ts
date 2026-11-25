@@ -1,4 +1,5 @@
 import type { ApiErrorCode, ApiFailure, ApiResponse, ApiResult } from './types'
+import { notifyUnauthorized } from './result'
 
 const DEFAULT_TIMEOUT_MS = 15_000
 
@@ -51,6 +52,7 @@ export async function requestJson<T>(
     clearTimeout(timer)
 
     if (res.status === 401) {
+      if (!url.includes('/auth/login')) notifyUnauthorized()
       return failure('UNAUTHORIZED', '会话无效或已过期，请重新登录', undefined, 'errors.unauthorized')
     }
     if (res.status === 403) {
@@ -59,13 +61,19 @@ export async function requestJson<T>(
     if (!res.ok) {
       let message = `设备接口异常 (${res.status})`
       try {
-        const errBody = (await res.json()) as { message?: string; code?: string }
-        if (errBody.message) message = errBody.message
-        if (['VALIDATION', 'DEVICE_BUSY', 'NOT_IMPLEMENTED', 'TIMEOUT'].includes(errBody.code || '')) {
-          return failure(errBody.code as ApiErrorCode, message, undefined)
+        const errBody = (await res.json()) as {
+          message?: string
+          code?: string
+          details?: unknown
         }
-        if (errBody.code === 'TIMEOUT') {
-          return failure('TIMEOUT', message, errBody, 'errors.timeout')
+        if (errBody.message) message = errBody.message
+        const code = errBody.code || ''
+        if (code === 'TIMEOUT') {
+          return failure('TIMEOUT', message, errBody.details ?? errBody, 'errors.timeout')
+        }
+        if (['VALIDATION', 'DEVICE_BUSY', 'NOT_IMPLEMENTED'].includes(code)) {
+          // 保留 details：固件验签拒绝、忙任务等依赖此字段
+          return failure(code as ApiErrorCode, message, errBody.details ?? errBody)
         }
       } catch {
         /* ignore */
@@ -75,6 +83,9 @@ export async function requestJson<T>(
 
     const payload = (await res.json()) as ApiResponse<T>
     if (typeof payload === 'object' && payload !== null && 'ok' in payload) {
+      if (payload.ok === false && (payload as ApiFailure).code === 'UNAUTHORIZED' && !url.includes('/auth/login')) {
+        notifyUnauthorized()
+      }
       return payload
     }
     return success(payload as T)
@@ -103,6 +114,7 @@ export async function requestForm<T>(
     })
     clearTimeout(timer)
     if (res.status === 401) {
+      if (!url.includes('/auth/login')) notifyUnauthorized()
       return failure('UNAUTHORIZED', '会话无效或已过期，请重新登录', undefined, 'errors.unauthorized')
     }
     if (res.status === 403) {

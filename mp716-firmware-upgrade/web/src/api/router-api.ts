@@ -16,6 +16,9 @@ import type {
   QuickSettingWan,
   QuickSettingWifi,
   PortForwardRule,
+  DmzConfig,
+  UpnpConfig,
+  DdnsConfig,
   QosCapability,
   QosConfig,
   AdminPasswordChange,
@@ -47,8 +50,12 @@ import type {
   L2tpClientConfig,
   VpnOnlineUser,
   OpenVpnConfig,
+  WireGuardClientConfig,
+  WireGuardImportResult,
+  WireGuardStatus,
   WifiAdvancedConfig,
   WifiConfig,
+  WifiSecondaryConfig,
   WifiStatus,
   WirelessClient,
 } from './types'
@@ -85,20 +92,37 @@ export interface RouterAPI {
   ): Promise<ApiResponse<ConfigApplyResult>>
 
   getDhcpConfig(): Promise<ApiResponse<DhcpConfig>>
-  updateDhcpConfig(config: DhcpConfig): Promise<ApiResponse<ConfigApplyResult>>
+  updateDhcpConfig(
+    config: DhcpConfig,
+    options?: { confirmTimeoutSec?: number },
+  ): Promise<ApiResponse<ConfigApplyResult>>
   updateDhcpStaticBindings(
     bindings: StaticDhcpBinding[],
   ): Promise<ApiResponse<ConfigApplyResult>>
 
   getDnsConfig(): Promise<ApiResponse<DnsConfig>>
-  updateDnsConfig(config: DnsConfig): Promise<ApiResponse<ConfigApplyResult>>
+  updateDnsConfig(
+    config: DnsConfig,
+    options?: { confirmTimeoutSec?: number },
+  ): Promise<ApiResponse<ConfigApplyResult>>
 
   getWifiStatus(): Promise<ApiResponse<WifiStatus>>
   getPhysicalPorts(): Promise<ApiResponse<PhysicalPortStatus[]>>
   getWifiConfig(): Promise<ApiResponse<WifiConfig>>
-  updateWifiConfig(config: WifiConfig): Promise<ApiResponse<ConfigApplyResult>>
+  updateWifiConfig(
+    config: WifiConfig,
+    options?: { confirmTimeoutSec?: number },
+  ): Promise<ApiResponse<ConfigApplyResult>>
+  getWifiSecondaryConfig(): Promise<ApiResponse<WifiSecondaryConfig>>
+  updateWifiSecondaryConfig(
+    config: WifiSecondaryConfig,
+    options?: { confirmTimeoutSec?: number },
+  ): Promise<ApiResponse<ConfigApplyResult>>
   getWifiAdvanced(): Promise<ApiResponse<WifiAdvancedConfig>>
-  updateWifiAdvanced(config: WifiAdvancedConfig): Promise<ApiResponse<ConfigApplyResult>>
+  updateWifiAdvanced(
+    config: WifiAdvancedConfig,
+    options?: { confirmTimeoutSec?: number },
+  ): Promise<ApiResponse<ConfigApplyResult>>
 
   getPptpClient(): Promise<ApiResponse<PptpClientConfig>>
   updatePptpClient(config: PptpClientConfig): Promise<ApiResponse<ConfigApplyResult>>
@@ -121,8 +145,15 @@ export interface RouterAPI {
   updateOpenVpn(config: OpenVpnConfig): Promise<ApiResponse<ConfigApplyResult>>
   uploadOpenVpn(file: File, kind: 'config' | 'cert'): Promise<ApiResponse<ConfigApplyResult>>
 
+  getWireGuardClient(): Promise<ApiResponse<WireGuardClientConfig>>
+  updateWireGuardClient(config: WireGuardClientConfig): Promise<ApiResponse<ConfigApplyResult>>
+  /** 导入 wg-quick 配置；导入后为停用状态，需确认后再启用 */
+  importWireGuardClient(text: string): Promise<ApiResponse<WireGuardImportResult>>
+  getWireGuardStatus(): Promise<ApiResponse<WireGuardStatus>>
+
   getWirelessClients(): Promise<ApiResponse<WirelessClient[]>>
   getConnectedDevices(): Promise<ApiResponse<ConnectedDevice[]>>
+  getHostsOverview?(): Promise<ApiResponse<import('./types').HostsOverview>>
   getDeviceAclList(): Promise<ApiResponse<DeviceAclEntry[]>>
   addDeviceAcl(mac: string): Promise<ApiResponse<null>>
   removeDeviceAcl(mac: string): Promise<ApiResponse<null>>
@@ -131,6 +162,17 @@ export interface RouterAPI {
   updateFirewallRules(rules: FirewallRule[]): Promise<ApiResponse<ConfigApplyResult>>
   getPortForwards(): Promise<ApiResponse<PortForwardRule[]>>
   updatePortForwards(rules: PortForwardRule[]): Promise<ApiResponse<ConfigApplyResult>>
+  getDmzConfig(): Promise<ApiResponse<DmzConfig>>
+  updateDmzConfig(config: DmzConfig): Promise<ApiResponse<ConfigApplyResult>>
+  getUpnpConfig(): Promise<ApiResponse<UpnpConfig>>
+  updateUpnpConfig(config: UpnpConfig): Promise<ApiResponse<ConfigApplyResult>>
+  getDdnsConfig(): Promise<ApiResponse<DdnsConfig>>
+  updateDdnsConfig(config: DdnsConfig): Promise<ApiResponse<ConfigApplyResult>>
+
+  getSystemCapabilities?(): Promise<ApiResponse<import('./types').NativeCapabilities>>
+
+  getStaticRoutes(): Promise<ApiResponse<import('./types').NetworkStaticRoute[]>>
+  updateStaticRoutes(routes: import('./types').NetworkStaticRoute[]): Promise<ApiResponse<ConfigApplyResult>>
 
   getQosCapability(): Promise<ApiResponse<QosCapability>>
   getQosConfig(): Promise<ApiResponse<QosConfig>>
@@ -160,7 +202,7 @@ export interface RouterAPI {
   getFirmwareInfo(): Promise<ApiResponse<FirmwareInfo>>
   uploadFirmware(
     file: Blob,
-    options?: { keepSettings?: boolean },
+    options?: { keepSettings?: boolean; flash?: boolean },
   ): Promise<ApiResponse<ConfigApplyResult>>
 
   getFirmwareV2Info(): Promise<ApiResponse<FirmwareV2EngineInfo>>
@@ -176,6 +218,7 @@ export interface RouterAPI {
   downloadBackup(): Promise<ApiResponse<BackupDownload>>
   restoreConfig(file: Blob): Promise<ApiResponse<ConfigApplyResult>>
 
+  getActiveConfigTask?(): Promise<ApiResponse<ConfigTaskStatus | null>>
   getConfigTaskStatus(taskId: string): Promise<ApiResponse<ConfigTaskStatus>>
   confirmConfigTask(taskId: string): Promise<ApiResponse<ConfigTaskStatus>>
   cancelConfigTask?(taskId: string): Promise<ApiResponse<ConfigTaskStatus>>

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import UiCard from '@/components/UiCard.vue'
 import UiButton from '@/components/UiButton.vue'
+import UiModal from '@/components/UiModal.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import { ApiCallError, formatApiError, getRouterApi, unwrap } from '@/api'
 import type { FirmwareInfo, FirmwareVerificationReport } from '@/api'
@@ -19,6 +20,11 @@ const file = ref<File | null>(null)
 const fileName = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const verification = ref<FirmwareVerificationReport | null>(null)
+
+const canUpload = computed(() => info.value?.canUpgrade !== false)
+const flashEnabled = computed(() => !!info.value?.flashUpgradeEnabled)
+const verifyOnly = computed(() => !flashEnabled.value)
+const confirmOpen = ref(false)
 
 function show(value?: string) {
   const raw = (value || '').trim()
@@ -47,28 +53,47 @@ function onFile(e: Event) {
   verification.value = null
 }
 
-async function doUpgrade() {
+function validateFile(): boolean {
+  if (!canUpload.value) {
+    toast.error(t('upgrade.uploadDisabled'))
+    return false
+  }
   if (!file.value) {
     toast.error(t('upgrade.noFile'))
-    return
+    return false
   }
   const maxBytes = info.value?.maxBytes ?? 0
   if (maxBytes > 0 && file.value.size > maxBytes) {
     const tip = info.value?.maxSizeLabel
     toast.error(tip ? t('upgrade.maxSize', { tip }) : t('upgrade.fileTooBig'))
-    return
+    return false
   }
+  return true
+}
+
+function onSubmitClick() {
+  if (!validateFile()) return
+  if (flashEnabled.value) confirmOpen.value = true
+  else void submitUpload()
+}
+
+async function submitUpload() {
+  confirmOpen.value = false
+  if (!file.value || !validateFile()) return
   uploading.value = true
   verification.value = null
   try {
     const result = unwrap(
-      await getRouterApi().uploadFirmware(file.value, { keepSettings: keepSettings.value }),
+      await getRouterApi().uploadFirmware(file.value, {
+        keepSettings: keepSettings.value,
+        flash: flashEnabled.value,
+      }),
     )
     verification.value = result.verificationReport || null
-    if (result.validated && result.flashWrite === false) {
-      toast.success(result.message || t('upgrade.successValidateOnly'))
-    } else {
+    if (result.flashWrite) {
       toast.success(result.message || t('upgrade.success'))
+    } else if (result.validated) {
+      toast.success(result.message || t('upgrade.successValidateOnly'))
     }
   } catch (e) {
     verification.value = readVerificationReport(e instanceof ApiCallError ? e.details : null)
@@ -100,30 +125,50 @@ onMounted(() => void load())
           <div class="value">{{ show(info?.buildDate) }}</div>
         </div>
 
-        <div class="row upload-row">
-          <div class="label">{{ t('upgrade.fileLabel') }}</div>
-          <div class="picker">
-            <input ref="fileInput" class="hidden" type="file" @change="onFile" />
-            <div class="file-box">
-              <input class="name" :value="fileName" readonly />
-              <button class="select" type="button" @click="pickFile">{{ t('upgrade.pick') }}</button>
+        <p v-if="!canUpload" class="warn">{{ t('upgrade.uploadDisabled') }}</p>
+
+        <template v-else>
+          <div class="row upload-row">
+            <div class="label">{{ t('upgrade.fileLabel') }}</div>
+            <div class="picker">
+              <input
+                ref="fileInput"
+                class="hidden"
+                type="file"
+                accept=".mp716upd,.mp7fw,.bin,application/octet-stream"
+                @change="onFile"
+              />
+              <div class="file-box">
+                <input class="name" :value="fileName" readonly />
+                <button class="select" type="button" @click="pickFile">{{ t('upgrade.pick') }}</button>
+              </div>
+              <UiButton variant="secondary" :disabled="uploading || !file" @click="onSubmitClick">
+                {{
+                  uploading
+                    ? flashEnabled
+                      ? t('upgrade.upgrading')
+                      : t('upgrade.verifying')
+                    : flashEnabled
+                      ? t('upgrade.submit')
+                      : t('upgrade.verify')
+                }}
+              </UiButton>
             </div>
-            <UiButton variant="secondary" :disabled="uploading || !file" @click="doUpgrade">
-              {{ uploading ? t('upgrade.verifying') : t('upgrade.verify') }}
-            </UiButton>
           </div>
-        </div>
 
-        <div v-if="info?.flashUpgradeEnabled" class="row keep-row">
-          <div class="label" />
-          <label class="keep">
-            <input v-model="keepSettings" type="checkbox" />
-            {{ t('upgrade.keepSettings') }}
-          </label>
-        </div>
+          <div class="row keep-row">
+            <div class="label" />
+            <label class="keep">
+              <input v-model="keepSettings" type="checkbox" :disabled="!flashEnabled" />
+              {{ t('upgrade.keepSettings') }}
+            </label>
+          </div>
 
-        <p v-if="info?.maxSizeLabel" class="hint">{{ t('upgrade.maxSize', { tip: info.maxSizeLabel }) }}</p>
-        <p class="warn">{{ t('upgrade.verifyOnly') }}</p>
+          <p v-if="info?.maxSizeLabel" class="hint">{{ t('upgrade.maxSize', { tip: info.maxSizeLabel }) }}</p>
+          <p v-if="verifyOnly" class="warn">{{ t('upgrade.verifyOnly') }}</p>
+          <p v-else class="warn">{{ t('upgrade.warnRun') }}</p>
+        </template>
+
         <section v-if="verification" class="verification" :aria-label="t('upgrade.validationReport')">
           <h3>{{ t('upgrade.validationReport') }}</h3>
           <p :class="verification.signature_checked ? 'signature-pass' : 'warn'">
@@ -141,6 +186,16 @@ onMounted(() => void load())
         </section>
       </div>
     </UiCard>
+
+    <UiModal
+      :open="confirmOpen"
+      :title="t('upgrade.confirmTitle')"
+      danger
+      @close="confirmOpen = false"
+      @confirm="submitUpload"
+    >
+      {{ t('upgrade.confirmBody') }}
+    </UiModal>
   </div>
 </template>
 
@@ -148,12 +203,35 @@ onMounted(() => void load())
 .upgrade-form {
   max-width: 720px;
 }
-.verification { margin-top: 24px; border-top: 1px solid var(--color-border); padding-top: 16px; }
-.verification p { margin: 8px 0; }
-.verification .warn { margin-left: 0; }
-.signature-pass { color: var(--color-success, #15803d); }
-.verification pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-.verification summary { cursor: pointer; margin-top: 12px; }
+
+.verification {
+  margin-top: 24px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 16px;
+}
+
+.verification p {
+  margin: 8px 0;
+}
+
+.verification .warn {
+  margin-left: 0;
+}
+
+.signature-pass {
+  color: var(--color-success, #15803d);
+}
+
+.verification pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.verification summary {
+  cursor: pointer;
+  margin-top: 12px;
+}
 
 .row {
   display: grid;

@@ -28,7 +28,7 @@ function poolLimitFromIps(startIp: string, endIp: string): number {
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm()
 const loading = ref(true)
 const saving = ref(false)
 const savingStatic = ref(false)
@@ -37,7 +37,7 @@ const form = reactive({
   enabled: true,
   startIp: '192.168.199.1',
   endIp: '192.168.199.254',
-  leasetime: '7200' as string | number,
+  leasetime: '7200',
 })
 const minIp = ref('')
 const maxIp = ref('')
@@ -81,7 +81,7 @@ function toDhcpConfig(): DhcpConfig {
     enabled: form.enabled,
     start: Number(startIp.split('.').pop()) || 0,
     limit: poolLimitFromIps(startIp, endIp),
-    leasetime: String(form.leasetime).trim(),
+    leasetime: form.leasetime.trim(),
     gateway: '',
     dns: [],
     leases: [],
@@ -98,7 +98,7 @@ async function save() {
   saving.value = true
   try {
     const result = unwrap(await getRouterApi().updateDhcpConfig(toDhcpConfig()))
-    notifySaved(result, 'common.configApplied')
+    toast.success(t('common.configApplied'))
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load(true)
   } catch (e) {
@@ -160,10 +160,9 @@ function pickScan(row: ConnectedDevice) {
 async function commitStatic(next: StaticDhcpBinding[]) {
   savingStatic.value = true
   try {
-    const result = unwrap(await getRouterApi().updateDhcpStaticBindings(next))
-    if (result.rollbackSec > 0) await begin(asApplyHandle(result))
+    unwrap(await getRouterApi().updateDhcpStaticBindings(next))
     staticBindings.value = next
-    notifySaved(result, 'dhcp.staticSaved')
+    toast.success(t('dhcp.staticSaved'))
     closeAdd()
   } catch (e) {
     toast.error(formatApiError(e, t))
@@ -202,7 +201,7 @@ onMounted(() => void load())
 
 <template>
   <div>
-    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <template v-else>
       <UiCard class="mb">
@@ -453,7 +452,6 @@ onMounted(() => void load())
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
 }
 
@@ -665,7 +663,6 @@ onMounted(() => void load())
   margin-top: 2px;
   color: var(--color-muted);
   font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .modal-foot {

@@ -7,18 +7,17 @@ import UiField from '@/components/UiField.vue'
 import UiSelect from '@/components/UiSelect.vue'
 import UiIcon from '@/components/UiIcon.vue'
 import UiModal from '@/components/UiModal.vue'
-import LoadingState from '@/components/LoadingState.vue'
 import ApplyBanner from '@/components/ApplyBanner.vue'
-import { useApplyConfirm } from '@/composables/useApplyConfirm'
+import LoadingState from '@/components/LoadingState.vue'
 import { asApplyHandle, formatApiError, getRouterApi, unwrap } from '@/api'
 import type { VpnUser, VpnUserConfig } from '@/api'
+import { useApplyConfirm } from '@/composables/useApplyConfirm'
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
 const loading = ref(true)
 const saving = ref(false)
-const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
 const editorOpen = ref(false)
 const deleteIndex = ref(-1)
 const showPassword = ref(false)
@@ -44,6 +43,10 @@ const editorTitle = computed(() =>
   draft.index >= 0 ? t('vpn.editUser') : t('vpn.addUser'),
 )
 
+const deleteTarget = computed(() =>
+  deleteIndex.value >= 0 ? config.value?.users[deleteIndex.value] : undefined,
+)
+
 async function load(quiet = false) {
   if (!quiet) loading.value = true
   try {
@@ -54,6 +57,12 @@ async function load(quiet = false) {
     if (!quiet) loading.value = false
   }
 }
+
+const refreshQuietly = () => void load(true)
+const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(
+  refreshQuietly,
+  refreshQuietly,
+)
 
 function openAdd() {
   draft.index = -1
@@ -92,6 +101,18 @@ function draftUser(): VpnUser {
   }
 }
 
+async function restoreActiveTask() {
+  const api = getRouterApi()
+  if (!api.getActiveConfigTask) return
+  try {
+    const active = unwrap(await api.getActiveConfigTask())
+    if (active?.taskId && active.state === 'pending')
+      await begin(asApplyHandle({ accepted: true, taskId: active.taskId, rollbackSec: active.remainingSec || 60, phase: active.phase }))
+  } catch {
+    // ignore
+  }
+}
+
 async function persist(users: VpnUser[]) {
   if (!config.value) return
   saving.value = true
@@ -106,6 +127,7 @@ async function persist(users: VpnUser[]) {
     await load(true)
   } catch (e) {
     toast.error(formatApiError(e, t))
+    await restoreActiveTask()
   } finally {
     saving.value = false
   }
@@ -130,19 +152,29 @@ async function confirmDelete() {
   await persist(users)
 }
 
-onMounted(() => void load())
+onMounted(async () => {
+  await load()
+  await restoreActiveTask()
+})
 </script>
 
 <template>
   <div class="users-page">
-    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner
+      v-if="pending"
+      :remaining="remaining"
+      :phase="pending?.phase"
+      :message="pending?.message"
+      :applying="applying"
+      @confirm="confirm"
+      @cancel="cancel"
+    />
     <LoadingState v-if="loading" />
     <UiCard v-else icon="vpn" :title="t('nav.vpnUsers')">
       <template #actions>
         <UiButton @click="openAdd">{{ t('vpn.addUser') }}</UiButton>
       </template>
-      <p v-if="!config?.users.length" class="empty">{{ t('common.emptyUsers') }}</p>
-      <div v-else class="table-wrap">
+      <div class="table-wrap">
         <table class="table">
           <thead>
             <tr>
@@ -156,6 +188,9 @@ onMounted(() => void load())
             </tr>
           </thead>
           <tbody>
+            <tr v-if="!config?.users.length">
+              <td colspan="7" class="empty">{{ t('common.emptyUsers') }}</td>
+            </tr>
             <tr v-for="(user, index) in config?.users" :key="`${user.username}-${index}`">
               <td>{{ user.type.toUpperCase() }}</td>
               <td>{{ user.username }}</td>
@@ -208,7 +243,7 @@ onMounted(() => void load())
           <input
             v-model="draft.username"
             maxlength="32"
-            :readonly="draft.index >= 0"
+            :disabled="draft.index >= 0"
             autocomplete="off"
           />
         </UiField>
@@ -246,13 +281,20 @@ onMounted(() => void load())
 
     <UiModal
       :open="deleteIndex >= 0"
+      size="sm"
       :title="t('vpn.deleteUserTitle')"
       danger
       :confirm-disabled="saving"
+      :confirm-label="saving ? t('common.deleting') : t('common.delete')"
       @close="deleteIndex = -1"
       @confirm="confirmDelete"
     >
-      <p class="delete-body">{{ t('vpn.deleteUserBody') }}</p>
+      <div class="delete-body">
+        <p class="delete-name">
+          {{ t('vpn.deleteUserName', { name: deleteTarget?.username || '—' }) }}
+        </p>
+        <p class="delete-hint">{{ t('vpn.deleteUserBody') }}</p>
+      </div>
     </UiModal>
   </div>
 </template>
@@ -284,8 +326,9 @@ onMounted(() => void load())
   }
 }
 
-.empty {
-  margin: 0 0 12px;
+.table td.empty {
+  padding: 28px 12px;
+  text-align: center;
   color: var(--color-muted);
   font-size: var(--fs-sm);
 }
@@ -321,7 +364,6 @@ onMounted(() => void load())
 }
 
 .pwd-cell {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   max-width: 120px;
   overflow: hidden;
@@ -398,9 +440,9 @@ onMounted(() => void load())
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 16%, transparent);
 }
 
-.user-form :deep(.control input[readonly]) {
+.user-form :deep(.control input:disabled) {
   color: var(--color-muted);
-  cursor: default;
+  cursor: not-allowed;
 }
 
 .user-form :deep(.control .ui-select-trigger) {
@@ -457,6 +499,21 @@ onMounted(() => void load())
 
 .delete-body {
   margin: 0;
+  text-align: left;
   line-height: 1.5;
+}
+
+.delete-name {
+  margin: 0 0 8px;
+  color: var(--color-title);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.delete-hint {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--fs-sm);
 }
 </style>

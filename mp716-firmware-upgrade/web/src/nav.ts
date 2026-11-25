@@ -5,6 +5,8 @@ export interface NavChild {
   labelKey: string
   icon: IconName
   status?: 'ready' | 'dev' | 'limited'
+  /** 原厂 menulist 之外的原生固件功能；原厂适配器下不显示，不计入 29 叶子对齐 */
+  native?: boolean
 }
 
 export interface NavSection {
@@ -23,7 +25,10 @@ export interface PrimaryNavItem {
   sections?: NavSection[]
 }
 
-/** 与 factory-www menulist 1:1（选项 1）；残留能力不进菜单 */
+/**
+ * 与 factory-www menulist 1:1（29 叶子 + 顶栏 5 类，见 docs/current-menu-factory-parity.md）。
+ * Bundle 能力（DNS 独立页、DDNS、QoS、防火墙等）不进侧栏；路由已注册，见 `router/index.ts` 中 `meta.bundle` 深链。
+ */
 export const primaryNav: PrimaryNavItem[] = [
   {
     key: 'home',
@@ -92,6 +97,7 @@ export const primaryNav: PrimaryNavItem[] = [
           { to: '/advanced/vpn/users', labelKey: 'nav.vpnUsers', icon: 'user' },
           { to: '/advanced/vpn/status', labelKey: 'nav.vpnStatus', icon: 'clients' },
           { to: '/advanced/vpn/openvpn', labelKey: 'nav.vpnOpenvpn', icon: 'vpn' },
+          { to: '/advanced/vpn/wireguard-client', labelKey: 'nav.vpnWgClient', icon: 'vpn', native: true },
         ],
       },
       {
@@ -143,4 +149,14 @@ export function findPrimaryByPath(path: string): PrimaryNavItem {
 
 export function showSubnav(item: PrimaryNavItem): boolean {
   return navLeaves(item).length > 0
+}
+
+export function findNavChildByPath(path: string): NavChild | null {
+  const normalized = path.split('?')[0] || '/'
+  for (const item of primaryNav) {
+    for (const child of navLeaves(item)) {
+      if (child.to === normalized) return child
+    }
+  }
+  return null
 }

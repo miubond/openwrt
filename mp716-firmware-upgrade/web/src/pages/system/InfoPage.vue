@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { version as bundledWebVersion } from '../../../package.json'
 import { useI18n } from 'vue-i18n'
 import UiCard from '@/components/UiCard.vue'
 import UiIcon from '@/components/UiIcon.vue'
@@ -42,7 +41,7 @@ const softwareItems = computed((): InfoItem[] => {
     {
       key: 'webui',
       label: t('sysInfo.webuiVersion'),
-      value: show(import.meta.env.VITE_ROUTER_ADAPTER === 'device' ? bundledWebVersion : data.webuiVersion),
+      value: show(data.webuiVersion),
       icon: 'overview',
     },
   ]
@@ -340,7 +339,6 @@ onMounted(() => void load())
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.01em;

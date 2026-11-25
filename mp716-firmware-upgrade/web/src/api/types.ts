@@ -88,6 +88,8 @@ export interface WanStatus extends InterfaceStatus {
   uptimeSec?: number
   rxRateBps?: number
   txRateBps?: number
+  /** 两次采样已就绪；为 false 时不应把 0 当作实时速率 */
+  ratesReady?: boolean
 }
 
 export type WanProto = 'dhcp' | 'static' | 'pppoe'
@@ -292,6 +294,82 @@ export interface PptpClientConfig extends NativeServiceInfo {
   routes: PptpStaticRoute[]
 }
 
+/**
+ * WireGuard 私钥/预共享密钥字段：查询时只返回掩码 `********` 或空串；
+ * 提交掩码表示保留原值，`generate` 表示由路由器生成新密钥。
+ */
+export const WG_SECRET_MASK = '********'
+
+export interface WireGuardClientPeer {
+  publicKey: string
+  presharedKey: string
+  endpointHost: string
+  endpointPort: number
+  allowedIPs: string[]
+  keepalive: number
+}
+
+export interface WireGuardReservedNet {
+  label: string
+  cidr: string
+}
+
+export interface WireGuardClientConfig extends NativeServiceInfo {
+  enabled: boolean
+  privateKey: string
+  hasPrivateKey?: boolean
+  /** 由私钥计算，只读 */
+  publicKey: string
+  addresses: string[]
+  dns: string[]
+  useDns: boolean
+  mtu: number
+  /** split 仅 AllowedIPs 走隧道；global 用 0/1+128/1 两条路由，不替换 WAN 默认路由 */
+  routeMode: 'split' | 'global'
+  allowGlobalRoute: boolean
+  peer: WireGuardClientPeer
+  /** GET 附带：LAN/WAN 等不可被分流覆盖的网段 */
+  reservedNets?: WireGuardReservedNet[]
+}
+
+export interface WireGuardPeerStats {
+  /** unix 秒，0 表示从未握手 */
+  latestHandshake: number
+  /** -1 表示从未握手 */
+  handshakeAgeSec: number
+  rxBytes: number
+  txBytes: number
+  endpoint: string
+}
+
+export interface WireGuardProbe {
+  state: 'skipped' | 'ok' | 'fail'
+  target: string
+  reason: string
+  ageSec: number
+}
+
+export interface WireGuardClientStatus extends WireGuardPeerStats {
+  enabled: boolean
+  up: boolean
+  error: boolean
+  address: string
+  ifaceState?: 'disabled' | 'down' | 'up' | 'error'
+  handshakeState?: 'none' | 'recent' | 'stale'
+  errors?: string[]
+  probe?: WireGuardProbe
+}
+
+export interface WireGuardStatus {
+  available: boolean
+  missing: string[]
+  client: WireGuardClientStatus
+}
+
+export interface WireGuardImportResult extends ConfigApplyResult {
+  warnings?: string[]
+}
+
 export interface WifiStatus {
   iface: string
   band: '2.4GHz'
@@ -309,6 +387,15 @@ export interface WifiStatus {
   mode?: string
   /** 原厂 wireless_arr[].bssid */
   mac?: string
+}
+
+/** 原生首页快照：一次 HTTP 往返，避免重复 hosts() / stations() */
+export interface HomeDashboard {
+  system: SystemInfo
+  wan: WanStatus
+  wifi: WifiStatus
+  physicalPorts: PhysicalPortStatus[]
+  devices: ConnectedDevice[]
 }
 
 /** HYID 108 port_arr：物理网口，与逻辑 wan/lan 接口分离 */
@@ -356,6 +443,17 @@ export interface WifiConfig {
   isolate?: boolean
   macfilter?: 'disable' | 'allow' | 'deny'
   maclist?: string[]
+  /** 原生设备随 wireless/config 一并返回，省一次 CGI 往返 */
+  secondary?: WifiSecondaryConfig
+}
+
+export interface WifiSecondaryConfig {
+  supported: boolean
+  enabled: boolean
+  ssid: string
+  password?: string
+  hidden: boolean
+  isolate: boolean
 }
 
 /** 配置确认句柄（前端 ApplyBanner） */
@@ -382,6 +480,12 @@ export interface WirelessClient {
 
 export interface DeviceAclEntry {
   mac: string
+}
+
+/** 终端管理页：一次 CGI 返回在线列表 + ACL，避免串行队列里并行双请求 */
+export interface HostsOverview {
+  connected: ConnectedDevice[]
+  acl: DeviceAclEntry[]
 }
 
 export interface ConnectedDevice {
@@ -418,6 +522,26 @@ export interface PortForwardRule {
   intPort: number
 }
 
+export interface DmzConfig {
+  enabled: boolean
+  hostIp: string
+}
+
+export interface UpnpConfig {
+  supported?: boolean
+  enabled: boolean
+}
+
+export interface DdnsConfig {
+  supported?: boolean
+  enabled: boolean
+  provider: string
+  domain: string
+  username: string
+  hostname: string
+  password?: string
+}
+
 export interface SystemLogEntry {
   id: number
   time: string
@@ -447,6 +571,10 @@ export interface ConfigApplyResult {
   flashWrite?: boolean
   message?: string
   verificationReport?: FirmwareVerificationReport
+  /** 原厂 progresstime：恢复/升级后等待秒数 */
+  progressSec?: number
+  reconnect?: boolean
+  reconnectIp?: string
 }
 
 export interface FirmwareVerificationReport {
@@ -454,7 +582,48 @@ export interface FirmwareVerificationReport {
   code: number
   signature_checked: boolean
   flash_write: boolean
-  [key: string]: unknown
+  bytes_programmed?: number
+  erased?: boolean
+}
+
+export interface NativeBundleCapabilities {
+  staticRoutes: boolean
+  firewall: boolean
+  portForward: boolean
+  dmz: boolean
+  upnp: boolean
+  ddns: boolean
+  qos: boolean
+  dnsPage: boolean
+  multiSsid?: boolean
+  urlFilter?: boolean
+  macFilterGlobal?: boolean
+  remoteManage?: boolean
+  cellular?: boolean
+}
+
+export interface NativeCapabilities {
+  apiContract: string
+  routes: string[]
+  firmwareUpgrade: boolean
+  firmwareFlashEnabled: boolean
+  wanModes: string[]
+  wifiModes: string[]
+  services: Record<string, boolean>
+  bundle?: NativeBundleCapabilities
+  hardware: { physicalLanOrderVerified: boolean; cellularModemVerified: boolean }
+  cellular?: { supported: boolean; reason: string; note?: string }
+  testStatus?: string
+}
+
+export interface NetworkStaticRoute {
+  id?: string
+  enabled: boolean
+  interface: 'wan' | 'lan'
+  target: string
+  netmask: string
+  gateway: string
+  metric?: number
 }
 
 export interface QosCapability {
@@ -615,6 +784,7 @@ export interface AdminPasswordChange {
 
 export interface FirmwareInfo {
   currentVersion: string
+  /** 本机最后一次成功刷写固件的本地时间，YYYY-MM-DD HH:MM:SS；尚未通过升级页刷写时回退为当前镜像写入时间 */
   buildDate: string
   hardware: string
   canUpgrade: boolean
@@ -624,6 +794,8 @@ export interface FirmwareInfo {
   maxBytes?: number
   /** 原厂 maxsize_tip，例如 8M */
   maxSizeLabel?: string
+  /** 有校验器且未开刷写门时为 true */
+  validationOnly?: boolean
   upgradeEngine?: 'v1' | 'v2' | string
 }
 

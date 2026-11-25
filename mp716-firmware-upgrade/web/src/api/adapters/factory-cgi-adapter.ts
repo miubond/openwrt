@@ -52,6 +52,7 @@ import type {
   WifiAdvancedConfig,
   WifiCipher,
   WifiConfig,
+  WifiSecondaryConfig,
   WifiHtMode,
   WifiMode,
   WifiSecurity,
@@ -1614,6 +1615,51 @@ export class FactoryCgiAdapter implements RouterAPI {
     void rules
     return blocked<ConfigApplyResult>('updatePortForwards')
   }
+  getDmzConfig() {
+    return blocked<import('../types').DmzConfig>('getDmzConfig')
+  }
+  updateDmzConfig(config: import('../types').DmzConfig) {
+    void config
+    return blocked<ConfigApplyResult>('updateDmzConfig')
+  }
+  getUpnpConfig() {
+    return blocked<import('../types').UpnpConfig>('getUpnpConfig')
+  }
+  updateUpnpConfig(config: import('../types').UpnpConfig) {
+    void config
+    return blocked<ConfigApplyResult>('updateUpnpConfig')
+  }
+  getDdnsConfig() {
+    return blocked<import('../types').DdnsConfig>('getDdnsConfig')
+  }
+  updateDdnsConfig(config: import('../types').DdnsConfig) {
+    void config
+    return blocked<ConfigApplyResult>('updateDdnsConfig')
+  }
+  getSystemCapabilities() {
+    return blocked<import('../types').NativeCapabilities>('getSystemCapabilities')
+  }
+  getWireGuardClient() {
+    return blocked<import('../types').WireGuardClientConfig>('getWireGuardClient')
+  }
+  updateWireGuardClient(config: import('../types').WireGuardClientConfig) {
+    void config
+    return blocked<ConfigApplyResult>('updateWireGuardClient')
+  }
+  importWireGuardClient(text: string) {
+    void text
+    return blocked<import('../types').WireGuardImportResult>('importWireGuardClient')
+  }
+  getWireGuardStatus() {
+    return blocked<import('../types').WireGuardStatus>('getWireGuardStatus')
+  }
+  getStaticRoutes() {
+    return blocked<import('../types').NetworkStaticRoute[]>('getStaticRoutes')
+  }
+  updateStaticRoutes(routes: import('../types').NetworkStaticRoute[]) {
+    void routes
+    return blocked<ConfigApplyResult>('updateStaticRoutes')
+  }
   getQosCapability() {
     return blocked<QosCapability>('getQosCapability')
   }
@@ -1623,6 +1669,13 @@ export class FactoryCgiAdapter implements RouterAPI {
   updateQosConfig(config: QosConfig) {
     void config
     return blocked<ConfigApplyResult>('updateQosConfig')
+  }
+  getWifiSecondaryConfig() {
+    return blocked<WifiSecondaryConfig>('getWifiSecondaryConfig')
+  }
+  updateWifiSecondaryConfig(config: WifiSecondaryConfig) {
+    void config
+    return blocked<ConfigApplyResult>('updateWifiSecondaryConfig')
   }
   async getWifiAdvanced(): Promise<ApiResponse<WifiAdvancedConfig>> {
     const [basic, adv] = await Promise.all([
@@ -2207,9 +2260,15 @@ export class FactoryCgiAdapter implements RouterAPI {
     const res = await requestForm<HuayiBody>(`${STREAM_CGI}?streamid=3`, form)
     if (!res.ok) return res
     const errcode = readErrcode(res.data)
-    if (errcode === 2000) return success(APPLIED)
     if (errcode === 4001) return failure('UNAUTHORIZED', '会话无效或已过期，请重新登录', res.data)
-    return failure('INTERNAL', `配置恢复失败（${errcode ?? 'unknown'}）`, res.data)
+    if (errcode !== 2000) return failure('INTERNAL', `配置恢复失败（${errcode ?? 'unknown'}）`, res.data)
+    const data = record(res.data)
+    return success({
+      ...APPLIED,
+      progressSec: num(data.progresstime) ?? 0,
+      reconnect: enabledFlag(data.reconnection),
+      reconnectIp: text(data.reconnection_addr),
+    })
   }
   getConfigTaskStatus(taskId: string) {
     void taskId

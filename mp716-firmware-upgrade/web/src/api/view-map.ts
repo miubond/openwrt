@@ -44,6 +44,7 @@ export interface WanStatusView {
   txBytes: number
   rxRateBps: number
   txRateBps: number
+  ratesReady?: boolean
 }
 
 export function toWanStatusView(w: WanStatus): WanStatusView {
@@ -61,6 +62,7 @@ export function toWanStatusView(w: WanStatus): WanStatusView {
     txBytes: w.txBytes,
     rxRateBps: w.rxRateBps ?? 0,
     txRateBps: w.txRateBps ?? 0,
+    ratesReady: w.ratesReady,
   }
 }
 

@@ -6,11 +6,12 @@ import UiIcon from '@/components/UiIcon.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { formatApiError, getRouterApi, unwrap } from '@/api'
+import { DeviceRouterAdapter } from '@/api/adapters/device-adapter'
 import { toDeviceView, type DeviceView } from '@/api/view-map'
 import { useToastStore } from '@/stores/toast'
 import type { DeviceAclEntry } from '@/api/types'
 
-const POLL_MS = 6000
+const POLL_MS = import.meta.env.VITE_ROUTER_ADAPTER === 'device' ? 15_000 : 6000
 
 type DeviceRow = DeviceView
 
@@ -35,10 +36,21 @@ async function loadAcl() {
   aclEntries.value = unwrap(await getRouterApi().getDeviceAclList())
 }
 
+async function loadHostsData() {
+  const api = getRouterApi()
+  if (api instanceof DeviceRouterAdapter) {
+    const overview = unwrap(await api.getHostsOverview())
+    devices.value = overview.connected.map((d) => toDeviceView(d))
+    aclEntries.value = overview.acl
+    return
+  }
+  await Promise.all([loadDevices(), loadAcl()])
+}
+
 async function load() {
   loading.value = true
   try {
-    await Promise.all([loadDevices(), loadAcl()])
+    await loadHostsData()
   } catch (e) {
     toast.error(formatApiError(e, t))
   } finally {
@@ -48,7 +60,7 @@ async function load() {
 
 async function refreshQuiet() {
   try {
-    await Promise.all([loadDevices(), loadAcl()])
+    await loadHostsData()
   } catch {
     /* poll errors are silent */
   }
@@ -218,7 +230,6 @@ onUnmounted(() => {
 }
 
 .mac {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
 }
 

@@ -56,7 +56,13 @@ async function onToggle(next: boolean) {
   }
 }
 
+function closeClearModal() {
+  if (saving.value) return
+  confirmClear.value = false
+}
+
 async function clearLogs() {
+  if (saving.value) return
   saving.value = true
   try {
     unwrap(await getRouterApi().clearSyslog())
@@ -97,7 +103,9 @@ onMounted(() => void load())
       :open="confirmClear"
       :title="t('logs.clearTitle')"
       danger
-      @close="confirmClear = false"
+      :confirm-disabled="saving"
+      :confirm-label="saving ? t('logs.clearing') : t('common.confirm')"
+      @close="closeClearModal"
       @confirm="clearLogs"
     >
       <p>{{ t('logs.clearBody') }}</p>

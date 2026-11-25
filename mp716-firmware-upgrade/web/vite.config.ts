@@ -65,6 +65,21 @@ export default defineConfig(({ mode }) => {
                 )
               },
             },
+            ...(isNative
+              ? [
+                  {
+                    name: 'mp716-openwrt-html-cache',
+                    apply: 'build' as const,
+                    transformIndexHtml(html: string) {
+                      if (html.includes('http-equiv="Cache-Control"')) return html
+                      return html.replace(
+                        '<head>',
+                        '<head>\n    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />\n    <meta http-equiv="Pragma" content="no-cache" />',
+                      )
+                    },
+                  },
+                ]
+              : []),
           ]
         : []),
     ],

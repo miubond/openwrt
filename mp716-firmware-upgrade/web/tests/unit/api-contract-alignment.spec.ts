@@ -52,6 +52,10 @@ const requiredKeys: (keyof RouterAPI)[] = [
   'confirmConfigTask',
   'rebootDevice',
   'factoryReset',
+  'getWireGuardClient',
+  'updateWireGuardClient',
+  'importWireGuardClient',
+  'getWireGuardStatus',
 ]
 
 describe('RouterAPI contract alignment [PC static]', () => {

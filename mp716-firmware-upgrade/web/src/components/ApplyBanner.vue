@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ConfigTaskPhase } from '@/api/types'
 
-defineProps<{
+const props = defineProps<{
   remaining: number
   applying?: boolean
   phase?: ConfigTaskPhase
@@ -11,17 +12,50 @@ defineProps<{
 defineEmits<{ confirm: []; cancel: [] }>()
 
 const { t } = useI18n()
+
+const titleKey = computed(() =>
+  props.phase === 'failed'
+    ? 'apply.failedTitle'
+    : props.phase === 'rolling_back'
+      ? 'apply.rollingBackTitle'
+      : props.phase === 'prepared' || props.phase === 'applying'
+        ? 'apply.inProgressTitle'
+        : 'apply.waitingTitle',
+)
+
+/** 等待确认时始终展示倒计时；设备 message 往往不含 remainingSec */
+const description = computed(() => {
+  if (props.phase === 'failed') return props.message || t('apply.failedDesc')
+  if (props.phase === 'rolling_back') return props.message || t('apply.rollingBackDesc')
+  if (props.phase === 'prepared' || props.phase === 'applying') {
+    return props.message || t('apply.inProgressDesc')
+  }
+  return t('apply.waitingDesc', { n: props.remaining })
+})
 </script>
 
 <template>
   <div class="banner" role="alert">
     <div class="text">
-      <strong>{{ t(phase === 'failed' ? 'apply.failedTitle' : phase === 'rolling_back' ? 'apply.rollingBackTitle' : phase === 'prepared' || phase === 'applying' ? 'apply.inProgressTitle' : 'apply.waitingTitle') }}</strong>
-      <p>{{ message || t(phase === 'failed' ? 'apply.failedDesc' : phase === 'rolling_back' ? 'apply.rollingBackDesc' : phase === 'prepared' || phase === 'applying' ? 'apply.inProgressDesc' : 'apply.waitingDesc', { n: remaining }) }}</p>
+      <strong>{{ t(titleKey) }}</strong>
+      <p>{{ description }}</p>
     </div>
     <div class="actions">
-      <button type="button" class="sec" :disabled="applying" @click="$emit('cancel')">{{ t('apply.rollback') }}</button>
-      <button type="button" class="pri" :disabled="applying || (phase != null && phase !== 'applied')" @click="$emit('confirm')">{{ t('apply.keep') }}</button>
+      <button type="button" class="sec" :disabled="applying" @click="$emit('cancel')">
+        {{ t('apply.rollback') }}
+      </button>
+      <button
+        type="button"
+        class="pri"
+        :disabled="applying || (phase != null && phase !== 'applied')"
+        @click="$emit('confirm')"
+      >
+        {{
+          applying && (phase == null || phase === 'applied')
+            ? t('common.applying')
+            : t('apply.keep')
+        }}
+      </button>
     </div>
   </div>
 </template>
@@ -74,6 +108,11 @@ button {
 .pri {
   background: var(--color-primary);
   color: #fff;
+}
+.sec:disabled,
+.pri:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 @media (max-width: 640px) {
   .banner {

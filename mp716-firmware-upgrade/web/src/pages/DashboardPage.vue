@@ -6,7 +6,8 @@ import UiCard from '@/components/UiCard.vue'
 import UiButton from '@/components/UiButton.vue'
 import UiIcon from '@/components/UiIcon.vue'
 import type { PhysicalPortStatus, SystemStatus } from '@/api/types'
-import { formatApiError, getRouterApi, isUnauthorizedError, unwrap } from '@/api'
+import { formatApiError, getRouterApi, isMissingNativeRouteError, isUnauthorizedError, unwrap } from '@/api'
+import { DeviceRouterAdapter } from '@/api/adapters/device-adapter'
 import { useAuthStore } from '@/stores/auth'
 import {
   toDeviceView,
@@ -18,7 +19,7 @@ import {
   type WanStatusView,
   type WifiStatusView,
 } from '@/api/view-map'
-import { formatBytes, formatDateTime, formatRate, formatUptime } from '@/utils/format'
+import { formatDateTime, formatLiveRate, formatUptime } from '@/utils/format'
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
@@ -42,13 +43,25 @@ const showShell = computed(() => !bootFailed.value || ready.value)
 
 /** 逻辑 WAN（HYID 25）：与拓扑「Internet」一致 */
 const wanLinkUp = computed(() => Boolean(wan.value?.up))
-/** 物理 WAN 口（HYID 108 port_arr） */
+/** 物理 WAN 口（HYID 108 port_arr）；未核验映射时不猜 WAN */
 const physicalWanUp = computed(
-  () => physicalPorts.value.find((p) => p.role === 'wan' && p.mappingVerified !== false)?.linkUp ?? wanLinkUp.value,
+  () =>
+    physicalPorts.value.find((p) => p.role === 'wan' && p.mappingVerified !== false)?.linkUp ??
+    wanLinkUp.value,
 )
-const physicalMappingVerified = computed(() => physicalPorts.value.length > 0 && physicalPorts.value.every(p => p.mappingVerified !== false))
-const unverifiedPhysicalPorts = computed(() => physicalPorts.value.some(p => p.mappingVerified === false))
+const physicalMappingVerified = computed(
+  () =>
+    physicalPorts.value.length > 0 &&
+    physicalPorts.value.every((p) => p.mappingVerified !== false),
+)
 const staListCount = computed(() => devices.value.length)
+
+function wanRateText(bps: number) {
+  return formatLiveRate(bps, wan.value?.ratesReady, t('dashboard.rateMeasuring'))
+}
+const unverifiedPhysicalPorts = computed(() =>
+  physicalPorts.value.some((p) => p.mappingVerified === false || p.role === 'unknown'),
+)
 const portPlaceholders = [
   { id: 'lan1', label: 'LAN1', role: 'lan' as const },
   { id: 'lan2', label: 'LAN2', role: 'lan' as const },
@@ -56,16 +69,15 @@ const portPlaceholders = [
   { id: 'lan4', label: 'LAN4', role: 'lan' as const },
   { id: 'wan', label: 'WAN', role: 'wan' as const },
 ]
+/** 使用后端标签与角色；数组顺序不能推断机箱映射 */
 const displayedPorts = computed<PhysicalPortStatus[]>(() =>
-  physicalPorts.value.length ? physicalPorts.value : portPlaceholders.map((p) => ({ ...p, linkUp: false, speedMbps: 0 })),
+  physicalPorts.value.length
+    ? physicalPorts.value
+    : portPlaceholders.map((p) => ({ ...p, linkUp: false, speedMbps: 0 })),
 )
 
 /** 首页预览最多 5 条，按实际数据行数渲染，不补空行 */
 const terminalPreview = computed(() => devices.value.slice(0, 5))
-
-function trafficLabel(bytes: number, rate: number) {
-  return rate > 0 ? formatRate(rate) : formatBytes(bytes)
-}
 
 function portStatusLabel(port: PhysicalPortStatus) {
   if (port.linkKnown === false || port.linkUp === null) return t('dashboard.linkUnknown')
@@ -75,11 +87,12 @@ function portStatusLabel(port: PhysicalPortStatus) {
 }
 
 function wanAccessLabel(proto: string) {
-  const key = proto.trim()
-  if (!key) return '—'
+  const raw = proto.trim()
+  if (!raw) return '—'
+  const key = raw.toLowerCase()
   const path = `dashboard.netType.${key}`
   const mapped = t(path)
-  return mapped === path ? key : mapped
+  return mapped === path ? raw : mapped
 }
 
 async function handleLoadError(e: unknown) {
@@ -98,6 +111,43 @@ async function load(quiet = false) {
   if (!quiet || !devices.value.length) devicesLoading.value = true
 
   const api = getRouterApi()
+
+  if (api instanceof DeviceRouterAdapter) {
+    try {
+      const data = unwrap(await api.getHomeDashboard())
+      if (seq !== loadSeq) return
+      const st: SystemStatus = {
+        cpuPercent: null,
+        memoryPercent: 0,
+        uptimeSec: data.system.uptimeSec,
+        interfaces: [],
+        wirelessClients: data.wifi.clients,
+        wiredClients: 0,
+      }
+      system.value = toSystemStatusView(data.system, st)
+      wan.value = toWanStatusView(data.wan)
+      wifi.value = toWifiStatusView(data.wifi)
+      physicalPorts.value = data.physicalPorts
+      devices.value = data.devices.map(toDeviceView)
+      if (!quiet) bootFailed.value = false
+      if (seq === loadSeq) devicesLoading.value = false
+      return
+    } catch (e) {
+      if (isUnauthorizedError(e)) {
+        await handleLoadError(e)
+        return
+      }
+      if (!isMissingNativeRouteError(e)) {
+        if (seq === loadSeq) devicesLoading.value = false
+        if (!quiet) {
+          bootFailed.value = true
+          toast.error(formatApiError(e, t))
+        }
+        return
+      }
+      /* 仅旧固件无 home/dashboard 时回退多请求 */
+    }
+  }
 
   /** 各接口独立落地：谁先返回谁先填卡片，不再整页等齐 */
   const infoTask = api.getSystemInfo().then((res) => {
@@ -168,23 +218,33 @@ async function diagnose() {
   }
 }
 
-const POLL_MS_VISIBLE = 10_000
+const POLL_MS_VISIBLE =
+  import.meta.env.VITE_ROUTER_ADAPTER === 'device' ? 20_000 : 10_000
 const POLL_MS_HIDDEN = 30_000
 
+let pollStarted = false
+
 function schedulePoll() {
+  if (pollStarted) return
+  pollStarted = true
   if (timer) window.clearInterval(timer)
   const ms = document.visibilityState === 'hidden' ? POLL_MS_HIDDEN : POLL_MS_VISIBLE
   timer = window.setInterval(() => void load(true), ms)
 }
 
 function onVisibilityChange() {
-  schedulePoll()
+  if (!pollStarted) return
+  if (timer) window.clearInterval(timer)
+  const ms = document.visibilityState === 'hidden' ? POLL_MS_HIDDEN : POLL_MS_VISIBLE
+  timer = window.setInterval(() => void load(true), ms)
 }
 
 onMounted(() => {
-  void load()
-  schedulePoll()
   document.addEventListener('visibilitychange', onVisibilityChange)
+  void (async () => {
+    await load()
+    schedulePoll()
+  })()
 })
 onUnmounted(() => {
   if (timer) window.clearInterval(timer)
@@ -229,8 +289,8 @@ onUnmounted(() => {
           <div class="link">
             <div class="line" />
             <div v-if="wan" class="rates rates-traffic">
-              <span class="rate-up">↑ {{ trafficLabel(wan.txBytes, wan.txRateBps) }}</span>
-              <span class="rate-down">↓ {{ trafficLabel(wan.rxBytes, wan.rxRateBps) }}</span>
+              <span class="rate-up">↑ {{ wanRateText(wan.txRateBps) }}</span>
+              <span class="rate-down">↓ {{ wanRateText(wan.rxRateBps) }}</span>
             </div>
             <div v-else class="rates">
               <span class="skel skel-line" aria-hidden="true" />
@@ -282,11 +342,11 @@ onUnmounted(() => {
                 <div><dt>{{ t('dashboard.netmask') }}</dt><dd>{{ wan.netmask || '—' }}</dd></div>
                 <div>
                   <dt>{{ t('dashboard.uplink') }}</dt>
-                  <dd class="rate-up">{{ formatRate(wan.txRateBps) }}</dd>
+                  <dd class="rate-up">{{ wanRateText(wan.txRateBps) }}</dd>
                 </div>
                 <div>
                   <dt>{{ t('dashboard.downlink') }}</dt>
-                  <dd class="rate-down">{{ formatRate(wan.rxRateBps) }}</dd>
+                  <dd class="rate-down">{{ wanRateText(wan.rxRateBps) }}</dd>
                 </div>
                 <div><dt>{{ t('dashboard.access') }}</dt><dd>{{ wanAccessLabel(wan.proto) }}</dd></div>
               </template>
@@ -346,7 +406,7 @@ onUnmounted(() => {
               >
                 <div class="port-ico"><UiIcon name="port" :size="18" /></div>
                 <strong>{{ p.label }}</strong>
-                <span v-if="physicalPorts.length">{{ portStatusLabel(p) }}</span>
+                <span v-if="physicalPorts.length" class="port-status" :title="portStatusLabel(p)">{{ portStatusLabel(p) }}</span>
                 <span v-else class="skel skel-line skel-port" aria-hidden="true" />
               </div>
             </div>
@@ -620,7 +680,6 @@ onUnmounted(() => {
   width: 35%;
   min-width: 0;
   text-align: left;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--fs-xs);
   white-space: nowrap;
   overflow: hidden;
@@ -630,7 +689,6 @@ onUnmounted(() => {
   width: 35%;
   min-width: 0;
   text-align: right;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--fs-xs);
   white-space: nowrap;
   overflow: hidden;
@@ -775,7 +833,6 @@ onUnmounted(() => {
   min-width: 0;
 }
 .info-kv dd.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
   letter-spacing: 0.01em;
 }

@@ -1,21 +1,22 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import UiCard from '@/components/UiCard.vue'
-import UiButton from '@/components/UiButton.vue'
 import { STREAM_CGI } from '@/api/factory-endpoints'
-import { asApplyHandle, formatApiError, getRouterApi, unwrap } from '@/api'
-import { useApplyConfirm } from '@/composables/useApplyConfirm'
+import { formatApiError, getRouterApi, unwrap } from '@/api'
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { begin } = useApplyConfirm()
 const uploading = ref(false)
 const fileName = ref('')
 const file = ref<File | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+const progressOpen = ref(false)
+const progressSec = ref(0)
+const reconnectIp = ref('')
 const MAX_BYTES = 2 * 1024 * 1024
+let progressTimer: number | undefined
 
 /** 对齐原厂：GET cgi_stream.cgi?streamid=2，文件名 Configfile */
 const downloadUrl = `${STREAM_CGI}?streamid=2`
@@ -31,6 +32,23 @@ function onFileChange(ev: Event) {
   fileName.value = next?.name || ''
 }
 
+function clearProgressTimer() {
+  if (progressTimer !== undefined) {
+    window.clearTimeout(progressTimer)
+    progressTimer = undefined
+  }
+}
+
+function finishProgress() {
+  progressOpen.value = false
+  const ip = reconnectIp.value.trim()
+  if (ip) {
+    window.location.href = `http://${ip}/`
+    return
+  }
+  toast.success(t('sysBackup.importOk'))
+}
+
 async function upload() {
   if (!file.value) {
     toast.error(t('sysBackup.noFile'))
@@ -43,17 +61,27 @@ async function upload() {
   uploading.value = true
   try {
     const result = unwrap(await getRouterApi().restoreConfig(file.value))
-    if (result.rollbackSec > 0) await begin(asApplyHandle(result))
-    toast.success(t('sysBackup.importOk'))
     file.value = null
     fileName.value = ''
     if (fileInput.value) fileInput.value.value = ''
+    const wait = result.progressSec ?? 0
+    if (wait > 0) {
+      progressSec.value = wait
+      reconnectIp.value = result.reconnect && result.reconnectIp ? result.reconnectIp : ''
+      progressOpen.value = true
+      clearProgressTimer()
+      progressTimer = window.setTimeout(finishProgress, wait * 1000)
+    } else {
+      toast.success(t('sysBackup.importOk'))
+    }
   } catch (e) {
     toast.error(formatApiError(e, t))
   } finally {
     uploading.value = false
   }
 }
+
+onBeforeUnmount(() => clearProgressTimer())
 </script>
 
 <template>
@@ -70,16 +98,23 @@ async function upload() {
         <div class="picker">
           <input ref="fileInput" class="hidden" type="file" @change="onFileChange" />
           <div class="file-box">
-            <input class="name" :value="fileName" readonly />
+            <input class="name" :value="fileName" readonly :placeholder="t('sysBackup.noFile')" />
             <button class="select" type="button" @click="pickFile">{{ t('sysBackup.select') }}</button>
           </div>
-          <UiButton variant="secondary" :disabled="uploading || !file" @click="upload">
+          <button class="upload-btn" type="button" :disabled="uploading || !file" @click="upload">
             {{ uploading ? t('sysBackup.uploading') : t('sysBackup.upload') }}
-          </UiButton>
+          </button>
         </div>
       </div>
       <p class="hint">{{ t('sysBackup.fileMaxHint') }}</p>
     </UiCard>
+
+    <div v-if="progressOpen" class="progress-mask" role="alertdialog" aria-live="polite">
+      <div class="progress-box">
+        <p>{{ t('sysBackup.restoring') }}</p>
+        <p v-if="progressSec">{{ t('sysBackup.restoringAbout', { n: progressSec }) }}</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -89,7 +124,7 @@ async function upload() {
   gap: 24px;
 }
 
-/* 对齐原厂 .down-btn：居中描边按钮 + 主题色文字链接 */
+/* 对齐原厂 .down-btn */
 .down-btn {
   display: flex;
   justify-content: center;
@@ -156,6 +191,16 @@ async function upload() {
   border-radius: 6px;
   overflow: hidden;
   background: var(--color-bg-muted);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.file-box:focus-within {
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
 }
 
 .name {
@@ -168,6 +213,15 @@ async function upload() {
   color: var(--color-title);
 }
 
+.name:focus {
+  outline: none;
+}
+
+.name::placeholder {
+  color: var(--color-muted);
+}
+
+/* 对齐原厂 .button_up */
 .select {
   border: 0;
   border-left: 1px solid var(--color-border);
@@ -178,10 +232,81 @@ async function upload() {
   white-space: nowrap;
 }
 
+.select:focus {
+  outline: none;
+}
+
+.select:focus-visible {
+  background: var(--color-primary-hover, #0958d9);
+}
+
+/* 对齐原厂 .button_sumit：浅底描边上传按钮 */
+.upload-btn {
+  appearance: none;
+  height: 36px;
+  min-width: 88px;
+  padding: 0 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg-soft);
+  color: var(--color-text);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.upload-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.upload-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .hint {
   margin: 10px 0 0 136px;
   color: var(--color-muted);
   font-size: 13px;
+}
+
+.progress-mask {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal, 300);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.progress-box {
+  width: min(360px, 100%);
+  padding: 24px 20px;
+  border-radius: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-menu);
+  text-align: center;
+}
+
+.progress-box p {
+  margin: 0;
+  color: var(--color-title);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+}
+
+.progress-box p + p {
+  margin-top: 8px;
+  color: var(--color-muted);
+  font-size: var(--fs-sm);
 }
 
 @media (max-width: 640px) {

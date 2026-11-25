@@ -16,7 +16,7 @@ import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
-const { pending, remaining, applying, begin, confirm, cancel, notifySaved } = useApplyConfirm(() => void load())
+const { pending, remaining, applying, begin, confirm, cancel } = useApplyConfirm()
 const loading = ref(true)
 const savingMode = ref(false)
 const savingList = ref(false)
@@ -77,7 +77,7 @@ async function saveMode() {
       }),
     )
     savedMode.value = mode.value
-    notifySaved(result, 'wifiMac.appliedMode')
+    toast.success(t('wifiMac.appliedMode'))
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     await load()
   } catch (e) {
@@ -90,15 +90,14 @@ async function saveMode() {
 async function commitList(next: WirelessAclEntry[]) {
   savingList.value = true
   try {
-    const result = unwrap(
+    unwrap(
       await getRouterApi().updateWirelessAcl({
         mode: mode.value,
         entries: next,
       }),
     )
-    if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     rows.value = next
-    notifySaved(result, 'wifiMac.appliedList')
+    toast.success(t('wifiMac.appliedList'))
     closeAdd()
   } catch (e) {
     toast.error(formatApiError(e, t))
@@ -190,7 +189,7 @@ onMounted(() => void load())
 <template>
   <div>
     <p class="page-desc">{{ t('wifiMac.desc') }}</p>
-    <ApplyBanner v-if="pending" :remaining="remaining" :phase="pending?.phase" :message="pending?.message" :applying="applying" @confirm="confirm" @cancel="cancel" />
+    <ApplyBanner v-if="pending" :remaining="remaining" :applying="applying" @confirm="confirm" @cancel="cancel" />
     <LoadingState v-if="loading" />
     <template v-else>
       <UiCard class="mb">
@@ -433,7 +432,6 @@ onMounted(() => void load())
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 13px;
 }
 
@@ -610,7 +608,6 @@ onMounted(() => void load())
   margin-top: 2px;
   color: var(--color-muted);
   font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .modal-foot {
