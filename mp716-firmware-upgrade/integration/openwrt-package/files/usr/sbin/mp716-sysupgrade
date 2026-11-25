@@ -120,7 +120,8 @@ case "$cmd" in
 			/etc/init.d/$svc stop >/dev/null 2>&1 || true
 		done
 		sync
-		echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+		# dash exits on a failed redirect under set -e, even with "|| true".
+		(echo 3 > /proc/sys/vm/drop_caches) 2>/dev/null || true
 		stage=$(mktemp -d /tmp/mp716-sysupgrade.XXXXXX)
 		payload="$stage/sysupgrade.bin"
 		trap 'rm -rf -- "$stage"' EXIT
@@ -143,19 +144,19 @@ case "$cmd" in
 		# while procd stages the upgrade; only the verified extract is needed from here on.
 		case "$file" in /tmp/mp716-firmware-upload-*.mp716upd) rm -f -- "$file" ;; esac
 		sync
-		echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+		(echo 3 > /proc/sys/vm/drop_caches) 2>/dev/null || true
 		# The web request is still resident. Packing and flashing in this process
 		# reboots a 64MB board without writing the image. Exit so uhttpd can
 		# answer, then flash once that memory has been released.
 		trap - EXIT HUP INT TERM
 		cat > "$stage/run.sh" << EOF
 #!/bin/sh
-sleep 3
+sleep $([ -n "${MP716_TEST_ROOT:-}" ] && printf '%s' 0 || printf '%s' 3)
 for s in mp716-admin uhttpd dnsmasq miniupnpd cron; do
 	/etc/init.d/\$s stop >/dev/null 2>&1 || true
 done
 sync
-echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+(echo 3 > /proc/sys/vm/drop_caches) 2>/dev/null || true
 mkdir '$root' || exit 1
 if [ '$keep' -eq 1 ]; then
 	sysupgrade -b '$archive' || exit 1
@@ -177,6 +178,13 @@ fi
 exec sysupgrade $([ "$keep" -eq 0 ] && printf '%s' '-n ') -f '$archive' '$payload'
 EOF
 		chmod 755 "$stage/run.sh"
+		# The adapter test has to observe sysupgrade's own exit. On the router the
+		# CGI must exit first, or the 64MB board reboots without writing.
+		if [ -n "${MP716_TEST_ROOT:-}" ]; then
+			set +e
+			"$stage/run.sh"
+			exit $?
+		fi
 		setsid "$stage/run.sh" >/tmp/sysupgrade-run.log 2>&1 </dev/null &
 		exit 0
 		;;
