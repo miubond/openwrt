@@ -66,7 +66,7 @@ def stage(
     gateway.chmod(0o644)
     for name in ("mp716-ucode-compile.sh", "build-meta.uc", "admin.uc", "admin-state.uc", "admin-tick.uc", "apply-task.uc", "network-values.uc", "system-values.uc", "physical-ports.uc", "perf-diag.uc", "dispatch.uc", "capabilities.uc", "native-routes.json",
                  "system-admin.uc", "system-apply.uc", "diagnostics.uc", "diagnostic-worker.sh",
-                 "firewall-admin.uc", "network-services.uc", "network-routes.uc", "network-qos.uc",
+                 "firewall-admin.uc", "network-services.uc", "network-routes.uc", "network-qos.uc", "port-links.sh",
                  "vpn.uc", "vpn-config.uc", "vpn-runtime.uc", "vpn-render.uc", "vpn-hook.uc", "vpn-services.uc", "vpn-health.uc",
                  "wireguard.uc", "wg-health.uc",
                  "vpn-ppp-up.sh", "vpn-ppp-down.sh", "vpn-openvpn-up.sh", "vpn-openvpn-down.sh"):
@@ -78,7 +78,7 @@ def stage(
     vpn_init.chmod(0o755)
     keep = root / "lib/upgrade/keep.d/mp716-admin"
     keep.parent.mkdir(parents=True, exist_ok=True)
-    keep.write_text("/etc/mp716-admin/\n/etc/mp716-vpn/\n",encoding="ascii")
+    keep.write_text("/etc/mp716-admin/\n/etc/mp716-vpn/\n/etc/mp716-upgrade/installed.at\n", encoding="ascii")
     init = root / "etc/init.d/mp716-admin"
     init.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("mp716-admin.init"), init)

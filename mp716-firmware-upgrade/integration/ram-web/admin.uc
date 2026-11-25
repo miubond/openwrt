@@ -1,11 +1,12 @@
 'use strict';
 import { cursor } from 'uci';
-import { readfile, writefile, stat } from 'fs';
+import { readfile, writefile, stat, mkdir } from 'fs';
 import { address, pool_bounds, sample_rates } from '/usr/share/mp716/network-values.uc';
 import { sample_cpu } from '/usr/share/mp716/system-values.uc';
 import { physical_ports, load_mapping } from '/usr/share/mp716/physical-ports.uc';
-import { command, ensure_dirs, acquire, release, expire, pending, begin, applied, rollback,
-	get_task, access_list, apply_access, store, STATE } from '/usr/share/mp716/admin-state.uc';
+import { command, ensure_dirs, acquire, release, expire, pending, blocking_pending, dismiss_failed_pending,
+	begin, applied, rollback, get_task, task_view, access_list, apply_access, store, STATE } from '/usr/share/mp716/admin-state.uc';
+import { firmware_version, webui_version } from '/usr/share/mp716/build-meta.uc';
 
 function reject(message, code) { return { error: code || 'VALIDATION', message: message }; }
 function string(value) { return sprintf('%s', value); }
@@ -29,9 +30,59 @@ function maskbits(mask) {
 };
 function mac(value) { return type(value) == 'string' && match(value, /^([A-Fa-f0-9]{2}:){5}[A-Fa-f0-9]{2}$/); }
 function unicast(value) { return mac(value) && index('02468aAcCeE',substr(value,1,1))>=0 && lc(value) != '00:00:00:00:00:00'; }
+
+/** 管理会话所在终端的 MAC（用于 Wi-Fi 白名单自救） */
+function admin_client_mac() {
+	let ip = getenv('REMOTE_ADDR');
+	if (!ipv4(ip)) return null;
+	let out = command('ip -4 neigh show ' + ip + ' 2>/dev/null').output || '';
+	let m = match(out, /(([0-9a-f]{2}:){5}[0-9a-f]{2})/i);
+	if (m) return uc(m[1]);
+	out = command('grep -F ' + ip + ' /proc/net/arp 2>/dev/null | awk \'{print $4}\' | head -1').output || '';
+	let line = trim(out);
+	if (unicast(line)) return uc(line);
+	return null;
+}
+
+function ensure_admin_in_wifi_allow(cfg) {
+	if (cfg.mode != 'allow' || type(cfg.entries) != 'array') return cfg;
+	let self = admin_client_mac();
+	if (!self) return cfg;
+	let found = any(cfg.entries, (e) => uc(e.mac || '') == self);
+	if (found) return cfg;
+	let entries = map(cfg.entries, (e) => e);
+	push(entries, { id: self, mac: self, policy: 'allow' });
+	return { mode: cfg.mode, entries: entries };
+}
 export function factory_wan_mac(raw) {
 	try {let board=json(raw || '{}'), value=board.network?.wan?.macaddr;return unicast(value)?uc(value):'';}catch(e){return '';}
 };
+/** 原厂 get_home_system_info.device_umber：LAN MAC 去冒号大写 */
+function device_number_from_mac(value) {
+	if (!mac(value)) return '';
+	return replace(uc(value), ':', '');
+}
+const FACTORY_HOME_DOMAIN = 'step.YunXM.net';
+const GUEST_IFACE = 'mp716_guest';
+
+/** 原厂 get_home_system_info.domain（华翼云管）；可 UCI 覆盖 */
+function home_domain(c) {
+	let stored = trim(c.get('mp716_system', 'main', 'domain') || '');
+	if (length(stored)) return stored;
+	if (stat('/etc/config/ddns')) {
+		let picked = '';
+		c.foreach('ddns', 'service', (s) => {
+			if (length(picked)) return;
+			let name = s['.name'];
+			if (c.get('ddns', name, 'enabled') != '1') return;
+			let host = trim(c.get('ddns', name, 'lookup_host') || '');
+			if (!length(host)) host = trim(c.get('ddns', name, 'domain') || '');
+			if (length(host)) picked = host;
+		});
+		if (length(picked)) return picked;
+	}
+	return FACTORY_HOME_DOMAIN;
+}
 function integer(value, low, high) { return type(value) == 'int' && value >= low && value <= high; }
 function text(value, limit) { return type(value) == 'string' && length(value) <= limit && index(value,'\x00')<0 && !match(value, /[[:cntrl:]]/); }
 function list(value) { return type(value) == 'array' ? value : (value ? [value] : []); }
@@ -48,8 +99,23 @@ function radio(c) {
 };
 function ap(c) {
 	let result = null;
-	c.foreach('wireless', 'wifi-iface', (s) => { if (!result && s.mode == 'ap' && s.network == 'lan') result = s['.name']; });
+	c.foreach('wireless', 'wifi-iface', (s) => {
+		if (!result && s.mode == 'ap' && s.network == 'lan' && s['.name'] != GUEST_IFACE)
+			result = s['.name'];
+	});
 	return result || 'default_radio0';
+};
+function wifi_secondary_config(c) {
+	let g = GUEST_IFACE;
+	if (c.get('wireless', g) == null)
+		return { supported: true, enabled: false, ssid: '', password: '', hidden: false, isolate: true };
+	return {
+		supported: true, enabled: c.get('wireless', g, 'disabled') != '1',
+		ssid: c.get('wireless', g, 'ssid') || '',
+		password: c.get('wireless', g, 'key') ? '********' : '',
+		hidden: c.get('wireless', g, 'hidden') == '1',
+		isolate: c.get('wireless', g, 'isolate') != '0',
+	};
 };
 function wifi_interfaces(bus) {
 	let result = [];
@@ -60,21 +126,24 @@ function wifi_interfaces(bus) {
 	}
 	return result;
 };
-function stations(bus, c) {
+function stations(bus, c, detail) {
 	let result = [];
+	let full = detail == true;
 	for (let iface in wifi_interfaces(bus)) {
 		let entries = bus.call('hostapd.' + iface.ifname, 'get_clients', {})?.clients || {};
-		let dump = command('/usr/sbin/iw dev ' + iface.ifname + ' station dump 2>/dev/null').output;
 		let stats = {}, current = null;
-		for (let line in split(dump, '\n')) {
-			let found = match(line, /^Station ([A-Fa-f0-9:]{17}) /);
-			if (found) { current = uc(found[1]); stats[current] = {}; continue; }
-			if (!current) continue;
-			for (let field, pattern in { rssi: /signal:[[:space:]]*(-?[0-9]+)/, rxRateMbps: /rx bitrate:[[:space:]]*([0-9.]+)/,
-				txRateMbps: /tx bitrate:[[:space:]]*([0-9.]+)/, connectedSec: /connected time:[[:space:]]*([0-9]+)/,
-				rxBytes: /rx bytes:[[:space:]]*([0-9]+)/, txBytes: /tx bytes:[[:space:]]*([0-9]+)/ }) {
-				let capture = match(line, pattern);
-				if (capture) stats[current][field] = +capture[1];
+		if (full) {
+			let dump = command('/usr/sbin/iw dev ' + iface.ifname + ' station dump 2>/dev/null').output;
+			for (let line in split(dump, '\n')) {
+				let found = match(line, /^Station ([A-Fa-f0-9:]{17}) /);
+				if (found) { current = uc(found[1]); stats[current] = {}; continue; }
+				if (!current) continue;
+				for (let field, pattern in { rssi: /signal:[[:space:]]*(-?[0-9]+)/, rxRateMbps: /rx bitrate:[[:space:]]*([0-9.]+)/,
+					txRateMbps: /tx bitrate:[[:space:]]*([0-9.]+)/, connectedSec: /connected time:[[:space:]]*([0-9]+)/,
+					rxBytes: /rx bytes:[[:space:]]*([0-9]+)/, txBytes: /tx bytes:[[:space:]]*([0-9]+)/ }) {
+					let capture = match(line, pattern);
+					if (capture) stats[current][field] = +capture[1];
+				}
 			}
 		}
 		for (let address, data in entries) if (mac(address) && (data.assoc || data.authorized)) {
@@ -87,6 +156,27 @@ function stations(bus, c) {
 	}
 	return result;
 };
+
+function wifi_station_linked(bus, iface, mac) {
+	if (!match(iface || '', /^[A-Za-z0-9_.-]{1,24}$/)) return false;
+	let addr = lc(mac);
+	let clients = bus.call('hostapd.' + iface, 'get_clients', {})?.clients || {};
+	if (clients[addr]?.assoc || clients[addr]?.authorized) return true;
+	return command('/usr/sbin/iw dev ' + iface + ' station get ' + addr + ' 2>/dev/null').code == 0;
+}
+
+function disconnect_wifi_client(bus, iface, mac) {
+	if (!match(iface || '', /^[A-Za-z0-9_.-]{1,24}$/)) die('无线接口无效');
+	let addr = lc(mac);
+	if (!unicast(mac)) die('终端 MAC 无效');
+	// hostapd ubus del_client 成功时经常无返回值（null），不能据此判失败
+	bus.call('hostapd.' + iface, 'del_client', { addr: addr, reason: 5, deauth: true, ban_time: 0 });
+	if (!wifi_station_linked(bus, iface, mac)) return;
+	let code = command('/usr/sbin/iw dev ' + iface + ' station del ' + addr + ' 2>/dev/null').code;
+	if (code == 0 && !wifi_station_linked(bus, iface, mac)) return;
+	die('无法断开无线终端');
+}
+
 function leases() {
 	let result = [];
 	for (let line in split(trim(readfile('/tmp/dhcp.leases') || ''), '\n')) {
@@ -100,7 +190,7 @@ function leases() {
 function hosts(bus, c) {
 	let result = {}, blocked = {};
 	for (let row in access_list()) blocked[uc(row.mac)] = true;
-	let wifi = stations(bus, c);
+	let wifi = stations(bus, c, false);
 	for (let row in leases()) result[row.mac] = { id: row.mac, mac: row.mac, ipv4: row.ipv4,
 		hostname: row.hostname || row.mac, interface: 'br-lan', wired: true, online: false,
 		rxBytes: 0, txBytes: 0, lastSeen: '', blocked: blocked[row.mac] == true };
@@ -124,6 +214,56 @@ function hosts(bus, c) {
 	for (let name, row in result) if (row.online) push(rows, row);
 	return rows;
 };
+
+const API_CACHE_DIR = '/tmp/mp716-api-cache';
+const API_CACHE_SEC = 8;
+const API_CACHE_TTL = {
+	hosts: 10,
+	physical_ports: 10,
+	home_dashboard: 12,
+	system_info: 6,
+	system_status: 6,
+	wireless_clients: 8,
+};
+
+function read_api_cache(key) {
+	if (!stat(API_CACHE_DIR)) return null;
+	let path = API_CACHE_DIR + '/' + key + '.json';
+	if (!stat(path)) return null;
+	let ttl = API_CACHE_TTL[key] ?? API_CACHE_SEC;
+	try {
+		let row = json(readfile(path) || '{}');
+		if (type(row.at) != 'int' || row.data == null) return null;
+		if (time() - row.at > ttl) return null;
+		return row.data;
+	} catch (e) { return null; }
+}
+
+function write_api_cache(key, data) {
+	if (!stat(API_CACHE_DIR)) mkdir(API_CACHE_DIR, 0755);
+	writefile(API_CACHE_DIR + '/' + key + '.json', sprintf('%J', { at: time(), data: data }));
+}
+
+function clear_api_cache() {
+	if (stat(API_CACHE_DIR)) command('rm -rf ' + API_CACHE_DIR);
+}
+
+function hosts_cached(bus, c) {
+	let hit = read_api_cache('hosts');
+	if (hit != null) return hit;
+	let data = hosts(bus, c);
+	write_api_cache('hosts', data);
+	return data;
+}
+
+function physical_ports_cached(run, labels) {
+	let hit = read_api_cache('physical_ports');
+	if (hit != null) return hit;
+	let data = physical_ports(run, labels);
+	write_api_cache('physical_ports', data);
+	return data;
+}
+
 function iface_status(bus, c, name) {
 	let status = bus.call('network.interface.' + name, 'status', {}) || {};
 	let device = status.l3_device || status.device || '';
@@ -142,28 +282,49 @@ function iface_status(bus, c, name) {
 		rxBytes: device_status.statistics?.rx_bytes || 0, txBytes: device_status.statistics?.tx_bytes || 0,
 		...rates, dhcpEnabled: c.get('dhcp', 'lan', 'ignore') != '1' };
 };
-export function firmware_version() {
-	for (let path in ['/rom/etc/mp716-build.version','/etc/mp716-build.version']) {
-		let version = trim(readfile(path) || '');
-		if (match(version, /^[0-9]+\.[0-9]+\.[0-9]+$/)) return version;
-	}
-	for (let path in ['/rom/etc/mp716-upgrade/device.profile','/etc/mp716-upgrade/device.profile']) {
-		let m = match(readfile(path) || '', /installed_custom_firmware=([^\n]+)/);
-		if (m) return m[1];
-	}
-	return 'unknown';
-};
 function system_info(bus, c) {
 	let info = bus.call('system', 'info', {}) || {};
-	let free = command("df -k /overlay | tail -n 1 | awk '{print $4}'").output;
 	let zone=c.get('system','@system[0]','timezone') || 'UTC';
 	if(!match(zone,/^[A-Za-z0-9<>+,:.\/-]{1,100}$/))zone='UTC';
+	// procd 的 localtime 已含时区偏移，root.avail 即 overlay 剩余 KB；免去 date/df 子进程
+	let lt = type(info.localtime) == 'int' ? gmtime(info.localtime) : null;
+	let localTime = lt ? sprintf('%04d-%02d-%02d %02d:%02d:%02d', lt.year, lt.mon, lt.mday, lt.hour, lt.min, lt.sec)
+		: trim(command("TZ='"+zone+"' /bin/busybox date '+%Y-%m-%d %H:%M:%S'").output);
+	let flashFree = type(info.root?.avail) == 'int' ? info.root.avail
+		: int(trim(command("df -k /overlay | tail -n 1 | awk '{print $4}'").output) || 0);
+	let lanMac = iface_status(bus, c, 'lan').mac;
+	if (!mac(lanMac)) lanMac = factory_wan_mac(readfile('/etc/board.json')) || '';
+	let devNo = device_number_from_mac(lanMac);
+	if (!length(devNo)) devNo = trim(c.get('mp716_system', 'main', 'device_number') || '');
+	let domain = home_domain(c);
 	return { model: 'MP716', hostname: c.get('system', '@system[0]', 'hostname') || 'MP716', firmware: firmware_version(),
 		kernel: trim(readfile('/proc/sys/kernel/osrelease') || ''), uptimeSec: int(info.uptime || 0),
-		localTime: trim(command("TZ='"+zone+"' /bin/busybox date '+%Y-%m-%d %H:%M:%S'").output), timezone:zone,
+		localTime: localTime, timezone:zone,
+		domain: length(domain) ? domain : null,
+		deviceNumber: length(devNo) ? devNo : null,
 		cpuLoad: map(info.load || [0,0,0], (n) => n / 65536.0),
 		memTotalKb: int((info.memory?.total || 0) / 1024), memFreeKb: int((info.memory?.available || info.memory?.free || 0) / 1024),
-		flashTotalKb: 8192, flashFreeKb: int(trim(free) || 0) };
+		flashTotalKb: 8192, flashFreeKb: flashFree };
+};
+function system_info_cached(bus, c) {
+	let hit = read_api_cache('system_info');
+	if (hit != null) return hit;
+	let data = system_info(bus, c);
+	write_api_cache('system_info', data);
+	return data;
+};
+function system_status_payload(bus, c) {
+	let info = system_info_cached(bus, c), clients = hosts_cached(bus, c);
+	return { ...sample_cpu(), memoryPercent: info.memTotalKb ? int(100 - info.memFreeKb * 100 / info.memTotalKb) : 0,
+		uptimeSec: info.uptimeSec, interfaces: [iface_status(bus, c, 'lan'), iface_status(bus, c, 'wan')],
+		wirelessClients: length(filter(clients, (x) => x.wired == false)), wiredClients: length(filter(clients, (x) => x.wired == true)) };
+};
+function system_status_cached(bus, c) {
+	let hit = read_api_cache('system_status');
+	if (hit != null) return hit;
+	let data = system_status_payload(bus, c);
+	write_api_cache('system_status', data);
+	return data;
 };
 function wifi_config(c) {
 	let a = ap(c), r = radio(c);
@@ -184,6 +345,33 @@ function wifi_config(c) {
 		isolate: c.get('wireless', a, 'isolate') == '1', macfilter: c.get('wireless', a, 'macfilter') || 'disable',
 		maclist: list(c.get('wireless', a, 'maclist')) };
 };
+function wifi_status(bus, c, client_count) {
+	let cfg=wifi_config(c),ifaces=wifi_interfaces(bus), dev=ifaces[0]?.ifname;
+	let clients = type(client_count) == 'int' ? client_count : length(stations(bus,c));
+	return {iface:dev||'',band:'2.4GHz',enabled:any(ifaces,(i)=>i.up),ssid:cfg.ssid,channel:cfg.channel=='auto'?0:cfg.channel,autoChannel:cfg.channel=='auto',txPower:cfg.txPower,clients:clients,security:cfg.security,mode:cfg.mode,mac:dev?trim(readfile('/sys/class/net/'+dev+'/address')||''):''};
+};
+
+function home_dashboard(bus, c) {
+	let labels = load_mapping();
+	let client_list = hosts_cached(bus, c);
+	let wireless_clients = length(filter(client_list, (row) => row.wired == false));
+	return { system: system_info_cached(bus,c), wan: iface_status(bus,c,'wan'),
+		wifi: wifi_status(bus, c, wireless_clients), physicalPorts: physical_ports_cached(command, labels),
+		devices: client_list };
+};
+
+function home_dashboard_cached(bus, c) {
+	let hit = read_api_cache('home_dashboard');
+	if (hit != null) {
+		// WAN 速率依赖两次采样，整页缓存会冻结 ratesReady/0bps；命中缓存时仍刷新 WAN。
+		hit.wan = iface_status(bus, c, 'wan');
+		return hit;
+	}
+	let data = home_dashboard(bus, c);
+	write_api_cache('home_dashboard', data);
+	return data;
+};
+
 function dhcp_config(c) {
 	let config = lan(c), pool=pool_bounds(config.ipv4,maskbits(config.netmask));
 	let start = int(c.get('dhcp', 'lan', 'start') || 100), count = int(c.get('dhcp', 'lan', 'limit') || 150);
@@ -326,7 +514,13 @@ function updates(c, path, cfg) {
 		let addresses = [];
 		for (let row in cfg.entries) { if (!unicast(row.mac)) die('MAC 地址无效'); push(addresses,lc(row.mac)); }
 		if (cfg.mode == 'allow' && !length(addresses)) die('白名单不能为空');
-		set('wireless',ap(c),'macfilter',cfg.mode); set('wireless',ap(c),'maclist',length(addresses)?addresses:null);
+		// OpenWrt wifi-scripts 仅接受 allow|deny；关闭过滤须 delete 选项，不能写 macfilter=disable
+		if (cfg.mode == 'disable') {
+			set('wireless',ap(c),'macfilter',null); set('wireless',ap(c),'maclist',null);
+		} else {
+			set('wireless',ap(c),'macfilter',cfg.mode);
+			set('wireless',ap(c),'maclist',length(addresses)?addresses:null);
+		}
 	} else if (path == 'wireless/advanced') {
 		packages = ['wireless']; kind = 'wireless';
 		if (!integer(cfg.beacon,20,1024) || !integer(cfg.dtim,1,255) || !integer(cfg.rtsThreshold,1,2347) || !integer(cfg.fragThreshold,256,2346)) die('无线高级参数超出范围');
@@ -335,6 +529,31 @@ function updates(c, path, cfg) {
 		set('wireless',ap(c),'dtim_period',string(cfg.dtim));
 		set('wireless',radio(c),'beacon_int',string(cfg.beacon));
 		set('wireless',radio(c),'rts',string(cfg.rtsThreshold)); set('wireless',radio(c),'frag',string(cfg.fragThreshold)); set('wireless',ap(c),'wmm',cfg.wmm?'1':'0');
+	} else if (path == 'wireless/secondary') {
+		packages = ['wireless']; kind = 'wireless';
+		let g = GUEST_IFACE, r = radio(c);
+		if (type(cfg.enabled) != 'bool') die('副 SSID 开关无效');
+		if (!cfg.enabled) {
+			if (c.get('wireless', g) != null) set('wireless', g, 'disabled', '1');
+		} else {
+			if (!text(cfg.ssid, 32) || !length(cfg.ssid)) die('副 SSID 名称无效');
+			let secret = cfg.password && cfg.password != '********' ? cfg.password : (c.get('wireless', g, 'key') || '');
+			if (c.get('wireless', g) == null) {
+				push(sections, ['wireless', g, 'wifi-iface']);
+				set('wireless', g, 'device', r);
+				set('wireless', g, 'mode', 'ap');
+				set('wireless', g, 'network', 'lan');
+				set('wireless', g, 'encryption', 'psk2');
+			}
+			set('wireless', g, 'ssid', cfg.ssid);
+			set('wireless', g, 'disabled', '0');
+			set('wireless', g, 'hidden', cfg.hidden ? '1' : '0');
+			set('wireless', g, 'isolate', cfg.isolate !== false ? '1' : '0');
+			if (cfg.password && cfg.password != '********') {
+				if (!(text(secret, 63) && length(secret) >= 8)) die('副 SSID 密码须 8–63 字符');
+				set('wireless', g, 'key', secret);
+			} else if (c.get('wireless', g, 'key') == null) die('请设置副 SSID 密码');
+		}
 	} else die('配置入口无效');
 	return { writes:writes, sections:sections, packages:packages, kind:kind };
 };
@@ -379,6 +598,16 @@ function apply_static(c, rows, token, timeout) {
 	}catch(e){rollback(t);die(e);}
 };
 
+export function warm_api_cache(bus) {
+	let c = cursor();
+	let labels = load_mapping();
+	write_api_cache('hosts', hosts(bus, c));
+	write_api_cache('physical_ports', physical_ports(command, labels));
+	write_api_cache('system_info', system_info(bus, c));
+	// 首页轮询 20s > 整页 TTL 12s，不预热则每次轮询都要现场重建
+	write_api_cache('home_dashboard', home_dashboard(bus, c));
+};
+
 export function route_admin(bus, method, path, body, token) {
 	let c = cursor();
 	if (method == 'GET') {
@@ -388,41 +617,56 @@ export function route_admin(bus, method, path, body, token) {
 				wan:{wanType:'wired',proto:n.proto,hostName:n.hostname,ipAddr:n.ipv4,subnetMask:n.netmask,gateway:n.gateway,dns:n.dns,username:n.username,password:n.password,ac:n.ac,service:n.service},
 				wifi:{ssid2g:w.ssid,encry2g:w.security=='none'?0:1,passphrase2g:w.password}}};
 		}
-		if (path == 'system/info') return { data:system_info(bus,c) };
-		if (path == 'system/device') return { data:{ productName:'MP716',productModel:'MP716',softwareVersion:firmware_version(),webuiVersion:'',lanMac:iface_status(bus,c,'lan').mac,wanIp:iface_status(bus,c,'wan').ipv4 } };
-		if (path == 'system/status') { let info=system_info(bus,c), clients=hosts(bus,c); return { data:{ ...sample_cpu(),memoryPercent:info.memTotalKb?int(100-info.memFreeKb*100/info.memTotalKb):0,uptimeSec:info.uptimeSec,interfaces:[iface_status(bus,c,'lan'),iface_status(bus,c,'wan')],wirelessClients:length(filter(clients,(x)=>x.wired==false)),wiredClients:length(filter(clients,(x)=>x.wired==true)) } }; }
+		if (path == 'system/info') return { data:system_info_cached(bus,c) };
+		if (path == 'system/device') return { data:{ productName:'MP716',productModel:'MP716',softwareVersion:firmware_version(),webuiVersion:webui_version(),lanMac:iface_status(bus,c,'lan').mac,wanIp:iface_status(bus,c,'wan').ipv4 } };
+		if (path == 'system/status') return { data:system_status_cached(bus,c) };
 		if (path == 'network/wan/status') return { data:iface_status(bus,c,'wan') };
-		if (path == 'network/lan/status') { let value=iface_status(bus,c,'lan');value.clientCount=length(hosts(bus,c));return { data:value }; }
+		if (path == 'network/lan/status') { let value=iface_status(bus,c,'lan');value.clientCount=length(hosts_cached(bus,c));return { data:value }; }
 		if (path == 'network/lan/config') return { data:lan(c) };
-		if (path == 'network/wan/config') { let v=iface_status(bus,c,'wan'), client=filter(hosts(bus,c),(h)=>h.ipv4==getenv('REMOTE_ADDR'))[0],proto=c.get('network','wan','proto')||'dhcp'; return { data:{ proto:proto,ipv4:c.get('network','wan','ipaddr')||'',netmask:c.get('network','wan','netmask')||'',gateway:c.get('network','wan','gateway')||'',dns:list(c.get('network','wan','dns')),mtu:int(c.get('network','wan','mtu')||1500),pppMtu:proto=='pppoe'?int(c.get('network','wan','mtu')||1492):1492,hostname:c.get('network','wan','hostname')||'',macaddr:c.get('network','wan','macaddr')||v.mac,defaultMac:factory_wan_mac(readfile('/etc/board.json')),clientMac:client?.mac || '',username:c.get('network','wan','username')||'',password:c.get('network','wan','password')?'********':'',ac:c.get('network','wan','ac')||'',service:c.get('network','wan','service')||'',wanMode:'wired' } }; }
+		if (path == 'network/wan/config') { let v=iface_status(bus,c,'wan'), client=filter(hosts_cached(bus,c),(h)=>h.ipv4==getenv('REMOTE_ADDR'))[0],proto=c.get('network','wan','proto')||'dhcp'; return { data:{ proto:proto,ipv4:c.get('network','wan','ipaddr')||'',netmask:c.get('network','wan','netmask')||'',gateway:c.get('network','wan','gateway')||'',dns:list(c.get('network','wan','dns')),mtu:int(c.get('network','wan','mtu')||1500),pppMtu:proto=='pppoe'?int(c.get('network','wan','mtu')||1492):1492,hostname:c.get('network','wan','hostname')||'',macaddr:c.get('network','wan','macaddr')||v.mac,defaultMac:factory_wan_mac(readfile('/etc/board.json')),clientMac:client?.mac || '',username:c.get('network','wan','username')||'',password:c.get('network','wan','password')?'********':'',ac:c.get('network','wan','ac')||'',service:c.get('network','wan','service')||'',wanMode:'wired' } }; }
 		if (path == 'network/dhcp/config') return { data:dhcp_config(c) };
 		if (path == 'network/dns/config') return { data:{ mode:c.get('network','wan','peerdns')=='0'?'manual':'auto',servers:list(c.get('network','wan','dns')) } };
-		if (path == 'wireless/config') return { data:wifi_config(c) };
-		if (path == 'wireless/status') { let cfg=wifi_config(c),ifaces=wifi_interfaces(bus), dev=ifaces[0]?.ifname;return { data:{iface:dev||'',band:'2.4GHz',enabled:any(ifaces,(i)=>i.up),ssid:cfg.ssid,channel:cfg.channel=='auto'?0:cfg.channel,autoChannel:cfg.channel=='auto',txPower:cfg.txPower,clients:length(stations(bus,c)),security:cfg.security,mode:cfg.mode,mac:dev?trim(readfile('/sys/class/net/'+dev+'/address')||''):''} }; }
-		if (path == 'wireless/clients') return { data:stations(bus,c) };
+		if (path == 'wireless/config') return { data:{ ...wifi_config(c), secondary:wifi_secondary_config(c) } };
+		if (path == 'wireless/secondary') return { data: wifi_secondary_config(c) };
+		if (path == 'wireless/status') return { data: wifi_status(bus, c) };
+		if (path == 'wireless/clients') {
+			let hit = read_api_cache('wireless_clients');
+			if (hit != null) return { data: hit };
+			let data = stations(bus, c, true);
+			write_api_cache('wireless_clients', data);
+			return { data: data };
+		}
 		if (path == 'wireless/advanced') return { data:{supportsLegacyOptions:false,supportsDtim:true,radioOn:wifi_config(c).enabled,bgprotectMode:0,beacon:int(c.get('wireless',radio(c),'beacon_int')||100),dtim:int(c.get('wireless',ap(c),'dtim_period')||2),rtsThreshold:int(c.get('wireless',radio(c),'rts')||2347),fragThreshold:int(c.get('wireless',radio(c),'frag')||2346),txBurst:1,txPreamble:1,wmm:c.get('wireless',ap(c),'wmm')=='0'?0:1} };
 		if (path == 'wireless/acl') { let cfg=wifi_config(c);return { data:{mode:cfg.macfilter,entries:map(cfg.maclist,(m)=>({id:uc(m),mac:uc(m),policy:cfg.macfilter=='allow'?'allow':'deny'}))} }; }
-		if (path == 'hosts/connected') return { data:hosts(bus,c) };
+		if (path == 'hosts/connected') return { data:hosts_cached(bus,c) };
 		if (path == 'hosts/device-acl') return { data:access_list() };
-		if (path == 'home/physical-ports') return {data:physical_ports(command,load_mapping())};
-		if (path == 'network/qos/capability') return { data:{supported:false,backend:'none',reason:'当前固件未启用 QoS'} };
-		if (path == 'system/logs') return { data:{enabled:true,content:command('logread -l 200').output} };
+		if (path == 'hosts/overview') return { data:{ connected:hosts_cached(bus,c), acl:access_list() } };
+		if (path == 'home/dashboard') return { data: home_dashboard_cached(bus, c) };
+		if (path == 'home/physical-ports') return { data:physical_ports_cached(command, load_mapping()) };
+		if (path == 'system/logs') return { data:{enabled:true,content:command('logread -l 100').output} };
+		if (path == 'system/config-task/active') {
+			expire();
+			let t = blocking_pending();
+			return { data: t ? task_view(t) : null };
+		}
 	}
 	let task_match = match(path,/^system\/config-task\/([a-f0-9]{32})$/);
 	let task_action = path == 'system/config-task/confirm' ? 'confirm' : path == 'system/config-task/cancel' ? 'cancel' : null;
-	let write_config = method == 'POST' && index(['network/wan/config','network/lan/config','network/dns/config','network/dhcp/config','network/dhcp/static','wireless/config','wireless/advanced','wireless/acl'],path)>=0;
+	let write_config = method == 'POST' && index(['network/wan/config','network/lan/config','network/dns/config','network/dhcp/config','network/dhcp/static','wireless/config','wireless/secondary','wireless/advanced','wireless/acl'],path)>=0;
 	let access = method == 'POST' && path == 'hosts/device-acl';
 	let wizard = method == 'POST' && index(['wizard/quick','wizard/complete'],path)>=0;
 	let disconnect = method == 'POST' && path=='hosts/disconnect';
 	if (!task_match && !task_action && !write_config && !access && !wizard && !disconnect) return null;
 	if (!acquire()) return reject('另一个配置操作正在执行','DEVICE_BUSY');
+	clear_api_cache();
 	let result;
 	try {
 		result = (function() {
 		expire();
 		if (task_match && method == 'GET') return { data:get_task(task_match[1],token,null) };
 		if (task_action && method == 'POST') return { data:get_task(body.taskId,token,task_action) };
-		if (pending()) return reject('请先确认或撤销当前配置','DEVICE_BUSY');
+		if (blocking_pending()) return reject('请先确认或撤销当前配置','DEVICE_BUSY');
+		dismiss_failed_pending();
 		if (wizard) {
 			if (path=='wizard/complete') {
 				let t=begin(token,['system'],'none',90);
@@ -447,17 +691,22 @@ export function route_admin(bus, method, path, body, token) {
 			}catch(e){rollback(t);die(e);}
 		}
 		if (disconnect) {
-			let row=filter(hosts(bus,c),(h)=>h.id==body.deviceId)[0];
-			if(!row || row.wired)die('仅能暂时断开当前无线终端；有线终端请使用访问控制');
-			if(row.ipv4==getenv('REMOTE_ADDR'))die('不能断开当前管理终端');
-			let response=bus.call('hostapd.'+row.interface,'del_client',{addr:lc(row.mac),reason:5,deauth:true,ban_time:0});
-			if(response==null)die('无法断开无线终端');return {data:null};
+			clear_api_cache();
+			let id = uc(body.deviceId || '');
+			if (!unicast(id)) die('终端标识无效');
+			let row = filter(hosts(bus, c), (h) => uc(h.id) == id || uc(h.mac) == id)[0];
+			if (!row || row.wired) die('仅能暂时断开当前无线终端；有线终端请使用访问控制');
+			if (row.ipv4 == getenv('REMOTE_ADDR')) die('不能断开当前管理终端');
+			disconnect_wifi_client(bus, row.interface, row.mac);
+			return { data: null };
 		}
 		if (write_config) {
 			let seconds = body.confirmTimeoutSec == null ? 90 : body.confirmTimeoutSec;
 			if (!integer(seconds,30,180)) return reject('确认时间必须在 30–180 秒内');
 			if(path=='network/dhcp/static')return{data:apply_static(c,body.bindings,token,seconds)};
-			return { data:apply_config(c,path,body.config||body,token,seconds) };
+			let cfg = body.config || body;
+			if (path == 'wireless/acl') cfg = ensure_admin_in_wifi_allow(cfg);
+			return { data:apply_config(c,path,cfg,token,seconds) };
 		}
 		if (access) {
 			if (!unicast(body.mac) || index(['add','remove'],body.action)<0) return reject('终端 MAC 或操作无效');

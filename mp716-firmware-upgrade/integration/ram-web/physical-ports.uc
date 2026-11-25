@@ -8,7 +8,7 @@ export function parse_switch_link(port, result) {
 	if(type(port)!='int'||port<0||port>4||type(result)!='object'||type(result.code)!='int'||result.code!=0||type(result.output)!='string')return unknown;
 	let line=trim(result.output), prefix='port:'+port+' link:';
 	if(index(line,prefix)!=0||index(line,'\n')>=0||index(line,'\r')>=0)return unknown;
-	let rest=substr(line,length(prefix));
+	let rest=trim(substr(line,length(prefix)));
 	if(rest=='down')return {linkKnown:true,linkUp:false,speedMbps:0};
 	let up=match(rest,/^up speed:(10|100|1000)baseT (full|half)-duplex$/);
 	if(!up)return unknown;
@@ -41,8 +41,16 @@ export function load_mapping() {
 
 export function physical_ports(run, labels) {
 	let ports=[];
+	// BusyBox popen + inline for-loops are unreliable; use a fixed helper script.
+	let batch = run('/bin/sh /usr/share/mp716/port-links.sh 2>/dev/null');
+	if (type(batch) != 'object' || batch.code != 0 || !length(trim(batch.output || '')))
+		batch = run('/bin/sh -c "/sbin/swconfig dev switch0 port 0 get link 2>/dev/null; /sbin/swconfig dev switch0 port 1 get link 2>/dev/null; /sbin/swconfig dev switch0 port 2 get link 2>/dev/null; /sbin/swconfig dev switch0 port 3 get link 2>/dev/null; /sbin/swconfig dev switch0 port 4 get link 2>/dev/null"');
+	let out = type(batch) == 'object' ? batch.output : '';
+	let code = type(batch) == 'object' && type(batch.code) == 'int' ? batch.code : 0;
+	let lines = split(trim(out || ''), '\n');
 	for(let i=0;i<5;i++) {
-		let label=labels?.[i], verified=type(label)=='string', link=parse_switch_link(i,run('/sbin/swconfig dev switch0 port '+i+' get link 2>/dev/null'));
+		let label=type(labels)=='object'?labels[i]:null, verified=type(label)=='string';
+		let link=parse_switch_link(i,{code:code,output:trim(lines[i] || '')+'\n'});
 		push(ports,{id:'port'+i,label:verified?label:'P'+i,role:verified?(label=='WAN'?'wan':'lan'):'unknown',mappingVerified:verified,...link});
 	}
 	return ports;

@@ -1,19 +1,25 @@
 'use strict';
 import { readfile, writefile, mkdir, chmod, rename, unlink, rmdir, stat, popen } from 'fs';
+import { perf_enabled, perf_add_shell, perf_monotonic_ms } from '/usr/share/mp716/perf-diag.uc';
 
 export const STATE = '/etc/mp716-admin';
 const RUNTIME = '/tmp/mp716-admin';
 const PENDING = STATE + '/pending.json';
-const PACKAGES = /^(network|wireless|dhcp|system|firewall|upnpd|mp716_system|mp716_vpn|pptpd|xl2tp|ipsec|openvpn)$/;
+const PACKAGES = /^(network|wireless|dhcp|system|firewall|upnpd|ddns|sqm|mp716_system|mp716_vpn|pptpd|xl2tp|ipsec|openvpn)$/;
 function snapshot_path(path) {
 	return path == '/etc/shadow' || match(path,/^\/etc\/mp716-vpn\/(client\.ovpn|ca\.pem|client\.crt|client\.key|ta\.key|auth)$/);
 }
 
 export function command(text) {
-	let p = popen(text, 'r');
+	let t0 = perf_enabled() ? perf_monotonic_ms() : 0;
+	let wrapped = match(text || '', /^\/bin\/busybox timeout /) ? text :
+		'/bin/busybox timeout -s KILL 15 /bin/sh -c ' + "'" + replace(text, "'", "'\\''") + "'";
+	let p = popen(wrapped, 'r');
 	if (!p) return { code: -1, output: '' };
 	let output = p.read('all') || '';
-	return { code: p.close(), output: output };
+	let result = { code: p.close(), output: output };
+	if (t0) perf_add_shell(perf_monotonic_ms() - t0);
+	return result;
 };
 export function ensure_dirs() {
 	mkdir(STATE, 0700); chmod(STATE, 0700);
@@ -60,6 +66,17 @@ export function acquire() {
 };
 export function release() { unlink(RUNTIME + '/lock/owner'); rmdir(RUNTIME + '/lock'); };
 export function pending() { return load(PENDING); };
+/** 仅等待确认/应用中的任务会阻塞新的配置写入；failed 需用户撤销或在新任务开始时解除 */
+export function blocking_pending() {
+	let t = pending();
+	return t && t.state == 'pending' ? t : null;
+};
+export function dismiss_failed_pending() {
+	let t = pending();
+	if (!t || t.state != 'failed') return null;
+	unlink(PENDING);
+	return t;
+};
 function finish(t, state, message) {
 	t.state = state; t.phase=state; t.message = message;
 	delete t.files;
@@ -80,14 +97,18 @@ export function reload(kind,task_id) {
 	// Run only from the asynchronous worker, outside the global request lock.
 	// netifd reload preserves switch setup; never use /etc/init.d/network restart.
 	let commands={network:'/bin/ubus call network reload',wireless:'/sbin/wifi reload',dhcp:'/etc/init.d/dnsmasq reload',
-		system:'/usr/bin/ucode /usr/share/mp716/system-apply.uc',vpn:'/etc/init.d/mp716-vpn reload && /usr/bin/ucode /usr/share/mp716/vpn-health.uc',firewall:'/etc/init.d/firewall reload'};
+		system:'/usr/bin/ucode /usr/share/mp716/system-apply.uc',vpn:'/etc/init.d/mp716-vpn reload && /usr/bin/ucode /usr/share/mp716/vpn-health.uc',firewall:'/etc/init.d/firewall reload',
+		upnpd:'/etc/init.d/miniupnpd restart 2>/dev/null || /etc/init.d/upnpd restart 2>/dev/null || true',ddns:'/etc/init.d/ddns restart 2>/dev/null || true',
+		sqm:'/etc/init.d/sqm restart 2>/dev/null || true',
+		wireguard:'/bin/ubus call network reload && /etc/init.d/firewall reload && /usr/bin/ucode /usr/share/mp716/wg-health.uc'};
 	let kinds=kind=='all'?['network','wireless','dhcp','system','vpn','firewall']:kind=='network-wireless'?['network','wireless']:kind=='network-dhcp'?['network','dhcp']:kind=='none'?[]:[kind];
 	for(let name in kinds) {
 		let current=task_id?pending():null;
 		if(task_id && current && current.id==task_id && current.phase=='applying' &&
 			(current.cancelRequested||current.boot!=boot_id()||uptime()>=current.deadline))return {code:-2,cancelled:true,kind:name,output:''};
 		if(!commands[name])return {code:-1,kind:name,output:'Unknown apply kind'};
-		let result=command('/bin/busybox timeout -s KILL 25 /bin/sh -c '+quote(name=='vpn'?commands[name]:'exec '+commands[name]));
+		let compound=name=='vpn' || name=='wireguard';
+		let result=command('/bin/busybox timeout -s KILL 25 /bin/sh -c '+quote(compound?commands[name]:'exec '+commands[name]));
 		if(result.code!=0)return {...result,kind:name};
 	}
 	return {code:0,output:''};
@@ -129,16 +150,22 @@ export function rollback(t) {
 	if(t.phase=='applying' && worker_alive(t)) {
 		t.cancelRequested=true;t.message='等待当前服务应用结束后恢复配置';persist(t);return task_view(t);
 	}
-	try {restore_files(t);} catch(e) {t.rollbackError=e.message || string(e);return failed(t,'配置文件恢复失败，请重试回滚');}
+	try {restore_files(t);} catch(e) {t.rollbackError=e.message || sprintf('%s', e);return failed(t,'配置文件恢复失败，请重试回滚');}
 	if(t.phase=='prepared'||t.reload=='none')return finish(t,'rolled_back','配置已恢复，未启动服务应用');
 	t.state='pending';t.phase='rolling_back';t.boot=boot_id();t.message='正在恢复原配置及服务';
 	delete t.cancelRequested;
-	try {launch_worker(t);} catch(e) {t.rollbackError=e.message || string(e);return failed(t,'配置文件已恢复，但服务恢复未完成');}
+	try {launch_worker(t);} catch(e) {t.rollbackError=e.message || sprintf('%s', e);return failed(t,'配置文件已恢复，但服务恢复未完成');}
 	return task_view(t);
 };
+// Started by init after these kinds' services read UCI (mp716-admin START=18).
+const BOOT_RESTORE_KINDS=['none','network','wireless','dhcp','firewall','network-wireless','network-dhcp','upnpd','ddns','sqm','wireguard'];
 export function expire() {
 	let t = pending();
 	if(!t || t.state=='failed')return null;
+	if(t.boot!=boot_id() && getenv('MP716_BOOT')=='1' && index(BOOT_RESTORE_KINDS,t.reload)>=0) {
+		try {restore_files(t);} catch(e) {t.rollbackError=e.message || sprintf('%s',e);return failed(t,'配置文件恢复失败，请重试回滚');}
+		return finish(t,'rolled_back','重启前配置未确认，已恢复原配置');
+	}
 	if(t.phase=='rolling_back') {
 		if(!worker_alive(t) && uptime()-int(t.workerQueuedAt || 0)>10)return rollback(t);
 		return null;
@@ -148,7 +175,8 @@ export function expire() {
 	return null;
 };
 export function begin(owner, packages, kind, timeout, extra_paths) {
-	if (pending()) die('已有配置等待确认');
+	if (blocking_pending()) die('已有配置等待确认');
+	dismiss_failed_pending();
 	let random = readfile('/proc/sys/kernel/random/uuid');
 	let id = replace(trim(random || ''), /-/g, '');
 	if (!match(id, /^[a-f0-9]{32}$/)) die('无法创建配置任务');
@@ -198,7 +226,7 @@ export function run_worker(id,token) {
 	let generation=t.workerToken, phase=t.phase;
 	t.worker=self_identity();persist(t);release();
 	let result;
-	try {result=reload(t.reload,id);}catch(e){result={code:-1,kind:t.reload,output:e.message || string(e)};}
+	try {result=reload(t.reload,id);}catch(e){result={code:-1,kind:t.reload,output:e.message || sprintf('%s', e)};}
 	// Output may contain private service details; never return it in a task view.
 	writefile(RUNTIME+'/'+id+'.'+phase+'.log',substr(result.output || '',0,65536));chmod(RUNTIME+'/'+id+'.'+phase+'.log',0600);
 	if(!wait_lock())return false;
@@ -210,10 +238,10 @@ export function run_worker(id,token) {
 				t.phase='applied';t.message='服务配置已应用，等待确认';delete t.worker;persist(t);return true;
 			}
 			if(result.code!=0&&!result.cancelled)t.applyError='服务应用失败: '+(result.kind || t.reload)+'，退出码 '+result.code;
-			try {restore_files(t);}catch(e){t.rollbackError=e.message || string(e);failed(t,'配置文件恢复失败，请重试回滚');return false;}
+			try {restore_files(t);}catch(e){t.rollbackError=e.message || sprintf('%s', e);failed(t,'配置文件恢复失败，请重试回滚');return false;}
 			t.phase='rolling_back';t.boot=boot_id();t.message='正在恢复原配置及服务';persist(t);
 			release();held=false;
-			try {result=reload(t.reload);}catch(e){result={code:-1,kind:t.reload,output:e.message || string(e)};}
+			try {result=reload(t.reload);}catch(e){result={code:-1,kind:t.reload,output:e.message || sprintf('%s', e)};}
 			writefile(RUNTIME+'/'+id+'.rollback.log',substr(result.output || '',0,65536));chmod(RUNTIME+'/'+id+'.rollback.log',0600);
 			if(!wait_lock())return false;held=true;
 			t=pending();if(!t||t.id!=id||t.workerToken!=generation)return false;

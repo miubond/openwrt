@@ -123,7 +123,7 @@ export function route_diagnostics(bus, method, path, body, owner) {
 		if(writefile(dir+'/authorized','1\n')==null)die('无法确认检测启动');
 		return {data:null};
 		})();
-	} catch(e) { result={error:'VALIDATION',message:e.message || string(e)}; }
+	} catch(e) { result={error:'VALIDATION',message:e.message || sprintf('%s', e)}; }
 	release();
 	return result;
 };
