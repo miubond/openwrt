@@ -40,7 +40,7 @@ python3 packer/mp716_fwpack.py pack \
   --hardware-revision ci-lab \
   --firmware-version "$(cat config/firmware.version)" \
   --web-ui "$(python3 -c 'import json; print(json.load(open("web/package.json"))["version"])')" \
-  --build-time 2026-11-13T00:00:00Z 2>&1 | tee build/ci-logs/pack-test-container.log
+  --build-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" 2>&1 | tee build/ci-logs/pack-test-container.log
 python3 - <<'PY'
 from pathlib import Path
 import json

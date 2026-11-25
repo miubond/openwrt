@@ -82,6 +82,8 @@ jobs:
 
       - name: Build and verify LAN and RAM images
         id: images
+        env:
+          MP716_SIGNING_KEY: ${{ secrets.MP716_SIGNING_KEY }}
         run: bash scripts/build-ci-images.sh
 
       - name: Check independently verified toolchain cache

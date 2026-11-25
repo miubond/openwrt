@@ -44,7 +44,6 @@ endef
 
 define Package/mp716-sysupgrade/conffiles
 /etc/mp716-upgrade/device.profile
-/etc/mp716-upgrade/upgrade.pub
 /etc/mp716-upgrade/state
 /etc/mp716-upgrade/history.log
 endef
