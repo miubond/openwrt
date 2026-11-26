@@ -5,7 +5,7 @@ import { connect } from 'ubus';
 import { popen, stdin, writefile, unlink, chmod, stat, readfile, mkdir } from 'fs';
 import { cursor } from 'uci';
 import { firmware_version, firmware_build_date } from '/usr/share/mp716/build-meta.uc';
-import { FIRMWARE_MAX_BYTES, stream_firmware_upload, job_status_payload, reverify_job_image, job_get, job_mark_phase } from '/usr/share/mp716/firmware-job.uc';
+import { FIRMWARE_MAX_BYTES, stream_firmware_upload, job_status_payload, reverify_job_image, job_get, job_mark_phase, firmware_capacity_check, job_clear_apply_result } from '/usr/share/mp716/firmware-job.uc';
 import { firmware_verifier_present, firmware_flash_allowed, firmware_policy_payload, flash_gate_confirmed, upgrade_policy } from '/usr/share/mp716/upgrade-policy.uc';
 import { route_native } from '/usr/share/mp716/dispatch.uc';
 import { capabilities } from '/usr/share/mp716/capabilities.uc';
@@ -68,15 +68,17 @@ function trim_file(path) {
 function firmware_info_payload() {
 	let upload = firmware_verifier_present();
 	let pol = firmware_policy_payload();
-	return {
+	let payload = {
 		currentVersion: firmware_version(), buildDate: firmware_build_date(), hardware: 'MP716',
 		canUpgrade: upload, flashUpgradeEnabled: pol.flashUpgradeEnabled,
 		validationOnly: pol.validationOnly,
-		upgradePolicy: pol.upgradePolicy,
 		hardwareValidated: pol.hardwareValidated,
 		maxBytes: FIRMWARE_VERIFY_MAX_BYTES, maxSizeLabel: '8M',
 		upgradeEngine: 'v2',
 	};
+	if (pol.upgradePolicy != 'production')
+		payload.upgradePolicy = pol.upgradePolicy;
+	return payload;
 }
 
 function firmware_v2_info_payload() {
@@ -197,6 +199,12 @@ function apply_job_by_id(job_id, keep) {
 	let rev = reverify_job_image(job);
 	if (rev.error)
 		return fail(400, 'VALIDATION', rev.error, rev.report);
+	let cap = firmware_capacity_check(job.size, 'apply');
+	if (!cap.ok) {
+		let st = cap.code == 'LOW_TMP' ? 507 : cap.code == 'LOW_MEMORY' ? 507 : 400;
+		return fail(st, cap.code || 'VALIDATION', cap.message || '容量不足', cap);
+	}
+	job_clear_apply_result();
 	job_mark_phase(job_id, 'submitted', { keep: keep == true });
 	let result = apply_firmware_package(job.path, keep, rev.report, { job_id: job_id, taskId: job_id });
 	job_mark_phase(job_id, 'applying', { keep: keep == true });

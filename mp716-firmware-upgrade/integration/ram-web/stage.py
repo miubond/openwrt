@@ -128,7 +128,11 @@ def stage(
     timefix_init.chmod(0o755)
     keep = root / "lib/upgrade/keep.d/mp716-admin"
     keep.parent.mkdir(parents=True, exist_ok=True)
-    keep.write_text("/etc/mp716-admin/\n/etc/mp716-vpn/\n/etc/mp716-upgrade/installed.at\n", encoding="ascii")
+    keep.write_text(
+        "/etc/mp716-admin/\n/etc/mp716-vpn/\n/etc/mp716-upgrade/installed.at\n"
+        "/etc/mp716-upgrade/flash-gate\n/etc/mp716-upgrade/platform\n/etc/mp716-upgrade/upgrade-policy\n",
+        encoding="ascii",
+    )
     sysupgrade = (
         Path(__file__).resolve().parents[1]
         / "openwrt-package"

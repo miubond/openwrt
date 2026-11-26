@@ -261,7 +261,8 @@ export default {
   upgrade: {
     verify: '上傳並校驗',
     verifying: '正在上傳並校驗…',
-    verifyOnly: '目前僅驗簽，不寫入 Flash。',
+    verifyOnly: '校驗已通過；裝置未開通刷寫，無法寫入 Flash。',
+    productionUploadHint: '可上傳並校驗正式簽章韌體；「開始升級」須運維開通刷寫門後可用。',
     validationReport: '韌體校驗結果',
     signaturePassed: '簽章驗證通過',
     signatureFailed: '簽章驗證未通過',

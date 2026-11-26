@@ -1,7 +1,8 @@
 ﻿# 量产策略烟测：刷写门关闭时须 validationOnly（不自动 touch allow-flash）
 param(
-  [string]$RouterHost = $(if ($env:ROUTER_HOST) { $env:ROUTER_HOST } else { '192.168.199.1' })
+  [string]$RouterHost = '192.168.199.1'
 )
+if ($env:ROUTER_HOST) { $RouterHost = $env:ROUTER_HOST }
 $ErrorActionPreference = 'Stop'
 $pwd = $env:ROUTER_SSH_PASSWORD
 if (-not $pwd) { $pwd = $env:ROUTER_ROOT_PASSWORD }

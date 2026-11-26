@@ -11,8 +11,11 @@ const JOB_ROOT = '/tmp/mp716-upgrade';
 const JOB_DIR = JOB_ROOT + '/jobs';
 const JOB_LOCK = JOB_ROOT + '/job.lock';
 const ACTIVE_JOB = JOB_ROOT + '/active-job.json';
-/** payload + 解压 staging 预算（与 packer.image_format.UPLOAD_RESERVE_BYTES 对齐） */
+const APPLY_RESULT = JOB_ROOT + '/apply-result.json';
+/** 刷写 staging（与 packer MP716_UPLOAD_RESERVE_BYTES / apply --require-memory 对齐） */
 const MEM_NEED_EXTRA_KB = 8 * 1024;
+/** 仅验签落盘（与 VERIFY_RESERVE 2MiB 对齐，避免 64MB 机在常态内存下无法上传） */
+const MEM_VERIFY_EXTRA_KB = 2 * 1024;
 const TMP_MIN_EXTRA_KB = 512;
 const BUSY_PHASES = ['uploading', 'verified', 'submitted', 'applying', 'rebooting'];
 
@@ -33,11 +36,29 @@ function upper_state(name) {
 }
 
 export function job_public_phase(phase, device_state) {
+	/* 设备 state 记录的是上一次刷写；新上传、仅验签的任务不受其影响 */
+	if (index(['', 'submitted', 'applying', 'rebooting'], phase || '') < 0)
+		return upper_state(phase);
 	if (device_state == 'SUCCESS') return 'BOOT_CONFIRMED';
 	if (device_state == 'FAILED') return 'FAILED';
 	if (index(['REBOOT_REQUIRED', 'BOOT_VERIFYING'], device_state) >= 0) return 'REBOOTING';
 	return upper_state(phase);
 };
+
+function device_failure_message() {
+	let raw = readfile('/etc/mp716-upgrade/state') || '';
+	let error = '', expected = '';
+	for (let line in split(raw, '\n')) {
+		let m = match(line, /^error=(.*)$/);
+		if (m) error = m[1];
+		m = match(line, /^expected_custom_firmware=(.*)$/);
+		if (m) expected = m[1];
+	}
+	if (error == 'version')
+		return '上次升级未生效：新镜像启动后的版本与升级包不符' +
+			(length(expected) ? '（升级包 ' + expected + '）' : '') + '，设备继续运行当前版本';
+	return '上次升级未生效' + (length(error) ? '（' + error + '）' : '') + '，设备继续运行当前版本';
+}
 
 function read_device_upgrade_state() {
 	let raw = readfile('/etc/mp716-upgrade/state') || '';
@@ -65,10 +86,18 @@ function tmp_free_kb() {
 	return kb > 0 ? kb : 0;
 }
 
-export function firmware_capacity_check(file_bytes) {
+export function firmware_capacity_check(file_bytes, phase) {
+	phase = lc(trim(phase || 'upload'));
 	let mem = mem_available_kb();
 	let tmp = tmp_free_kb();
-	let need_mem = int((file_bytes + 1023) / 1024) + MEM_NEED_EXTRA_KB;
+	let need_mem;
+	if (phase == 'apply') {
+		/* 镜像已在 /tmp，仅核对刷写 staging（与 mp716-upgraded --require-memory 一致） */
+		need_mem = MEM_NEED_EXTRA_KB + 512;
+	} else {
+		let mem_extra = MEM_VERIFY_EXTRA_KB;
+		need_mem = int((file_bytes + 1023) / 1024) + mem_extra;
+	}
 	let need_tmp = int((file_bytes + 1023) / 1024) + TMP_MIN_EXTRA_KB;
 	if (file_bytes <= 0 || file_bytes > FIRMWARE_MAX_BYTES)
 		return { ok: false, code: 'VALIDATION', message: '固件文件不能超过 8M', memAvailableKb: mem, tmpFreeKb: tmp };
@@ -76,7 +105,7 @@ export function firmware_capacity_check(file_bytes) {
 		return { ok: false, code: 'LOW_TMP', message: 'tmpfs 空间不足', needTmpKb: need_tmp, tmpFreeKb: tmp, memAvailableKb: mem };
 	if (mem < need_mem)
 		return { ok: false, code: 'LOW_MEMORY', message: '系统可用内存不足', needMemKb: need_mem, memAvailableKb: mem, tmpFreeKb: tmp };
-	return { ok: true, memAvailableKb: mem, tmpFreeKb: tmp, needMemKb: need_mem, needTmpKb: need_tmp };
+	return { ok: true, memAvailableKb: mem, tmpFreeKb: tmp, needMemKb: need_mem, needTmpKb: need_tmp, phase: phase };
 };
 
 function ensure_dirs() {
@@ -116,15 +145,33 @@ function store_job(job) {
 	chmod(ACTIVE_JOB, 0600);
 }
 
+/* mp716-sysupgrade 在 CGI 返回 submitted 之后才失败，结果只能经此文件回传 */
+function reconcile_apply_result(job) {
+	if (!job || index(['submitted', 'applying'], job.phase) < 0 || !stat(APPLY_RESULT))
+		return job;
+	let row = load_json(APPLY_RESULT);
+	unlink(APPLY_RESULT);
+	job.phase = 'failed';
+	job.updated_at = time();
+	job.apply_report = row;
+	job.message = '升级未执行：' + (row?.detail || row?.error || '刷写失败') + '；设备未改动，可重新上传';
+	store_job(job);
+	return job;
+}
+
 function load_active_job() {
 	let row = load_json(ACTIVE_JOB);
 	if (type(row) != 'object' || !row?.job_id) return null;
-	return load_json(job_meta_path(row.job_id));
+	return reconcile_apply_result(load_json(job_meta_path(row.job_id)));
 }
 
 export function job_get(id) {
 	if (!match(id || '', /^[0-9a-f]{16}$/)) return null;
-	return load_json(job_meta_path(id));
+	return reconcile_apply_result(load_json(job_meta_path(id)));
+};
+
+export function job_clear_apply_result() {
+	if (stat(APPLY_RESULT)) unlink(APPLY_RESULT);
 };
 
 function with_job_lock(callback) {
@@ -212,7 +259,7 @@ export function reverify_job_image(job) {
 };
 
 export function stream_firmware_upload(size) {
-	let cap = firmware_capacity_check(size);
+	let cap = firmware_capacity_check(size, 'upload');
 	if (!cap.ok) return { error: cap };
 	return with_job_lock(() => {
 		let busy = busy_job_conflict();
@@ -240,7 +287,7 @@ export function stream_firmware_upload(size) {
 			return { error: { message: '无法保存固件文件' } };
 		}
 		chmod(path, 0600);
-		let after = firmware_capacity_check(size);
+		let after = firmware_capacity_check(size, 'verify');
 		let check = run_check(path, true);
 		if (check.error) {
 			unlink(path);
@@ -267,7 +314,7 @@ export function job_status_payload(id) {
 	if (!job) {
 		return {
 			state: job_public_phase('', dev),
-			message: length(dev) ? 'device state ' + dev : 'no active job',
+			message: dev == 'FAILED' ? device_failure_message() : (length(dev) ? 'device state ' + dev : 'no active job'),
 			deviceState: dev || null,
 		};
 	}
@@ -277,7 +324,7 @@ export function job_status_payload(id) {
 	if (state == 'APPLYING') msg = '正在刷写';
 	if (state == 'REBOOTING') msg = '设备重启核验中';
 	if (state == 'BOOT_CONFIRMED') msg = '新版本已确认';
-	if (state == 'FAILED') msg = job.message || '升级失败';
+	if (state == 'FAILED') msg = job.message || (dev == 'FAILED' ? device_failure_message() : '升级失败');
 	return {
 		state: state,
 		taskId: job.job_id,
@@ -286,6 +333,7 @@ export function job_status_payload(id) {
 		ts: job.updated_at || job.created_at,
 		deviceState: dev || null,
 		verification: job.verify_report || null,
+		applyReport: job.apply_report || null,
 	};
 };
 

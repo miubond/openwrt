@@ -176,11 +176,6 @@ onMounted(() => void load())
           <div class="label">{{ t('upgrade.release') }}</div>
           <div class="value">{{ show(info?.buildDate) }}</div>
         </div>
-        <div v-if="info?.upgradePolicy" class="row">
-          <div class="label">{{ t('upgrade.policy') }}</div>
-          <div class="value">{{ show(info?.upgradePolicy) }}</div>
-        </div>
-
         <p v-if="!canUpload" class="warn">{{ t('upgrade.uploadDisabled') }}</p>
 
         <template v-else>
@@ -221,8 +216,9 @@ onMounted(() => void load())
           </div>
 
           <p v-if="info?.maxSizeLabel" class="hint">{{ t('upgrade.maxSize', { tip: info.maxSizeLabel }) }}</p>
-          <p v-if="verifyOnly" class="warn">{{ t('upgrade.verifyOnly') }}</p>
-          <p v-else class="warn">{{ t('upgrade.warnRun') }}</p>
+          <p v-if="verifyOnly && !verifyReady" class="hint">{{ t('upgrade.productionUploadHint') }}</p>
+          <p v-else-if="verifyOnly && verifyReady" class="warn">{{ t('upgrade.verifyOnly') }}</p>
+          <p v-else-if="flashEnabled" class="warn">{{ t('upgrade.warnRun') }}</p>
           <p v-if="jobId" class="hint">{{ t('upgrade.jobReady', { id: jobId }) }}</p>
           <p v-if="outcome" class="result">{{ outcome }}</p>
         </template>

@@ -6,6 +6,12 @@ set -eu
 
 GATE_FILE="${MP716_GATE_FILE:-/etc/mp716-upgrade/flash-gate}"
 PLATFORM_FILE="${MP716_PLATFORM_FILE:-/etc/mp716-upgrade/platform}"
+if [ -n "${MP716_TEST_ROOT:-}" ]; then
+	RESULT_FILE="$MP716_TEST_ROOT/apply-result.json"
+else
+	RESULT_FILE=/tmp/mp716-upgrade/apply-result.json
+fi
+APPLY_SERVICES="wpad mp716-vpn sysntpd odhcpd log urngd uhttpd mp716-admin dnsmasq cron miniupnpd"
 
 usage() {
 	echo "usage: mp716-sysupgrade identify|verify|plan|apply FILE [--keep-config]" >&2
@@ -77,6 +83,32 @@ platform_confirmed() {
 	[ "$value" = "confirmed" ]
 }
 
+restore_services() {
+	if [ -n "${old_min:-}" ]; then
+		(echo "$old_min" > /proc/sys/vm/min_free_kbytes) 2>/dev/null || true
+	fi
+	[ -z "${MP716_TEST_ROOT:-}" ] || return 0
+	(
+		for svc in uhttpd dnsmasq mp716-admin log sysntpd odhcpd urngd wpad cron miniupnpd mp716-vpn; do
+			/etc/init.d/$svc start >/dev/null 2>&1 || true
+		done
+		wifi up >/dev/null 2>&1 || true
+	) >/dev/null 2>&1 &
+}
+
+# The web request has already returned "submitted"; the job status API reads this file.
+record_failure() {
+	mkdir -p "$(dirname "$RESULT_FILE")" 2>/dev/null || true
+	printf '%s\n' "$1" > "$RESULT_FILE" 2>/dev/null || true
+	printf '%s\n' "$1"
+}
+
+apply_failed() {
+	restore_services
+	case "$file" in /tmp/mp716-firmware-upload-*.mp716upd|/tmp/mp716-firmware-upload-apply.mp716upd) rm -f -- "$file" ;; esac
+	record_failure "$1"
+}
+
 check_container() {
 	case "$kind" in
 		unknown)
@@ -133,24 +165,19 @@ case "$cmd" in
 		if [ -z "${MP716_TEST_ROOT:-}" ]; then
 			sleep 3
 		fi
-		# Refuse apply before tuning vm.min_free_kbytes — do not rely on that knob alone.
+		rm -f -- "$RESULT_FILE"
 		_payload_kb=$(( $(wc -c < "$file") / 1024 ))
-		_need_kb=$(( _payload_kb + 8192 + 2048 ))
-		_avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
-		if [ -n "$_avail_kb" ] && [ "$_avail_kb" -lt "$_need_kb" ]; then
-			printf '%s\n' "{\"ok\":false,\"error\":\"low_memory\",\"flash_write\":false,\"detail\":\"MemAvailable ${_avail_kb}kB < need ${_need_kb}kB\"}"
-			exit 25
-		fi
 		_tmp_kb=$(df -k /tmp 2>/dev/null | awk 'NR==2 {print $4}')
 		_need_tmp_kb=$(( _payload_kb + 512 ))
 		if [ -n "$_tmp_kb" ] && [ "$_tmp_kb" -lt "$_need_tmp_kb" ]; then
-			printf '%s\n' "{\"ok\":false,\"error\":\"low_tmp\",\"flash_write\":false,\"detail\":\"tmp free ${_tmp_kb}kB < need ${_need_tmp_kb}kB\"}"
+			apply_failed "{\"ok\":false,\"error\":\"low_tmp\",\"flash_write\":false,\"detail\":\"tmp free ${_tmp_kb}kB < need ${_need_tmp_kb}kB\"}"
 			exit 26
 		fi
-		# The memory check wants payload + 8MB free while the container is already on tmpfs.
-		# hostapd is restarted by netifd, so wpad stop alone does not free it. Ethernet stays up.
+		# The container already sits on tmpfs, so MemAvailable only reaches the extract
+		# budget once Wi-Fi and the daemons are gone. hostapd is restarted by netifd,
+		# so wpad stop alone does not free it. Ethernet stays up.
 		wifi down >/dev/null 2>&1 || true
-		for svc in wpad mp716-vpn sysntpd odhcpd log urngd uhttpd mp716-admin dnsmasq cron miniupnpd; do
+		for svc in $APPLY_SERVICES; do
 			/etc/init.d/$svc stop >/dev/null 2>&1 || true
 		done
 		sync
@@ -162,34 +189,39 @@ case "$cmd" in
 			(echo 1024 > /proc/sys/vm/min_free_kbytes) 2>/dev/null || true
 		fi
 		(echo 3 > /proc/sys/vm/drop_caches) 2>/dev/null || true
+		# Same budget mp716-upgraded --extract enforces (MP716_UPLOAD_RESERVE_BYTES).
+		_need_kb=$(( _payload_kb + 8192 ))
+		_avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+		if [ -n "$_avail_kb" ] && [ "$_avail_kb" -lt "$_need_kb" ]; then
+			apply_failed "{\"ok\":false,\"error\":\"low_memory\",\"flash_write\":false,\"detail\":\"MemAvailable ${_avail_kb}kB < need ${_need_kb}kB\"}"
+			exit 25
+		fi
 		stage=$(mktemp -d /tmp/mp716-sysupgrade.XXXXXX)
 		payload="$stage/sysupgrade.bin"
 		trap 'rm -rf -- "$stage"' EXIT
 		trap 'exit 1' HUP INT TERM
 		archive="$stage/config.tgz"
 		root="$stage/root"
-		if ! check_container --extract "$payload" --pending-state "$stage/sysupgrade.pending"; then
-			status=$?
-			if [ -n "${old_min:-}" ]; then
-				(echo "$old_min" > /proc/sys/vm/min_free_kbytes) 2>/dev/null || true
-			fi
-			# The web request is waiting on this process. Restarting Wi-Fi before
-			# exit keeps the HTTP response open, so the page never shows the error.
-			if [ -z "${MP716_TEST_ROOT:-}" ]; then
-				(
-					for svc in uhttpd dnsmasq mp716-admin log sysntpd odhcpd urngd wpad cron miniupnpd mp716-vpn; do
-						/etc/init.d/$svc start >/dev/null 2>&1 || true
-					done
-					wifi up >/dev/null 2>&1 || true
-				) >/dev/null 2>&1 &
-			fi
+		set +e
+		report=$(check_container --extract "$payload" --pending-state "$stage/sysupgrade.pending")
+		status=$?
+		set -e
+		if [ "$status" -ne 0 ]; then
+			apply_failed "$report"
 			exit "$status"
 		fi
 		set -- "$payload"
 		if [ "$keep" -eq 0 ]; then
 			set -- -n "$@"
 		fi
+		set +e
 		sysupgrade -T "$@"
+		status=$?
+		set -e
+		if [ "$status" -ne 0 ]; then
+			apply_failed "{\"ok\":false,\"error\":\"sysupgrade_test\",\"flash_write\":false,\"detail\":\"sysupgrade -T exit ${status}\"}"
+			exit "$status"
+		fi
 		# 64 MB boards cannot hold the uploaded container and the extracted image in tmpfs
 		# while procd stages the upgrade; only the verified extract is needed from here on.
 		case "$file" in /tmp/mp716-firmware-upload-*.mp716upd|/tmp/mp716-firmware-upload-apply.mp716upd) rm -f -- "$file" ;; esac
@@ -228,7 +260,19 @@ if [ '$keep' -eq 1 ]; then
 else
 	tar -czf '$archive' -C '$root' ./etc/mp716-upgrade/sysupgrade.pending || exit 1
 fi
-exec sysupgrade -f '$archive' $([ "$keep" -eq 0 ] && printf '%s' '-n ') '$payload'
+sysupgrade -f '$archive' $([ "$keep" -eq 0 ] && printf '%s' '-n ') '$payload'
+rc=\$?
+[ "\$rc" -ne 0 ] || exit 0
+mkdir -p '$(dirname "$RESULT_FILE")'
+printf '{"ok":false,"error":"sysupgrade","flash_write":false,"detail":"sysupgrade exit %s"}\n' "\$rc" > '$RESULT_FILE'
+[ -n '${MP716_TEST_ROOT:-}' ] || {
+	[ -z '${old_min:-}' ] || echo '${old_min:-}' > /proc/sys/vm/min_free_kbytes
+	for s in uhttpd dnsmasq mp716-admin log sysntpd odhcpd urngd wpad cron miniupnpd mp716-vpn; do
+		/etc/init.d/\$s start >/dev/null 2>&1 || true
+	done
+	wifi up >/dev/null 2>&1 || true
+}
+exit \$rc
 EOF
 		chmod 755 "$stage/run.sh"
 		# The adapter test has to observe sysupgrade's own exit. On the router the

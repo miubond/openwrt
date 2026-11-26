@@ -261,7 +261,8 @@ export default {
   upgrade: {
     verify: 'Upload and verify',
     verifying: 'Uploading and verifying…',
-    verifyOnly: 'Verify only — Flash is not written.',
+    verifyOnly: 'Verification passed; flash gate is closed — upgrade cannot be applied.',
+    productionUploadHint: 'You may upload and verify a signed release package. Apply requires an enabled production flash gate.',
     validationReport: 'Firmware verification result',
     signaturePassed: 'Signature verified',
     signatureFailed: 'Signature not verified',

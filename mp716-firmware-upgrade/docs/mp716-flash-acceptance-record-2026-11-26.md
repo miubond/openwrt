@@ -34,6 +34,13 @@ Web：`0.2.3`（`dist-openwrt` 热更至 `/www/mp716`）
 - RELEASE：`scripts/write-release-upgrade-policy-overlay.sh` → `production` + gate（**未**在 140 默认启用）。  
 - 前端：`openwrt_system` `RouterAPI.applyFirmwareV2({ jobId, keepSettings })` 与验收脚本 curl 上传对齐。
 
+## 2026-11-26 下午复验（1.0.12 容器 + 内存门槛修正）
+
+- `firmware-job.uc`：上传/验签 **+2MiB**；确认刷写仅 **8MiB staging**（镜像已在 `/tmp`，不再重复计入 file 体积）。
+- 包：`Desktop\MP716-1.0.12\test.mp716upd` + 同步 `upgrade.pub`。
+- 结果：`OK VERIFIED job_id=c8468a8e0dee4329` → `OK SUBMITTED flash_write=True`。
+- 重启后：`state=SUCCESS`；运行 **1.0.11**（与 repack 同 payload 一致，`bytes_programmed=0` 表示未改写分区内容属预期）。
+
 ## 未关闭项（须全量构建后复验）
 
 - [ ] 刷写后运行版本与 `config/firmware.version` 同为 **1.0.12**（需 CI/本地完整镜像，不可仅 repack manifest）。  

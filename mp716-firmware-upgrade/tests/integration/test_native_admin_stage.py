@@ -76,6 +76,8 @@ class NativeAdminStageTests(unittest.TestCase):
         keep = (self.root / 'lib/upgrade/keep.d/mp716-admin').read_text()
         self.assertIn('/etc/mp716-vpn/', keep)
         self.assertIn('/etc/mp716-admin/', keep)
+        for name in ('flash-gate', 'platform', 'upgrade-policy'):
+            self.assertIn(f'/etc/mp716-upgrade/{name}', keep)
 
     def test_root_and_legacy_entries_share_vue_assets_and_preserve_native_api(self):
         dist = Path(self.work.name) / 'dist'

@@ -216,3 +216,6 @@ class SysupgradeAdapterTests(unittest.TestCase):
         trace = self.trace.read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(trace), 1)
         self.assertTrue(trace[0].startswith("sysupgrade -T /"), trace)
+        result = json.loads((self.root / "apply-result.json").read_text(encoding="utf-8"))
+        self.assertEqual(result["error"], "sysupgrade_test")
+        self.assertFalse(result["flash_write"])

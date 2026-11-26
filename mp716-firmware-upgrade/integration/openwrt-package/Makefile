@@ -47,6 +47,9 @@ define Package/mp716-sysupgrade/conffiles
 /etc/mp716-upgrade/upgrade.pub
 /etc/mp716-upgrade/state
 /etc/mp716-upgrade/history.log
+/etc/mp716-upgrade/flash-gate
+/etc/mp716-upgrade/platform
+/etc/mp716-upgrade/upgrade-policy
 endef
 
 define Package/mp716-sysupgrade/install

@@ -261,7 +261,8 @@ export default {
   upgrade: {
     verify: '上传并校验',
     verifying: '正在上传并校验…',
-    verifyOnly: '当前仅验签，不写入 Flash。',
+    verifyOnly: '校验已通过；设备未开通刷写，无法写入 Flash。',
+    productionUploadHint: '可上传并校验正式签名固件包；本机未启用刷写时仅验签。',
     validationReport: '固件校验结果',
     signaturePassed: '签名验证通过',
     signatureFailed: '签名验证未通过',
