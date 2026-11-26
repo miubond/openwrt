@@ -100,7 +100,7 @@ export function reload(kind,task_id) {
 		system:'/usr/bin/ucode /usr/share/mp716/system-apply.uc',vpn:'/etc/init.d/mp716-vpn reload && /usr/bin/ucode /usr/share/mp716/vpn-health.uc',firewall:'/etc/init.d/firewall reload',
 		upnpd:'/etc/init.d/miniupnpd restart 2>/dev/null || /etc/init.d/upnpd restart 2>/dev/null || true',ddns:'/etc/init.d/ddns restart 2>/dev/null || true',
 		sqm:'/etc/init.d/sqm restart 2>/dev/null || true',
-		wireguard:'/bin/ubus call network reload && /etc/init.d/firewall reload && /etc/init.d/dnsmasq reload && /usr/bin/ucode /usr/share/mp716/wg-health.uc'};
+		wireguard:'/bin/ubus call network reload && /etc/init.d/firewall reload && /usr/bin/ucode /usr/share/mp716/wg-health.uc'};
 	let kinds=kind=='all'?['network','wireless','dhcp','system','vpn','firewall']:kind=='network-wireless'?['network','wireless']:kind=='network-dhcp'?['network','dhcp']:kind=='none'?[]:[kind];
 	for(let name in kinds) {
 		let current=task_id?pending():null;
@@ -109,8 +109,8 @@ export function reload(kind,task_id) {
 		if(!commands[name])return {code:-1,kind:name,output:'Unknown apply kind'};
 		let compound=name=='vpn' || name=='wireguard';
 		// VPN/WireGuard reloads netifd and firewall, then waits for the interface.
-		// 25s is shorter than that sequence on MT7628; SIGKILL leaves the iface down.
-		let limit=compound?90:25;
+		// 90s was still shorter than firewall+netifd+health on MT7628; SIGKILL is -9.
+		let limit=compound?120:25;
 		let result=command(sprintf('/bin/busybox timeout -s KILL %d /bin/sh -c ',limit)+quote(compound?commands[name]:'exec '+commands[name]));
 		if(result.code!=0)return {...result,kind:name};
 	}
@@ -240,7 +240,12 @@ export function run_worker(id,token) {
 			if(result.code==0&&!t.cancelRequested&&t.boot==boot_id()&&uptime()<t.deadline) {
 				t.phase='applied';t.message='服务配置已应用，等待确认';delete t.worker;persist(t);return true;
 			}
-			if(result.code!=0&&!result.cancelled)t.applyError='服务应用失败: '+(result.kind || t.reload)+'，退出码 '+result.code;
+			if(result.code!=0&&!result.cancelled) {
+				let killed=result.code==-9||result.code==9||result.code==137;
+				t.applyError=killed
+					?'服务应用超时（'+ (result.kind || t.reload)+' 被中止）。接口未就绪不等于失败，配置将恢复，请稍后重试。'
+					:'服务应用失败: '+(result.kind || t.reload)+'，退出码 '+result.code;
+			}
 			try {restore_files(t);}catch(e){t.rollbackError=e.message || sprintf('%s', e);failed(t,'配置文件恢复失败，请重试回滚');return false;}
 			t.phase='rolling_back';t.boot=boot_id();t.message='正在恢复原配置及服务';persist(t);
 			release();held=false;

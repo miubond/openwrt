@@ -61,7 +61,7 @@ L2TP/IPSec 先安装 UDP 1701 明文拒绝规则，再允许 `reqid=902` 的真�
 
 导入拒绝 `PreUp/PostUp/PreDown/PostDown`，忽略 `Table`/`FwMark` 并给出警告；IPv6 地址与 AllowedIPs 会保留。含 `0.0.0.0/0` 或 `::/0` 的文件导入为全局模式但保持停用。
 
-提交后 reload 命令为 `ubus call network reload && /etc/init.d/firewall reload && ucode wg-health.uc`；`wg-health.uc` 最多等待 12 秒确认接口 up/down，只输出接口名和状态。
+提交后 reload 命令为 `ubus call network reload && /etc/init.d/firewall reload && ucode wg-health.uc`（时限 120 秒）。`wg-health.uc` 最多等待 8 秒；接口仍为 pending（等待握手）时不视为应用失败，只有 netifd 报错才回滚。
 
 依赖：`kmod-wireguard`、`wireguard-tools`（含 `/usr/bin/wg` 与 `/lib/netifd/proto/wireguard.sh`）。`capabilities.uc` 只有在三者都存在时才报告 `wireguard`；缺少任一项时可以查看和保存停用配置，但启用会被拒绝并列出缺失组件。内核模块必须随设备内核一起编译，不得安装官方源中版本号不匹配的 kmod。
 
