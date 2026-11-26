@@ -10,6 +10,7 @@ export type ApiErrorCode =
   | 'ROLLBACK'
   | 'NOT_IMPLEMENTED'
   | 'INTERNAL'
+  | 'LOW_MEMORY'
 
 export interface ApiResult<T> {
   ok: true

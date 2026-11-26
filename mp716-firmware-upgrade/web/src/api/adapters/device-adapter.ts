@@ -625,14 +625,13 @@ export class DeviceRouterAdapter implements RouterAPI {
       const result = (await res.json()) as {
         ok?: boolean
         message?: string
+        code?: string
+        details?: unknown
         data?: unknown
       }
-      const reportPayload = result.data
+      const reportPayload = result.details ?? result.data
       if (!res.ok || result.ok !== true) {
-        const bodyCode =
-          reportPayload && typeof reportPayload === 'object' && 'code' in reportPayload
-            ? String((reportPayload as { code?: string }).code || '')
-            : ''
+        const bodyCode = result.code || ''
         const code =
           res.status === 403
             ? 'FORBIDDEN'
