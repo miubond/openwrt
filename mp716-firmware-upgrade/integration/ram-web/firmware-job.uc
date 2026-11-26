@@ -12,9 +12,7 @@ const JOB_DIR = JOB_ROOT + '/jobs';
 const JOB_LOCK = JOB_ROOT + '/job.lock';
 const ACTIVE_JOB = JOB_ROOT + '/active-job.json';
 const APPLY_RESULT = JOB_ROOT + '/apply-result.json';
-/** 刷写 staging（与 packer MP716_UPLOAD_RESERVE_BYTES / apply --require-memory 对齐） */
-const MEM_NEED_EXTRA_KB = 8 * 1024;
-/** 仅验签落盘（与 VERIFY_RESERVE 2MiB 对齐，避免 64MB 机在常态内存下无法上传） */
+/** 仅验签落盘（与 VERIFY_RESERVE 2MiB 对齐，避免 64MB 机在常态内存下无法上传）；apply 分支只以它防 OOM */
 const MEM_VERIFY_EXTRA_KB = 2 * 1024;
 const TMP_MIN_EXTRA_KB = 512;
 const BUSY_PHASES = ['uploading', 'verified', 'submitted', 'applying', 'rebooting'];
@@ -36,8 +34,10 @@ function upper_state(name) {
 }
 
 export function job_public_phase(phase, device_state) {
-	/* 设备 state 记录的是上一次刷写；新上传、仅验签的任务不受其影响 */
-	if (index(['', 'submitted', 'applying', 'rebooting'], phase || '') < 0)
+	/* 设备 state 记录的是上一次刷写；正在刷写/已提交的任务以其自身 phase 为准，避免旧 SUCCESS 误报 BOOT_CONFIRMED */
+	if (index(['submitted', 'applying'], phase || '') >= 0)
+		return upper_state(phase);
+	if (index(['', 'rebooting'], phase || '') < 0)
 		return upper_state(phase);
 	if (device_state == 'SUCCESS') return 'BOOT_CONFIRMED';
 	if (device_state == 'FAILED') return 'FAILED';
@@ -150,6 +150,8 @@ function reconcile_apply_result(job) {
 	if (!job || index(['submitted', 'applying'], job.phase) < 0 || !stat(APPLY_RESULT))
 		return job;
 	let row = load_json(APPLY_RESULT);
+	if (type(row) != 'object' || !row?.error)
+		return job;
 	unlink(APPLY_RESULT);
 	job.phase = 'failed';
 	job.updated_at = time();
@@ -250,12 +252,6 @@ export function reverify_job_image(job) {
 	let info = stat(job.path);
 	if (type(info.size) == 'int' && job.size > 0 && info.size != job.size)
 		return { error: '镜像已被替换或截断' };
-	let vr = job.verify_report;
-	if (job.phase == 'verified' && vr?.ok == true && vr?.signature_checked == true) {
-		let cached = vr?.payload_sha256 || vr?.sha256 || '';
-		if (length(job.payload_sha256) && length(cached) && job.payload_sha256 == cached)
-			return { report: vr };
-	}
 	let check = run_check(job.path, true);
 	if (check.error) return check;
 	let sig = check.report?.payload_sha256 || check.report?.sha256 || '';

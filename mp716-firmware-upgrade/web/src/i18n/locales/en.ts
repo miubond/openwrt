@@ -82,6 +82,7 @@ export default {
     rollback: 'Configuration rolled back',
     notImplemented: 'Not implemented yet',
     internal: 'Device API error',
+    lowMemory: 'Not enough memory',
     httpStatus: 'Device API error ({status})',
   },
   validation: {

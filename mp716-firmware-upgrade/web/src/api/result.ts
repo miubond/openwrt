@@ -12,6 +12,7 @@ const ERROR_CODE_KEYS: Record<ApiErrorCode, string> = {
   ROLLBACK: 'errors.rollback',
   NOT_IMPLEMENTED: 'errors.notImplemented',
   INTERNAL: 'errors.internal',
+  LOW_MEMORY: 'errors.lowMemory',
 }
 
 export class ApiCallError extends Error {

@@ -69,7 +69,7 @@ export const ROUTER_API_CONTRACT: ContractRoute[] = [
   { path: 'system/firmware', methods: ['GET'], auth: true, delegate: 'httpd', adapterMethod: 'getFirmwareInfo' },
   { path: 'system/firmware-package/verify', methods: ['POST'], auth: true, delegate: 'httpd', adapterMethod: 'uploadFirmware', bodyShape: 'octet-stream' },
   { path: 'system/firmware-v2/info', methods: ['GET'], auth: true, delegate: 'httpd', adapterMethod: 'getFirmwareV2Info' },
-  { path: 'system/firmware-v2/upload', methods: ['POST'], auth: true, delegate: 'httpd', adapterMethod: 'uploadFirmwareV2', bodyShape: 'multipart' },
+  { path: 'system/firmware-v2/upload', methods: ['POST'], auth: true, delegate: 'httpd', adapterMethod: 'uploadFirmwareV2', bodyShape: 'octet-stream' },
   { path: 'system/firmware-v2/status', methods: ['GET'], auth: true, delegate: 'httpd', adapterMethod: 'getFirmwareV2Status' },
   { path: 'system/firmware-v2/apply', methods: ['POST'], auth: true, delegate: 'httpd', adapterMethod: 'applyFirmwareV2' },
   { path: 'system/restore', methods: ['POST'], auth: true, delegate: 'httpd', adapterMethod: 'restoreConfig', bodyShape: 'multipart|{content}' },

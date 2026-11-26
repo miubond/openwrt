@@ -82,6 +82,7 @@ export default {
     rollback: '設定已回滾',
     notImplemented: '功能暫未實作',
     internal: '裝置介面異常',
+    lowMemory: '記憶體不足',
     httpStatus: '裝置介面異常 ({status})',
   },
   validation: {

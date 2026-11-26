@@ -82,6 +82,7 @@ export default {
     rollback: '配置已回滚',
     notImplemented: '功能暂未实现',
     internal: '设备接口异常',
+    lowMemory: '内存不足',
     httpStatus: '设备接口异常 ({status})',
   },
   validation: {

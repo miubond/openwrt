@@ -228,7 +228,8 @@ onMounted(() => void load())
           <p v-else-if="verifyOnly && verifyReady" class="warn">{{ t('upgrade.verifyOnly') }}</p>
           <p v-else-if="flashEnabled" class="warn">{{ t('upgrade.warnRun') }}</p>
           <p v-if="jobId" class="hint">{{ t('upgrade.jobReady', { id: jobId }) }}</p>
-          <p v-if="outcome" class="result" :class="`result--${outcomeKind}`">{{ outcome }}</p>        </template>
+          <p v-if="outcome" class="result" :class="`result--${outcomeKind}`">{{ outcome }}</p>
+        </template>
 
         <section v-if="verification" class="verification" :aria-label="t('upgrade.validationReport')">
           <h3>{{ t('upgrade.validationReport') }}</h3>
