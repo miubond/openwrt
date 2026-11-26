@@ -31,7 +31,7 @@ try {
 		sleep(1000);
 	}
 } catch(e) {
-	report={ready:false,fatal:false,error:'configuration-or-service-query-failed'};
+	report={ready:false,fatal:true,error:'configuration-or-service-query-failed'};
 }
 printf('%J\n',report);
 // Pending handshake must not roll back a valid UCI apply. Only proto errors fail the task.

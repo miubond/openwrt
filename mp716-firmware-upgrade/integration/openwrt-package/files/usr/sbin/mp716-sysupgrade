@@ -88,6 +88,7 @@ restore_services() {
 		(echo "$old_min" > /proc/sys/vm/min_free_kbytes) 2>/dev/null || true
 	fi
 	[ -z "${MP716_TEST_ROOT:-}" ] || return 0
+	[ "${_services_stopped:-0}" -eq 1 ] || return 0
 	(
 		for svc in uhttpd dnsmasq mp716-admin log sysntpd odhcpd urngd wpad cron miniupnpd mp716-vpn; do
 			/etc/init.d/$svc start >/dev/null 2>&1 || true
@@ -166,6 +167,7 @@ case "$cmd" in
 			sleep 3
 		fi
 		rm -f -- "$RESULT_FILE"
+		_services_stopped=0
 		_payload_kb=$(( $(wc -c < "$file") / 1024 ))
 		_tmp_kb=$(df -k /tmp 2>/dev/null | awk 'NR==2 {print $4}')
 		_need_tmp_kb=$(( _payload_kb + 512 ))
@@ -180,6 +182,7 @@ case "$cmd" in
 		for svc in $APPLY_SERVICES; do
 			/etc/init.d/$svc stop >/dev/null 2>&1 || true
 		done
+		_services_stopped=1
 		sync
 		# dash exits on a failed redirect under set -e, even with "|| true".
 		# 64MB kernels reserve 8MB via min_free_kbytes, so MemAvailable stays under the
@@ -265,6 +268,7 @@ rc=\$?
 [ "\$rc" -ne 0 ] || exit 0
 mkdir -p '$(dirname "$RESULT_FILE")'
 printf '{"ok":false,"error":"sysupgrade","flash_write":false,"detail":"sysupgrade exit %s"}\n' "\$rc" > '$RESULT_FILE'
+rm -rf '$root' '$archive' '$payload'
 [ -n '${MP716_TEST_ROOT:-}' ] || {
 	[ -z '${old_min:-}' ] || echo '${old_min:-}' > /proc/sys/vm/min_free_kbytes
 	for s in uhttpd dnsmasq mp716-admin log sysntpd odhcpd urngd wpad cron miniupnpd mp716-vpn; do

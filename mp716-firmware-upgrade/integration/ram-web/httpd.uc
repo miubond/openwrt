@@ -209,7 +209,7 @@ function apply_job_by_id(job_id, keep) {
 	job_clear_apply_result();
 	let result = apply_firmware_package(job.path, keep, rev.report, { job_id: job_id, taskId: job_id });
 	if (!result.ok) {
-		job_mark_phase(job_id, 'verified', { keep: keep == true });
+		job_mark_phase(job_id, stat(job.path) ? 'verified' : 'failed', { keep: keep == true });
 		return fail(result.status || 400, result.code || 'VALIDATION', result.message || '固件刷写失败', result.details);
 	}
 	job_mark_phase(job_id, 'applying', { keep: keep == true, path: APPLY_STAGING_PATH });
