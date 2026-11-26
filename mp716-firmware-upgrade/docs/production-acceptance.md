@@ -75,4 +75,4 @@ bash scripts/write-release-upgrade-policy-overlay.sh "$STAGING_ROOT"
 3. 镜像内含 RELEASE `upgrade.pub`（非 ci-test）
 4. `write-release-upgrade-policy-overlay.sh` 已打入 squashfs
 
-未满足前：镜像保持 `development` 或 gate 关闭，UI 仅校验或按钮灰化。
+未满足前：镜像保持 `development` 或 gate 关闭，UI 仅校验或按钮灰化。上表仍有「未执行」项时，任何构建都不能叫 RELEASE。

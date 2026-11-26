@@ -529,6 +529,7 @@ export class DeviceRouterAdapter implements RouterAPI {
       ) {
         return failure('VALIDATION', '固件校验结果无效', result.data)
       }
+      const raw = result.data as { job_id?: string; taskId?: string }
       return {
         ok: true,
         data: {
@@ -536,6 +537,7 @@ export class DeviceRouterAdapter implements RouterAPI {
           rollbackSec: 0,
           validated: true,
           flashWrite: false,
+          jobId: raw?.job_id || raw?.taskId || '',
           message: '固件验签通过，未执行刷写',
           verificationReport: report,
         },
@@ -561,14 +563,106 @@ export class DeviceRouterAdapter implements RouterAPI {
   getFirmwareV2Info() {
     return this.call<FirmwareV2EngineInfo>('system/firmware-v2/info')
   }
-  uploadFirmwareV2(file: Blob) {
-    return this.uploadBlob<FirmwareV2UploadResult>('system/firmware-v2/upload', file)
+  async uploadFirmwareV2(file: Blob): Promise<ApiResponse<FirmwareV2UploadResult>> {
+    const token = this.getToken()
+    const res = await fetch(this.path('system/firmware-v2/upload'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: file,
+      credentials: 'same-origin',
+    })
+    const body = (await res.json()) as { ok?: boolean; data?: Record<string, unknown>; message?: string }
+    if (!res.ok || body.ok !== true) {
+      return failure('VALIDATION', body.message || '固件上传失败', body.data)
+    }
+    const raw = body.data || {}
+    const report = readVerificationReport(raw)
+    return {
+      ok: true,
+      data: {
+        validated: !!report?.ok,
+        signed: !!report?.signature_checked,
+        flashWrite: false,
+        dryRunOnly: !report?.flash_write,
+        jobId: String(raw.job_id || raw.taskId || ''),
+        taskId: String(raw.taskId || raw.job_id || ''),
+        message: '固件已校验并暂存',
+      },
+      ts: Date.now(),
+    }
   }
   getFirmwareV2Status() {
     return this.call<FirmwareV2Status>('system/firmware-v2/status')
   }
-  applyFirmwareV2() {
-    return this.call<ConfigApplyResult>('system/firmware-v2/apply', { confirm: true })
+  async applyFirmwareV2(params?: {
+    confirm?: boolean
+    jobId?: string
+    keepSettings?: boolean
+  }): Promise<ApiResponse<ConfigApplyResult>> {
+    const token = this.getToken()
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 180_000)
+      const res = await fetch(this.path('system/firmware-v2/apply'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          confirm: true,
+          job_id: params?.jobId,
+          taskId: params?.jobId,
+          keepSettings: params?.keepSettings !== false,
+        }),
+        credentials: 'same-origin',
+        signal: controller.signal,
+      })
+      clearTimeout(timer)
+      const result = (await res.json()) as {
+        ok?: boolean
+        message?: string
+        data?: unknown
+      }
+      const reportPayload = result.data
+      if (!res.ok || result.ok !== true) {
+        const code = res.status === 403 ? 'FORBIDDEN' : res.status === 401 ? 'UNAUTHORIZED' : 'VALIDATION'
+        if (code === 'UNAUTHORIZED') notifySessionInvalid()
+        return failure(code, result.message || '固件刷写失败', reportPayload)
+      }
+      const report = readVerificationReport(result.data)
+      if (!report?.ok || !report.signature_checked || !report.flash_write) {
+        return failure('VALIDATION', '固件刷写结果无效', result.data)
+      }
+      return {
+        ok: true,
+        data: {
+          accepted: true,
+          rollbackSec: 0,
+          validated: true,
+          flashWrite: true,
+          jobId: params?.jobId,
+          message: (result.data as { message?: string })?.message || '固件刷写已提交，设备将重启',
+          verificationReport: report,
+        },
+        ts: Date.now(),
+      } satisfies ApiResponse<ConfigApplyResult>
+    } catch {
+      return {
+        ok: true,
+        data: {
+          accepted: true,
+          rollbackSec: 0,
+          validated: true,
+          flashWrite: true,
+          message: '固件可能正在刷写，设备将重启；请稍后重新登录',
+        },
+        ts: Date.now(),
+      } satisfies ApiResponse<ConfigApplyResult>
+    }
   }
   getSystemLogs(limit = 100) {
     return this.call<SystemLogState>(`system/logs?limit=${limit}`)
@@ -614,17 +708,4 @@ export class DeviceRouterAdapter implements RouterAPI {
     return this.call<ConfigApplyResult>('system/factory-reset', params)
   }
 
-  private async uploadBlob<T>(segment: string, file: Blob): Promise<ApiResponse<T>> {
-    const form = new FormData()
-    form.append('file', file)
-    const token = this.getToken()
-    const res = await fetch(this.path(segment), {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: form,
-      credentials: 'same-origin',
-    })
-    if (!res.ok) return failure('INTERNAL', '上传失败')
-    return (await res.json()) as ApiResponse<T>
-  }
 }

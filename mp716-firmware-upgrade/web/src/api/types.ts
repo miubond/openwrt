@@ -563,6 +563,8 @@ export interface BackupResult {
 }
 
 export interface ConfigApplyResult {
+  /** 上传验签通过后返回，供确认刷写复用同一 /tmp 镜像 */
+  jobId?: string
   phase?: ConfigTaskPhase
   accepted: boolean
   rollbackSec: number
@@ -798,6 +800,10 @@ export interface FirmwareInfo {
   maxSizeLabel?: string
   /** 有校验器且未开刷写门时为 true */
   validationOnly?: boolean
+  /** development | laboratory | production */
+  upgradePolicy?: string
+  /** 串口救砖演练 + platform 确认 */
+  hardwareValidated?: boolean
   upgradeEngine?: 'v1' | 'v2' | string
 }
 
@@ -814,6 +820,9 @@ export interface FirmwareV2UploadResult {
   flashWrite: boolean
   dryRunOnly?: boolean
   message?: string
+  /** 上传验签通过后返回，供 apply 复用同一份 /tmp 镜像 */
+  jobId?: string
+  taskId?: string
 }
 
 export interface FirmwareV2Status {

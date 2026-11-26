@@ -32,6 +32,12 @@ const flashEnabled = computed(() => !!info.value?.flashUpgradeEnabled)
 const verifyOnly = computed(() => !flashEnabled.value)
 const confirmOpen = ref(false)
 const canApply = computed(() => flashEnabled.value && verifyReady.value && !!jobId.value)
+const outcomeKind = computed<'success' | 'warn' | 'error'>(() => {
+  if (!outcome.value) return 'success'
+  if (verifyReady.value && flashEnabled.value) return 'success'
+  if (verifyReady.value && verifyOnly.value) return 'warn'
+  return 'error'
+})
 
 function show(value?: string) {
   const raw = (value || '').trim()
@@ -116,7 +122,7 @@ async function runVerify() {
     verification.value = result.verificationReport || null
     jobId.value = (result.jobId || '').trim()
     verifyReady.value = !!result.validated && !!jobId.value
-    outcome.value = t('upgrade.successValidateOnly')
+    outcome.value = flashEnabled.value ? t('upgrade.successVerifyReady') : t('upgrade.successValidateOnly')
     toast.success(outcome.value)
   } catch (e) {
     verification.value = readVerificationReport(e instanceof ApiCallError ? e.details : null)
@@ -220,8 +226,7 @@ onMounted(() => void load())
           <p v-else-if="verifyOnly && verifyReady" class="warn">{{ t('upgrade.verifyOnly') }}</p>
           <p v-else-if="flashEnabled" class="warn">{{ t('upgrade.warnRun') }}</p>
           <p v-if="jobId" class="hint">{{ t('upgrade.jobReady', { id: jobId }) }}</p>
-          <p v-if="outcome" class="result">{{ outcome }}</p>
-        </template>
+          <p v-if="outcome" class="result" :class="`result--${outcomeKind}`">{{ outcome }}</p>        </template>
 
         <section v-if="verification" class="verification" :aria-label="t('upgrade.validationReport')">
           <h3>{{ t('upgrade.validationReport') }}</h3>
@@ -233,6 +238,9 @@ onMounted(() => void load())
           </p>
           <p>{{ t('upgrade.resultCode') }}: {{ verification.code }}</p>
           <p>{{ t('upgrade.flashWrite') }}: {{ String(verification.flash_write) }}</p>
+          <p v-if="flashEnabled && verification.flash_write === false" class="hint">
+            {{ t('upgrade.flashWriteVerifyPhase') }}
+          </p>
           <details>
             <summary>{{ t('upgrade.rawReport') }}</summary>
             <pre>{{ JSON.stringify(verification, null, 2) }}</pre>
@@ -261,11 +269,24 @@ onMounted(() => void load())
 .result {
   margin-top: 12px;
   padding: 10px 12px;
-  border: 1px solid var(--color-warning, #d48806);
   border-radius: 6px;
   color: var(--color-title);
-  background: var(--color-warning-bg, rgba(212, 136, 6, 0.12));
   line-height: 1.5;
+}
+
+.result--success {
+  border: 1px solid var(--color-success, #15803d);
+  background: rgba(21, 128, 61, 0.1);
+}
+
+.result--warn {
+  border: 1px solid var(--color-warning, #d48806);
+  background: var(--color-warning-bg, rgba(212, 136, 6, 0.12));
+}
+
+.result--error {
+  border: 1px solid var(--color-danger, #cf1322);
+  background: rgba(207, 19, 34, 0.08);
 }
 
 .verification {
