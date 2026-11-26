@@ -870,7 +870,7 @@ export default {
     failReason: '連線失敗原因',
     failProbe: '已交握但經通道探測對端失敗',
     failIface: 'netifd 回報介面錯誤',
-    failIfaceDown: 'WireGuard 介面尚未起來',
+    failIfaceDown: '介面未啟動',
     failMissing: '韌體未整合 WireGuard 元件',
     failWaiting: '介面已啟動，尚未完成交握',
     failStale: '超過 3 分鐘無新交握，工作階段可能仍可用',

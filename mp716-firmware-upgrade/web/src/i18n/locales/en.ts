@@ -873,7 +873,7 @@ export default {
     failReason: 'Failure reason',
     failProbe: 'Handshake seen but tunnel probe failed',
     failIface: 'netifd reported an interface error',
-    failIfaceDown: 'WireGuard interface is not up',
+    failIfaceDown: 'Interface is not up',
     failMissing: 'Firmware does not include WireGuard',
     failWaiting: 'Interface is up; handshake not completed',
     failStale: 'No new handshake for over 3 minutes; the session may still work',

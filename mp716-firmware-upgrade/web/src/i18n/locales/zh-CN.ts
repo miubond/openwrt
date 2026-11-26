@@ -873,7 +873,7 @@ export default {
     failReason: '连接失败原因',
     failProbe: '已握手但经隧道探测对端失败',
     failIface: 'netifd 报告接口错误',
-    failIfaceDown: 'WireGuard 接口尚未起来',
+    failIfaceDown: '接口未启动',
     failMissing: '固件未集成 WireGuard 组件',
     failWaiting: '接口已启动，尚未完成握手',
     failStale: '超过 3 分钟无新握手，会话可能仍可用',
