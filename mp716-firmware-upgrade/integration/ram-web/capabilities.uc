@@ -1,6 +1,19 @@
 'use strict';
 import { readfile, stat, glob } from 'fs';
 import { load_mapping } from '/usr/share/mp716/physical-ports.uc';
+
+function flash_enabled_for_capabilities() {
+	if (!(stat('/usr/sbin/mp716-upgraded') || stat('/usr/sbin/mp716-package-verify')))
+		return false;
+	let raw = lc(trim(readfile('/etc/mp716-upgrade/upgrade-policy') || 'development'));
+	if (raw != 'production' && raw != 'laboratory' && raw != 'development')
+		raw = 'development';
+	let gate = trim(readfile('/etc/mp716-upgrade/flash-gate') || '') == 'serial-recovery-verified' &&
+		trim(readfile('/etc/mp716-upgrade/platform') || '') == 'confirmed';
+	if (raw == 'production')
+		return gate;
+	return !!(stat('/etc/mp716/allow-flash-upgrade') || gate);
+}
 function sqm_ready() {
 	return stat('/etc/config/sqm') != null && stat('/etc/init.d/sqm') != null;
 }
@@ -8,9 +21,7 @@ function sqm_ready() {
 export function capabilities() {
 	return {apiContract:'mp716-native/v1',routes:json(readfile('/usr/share/mp716/native-routes.json')||'[]'),
 		firmwareUpgrade:!!(stat('/usr/sbin/mp716-upgraded')||stat('/usr/sbin/mp716-package-verify')),
-		firmwareFlashEnabled:!!stat('/etc/mp716/allow-flash-upgrade')||(
-			trim(readfile('/etc/mp716-upgrade/flash-gate')||'')=='serial-recovery-verified' &&
-			trim(readfile('/etc/mp716-upgrade/platform')||'')=='confirmed'),wanModes:['wired'],wifiModes:['11g','11n','11bg','11bgn'],
+		firmwareFlashEnabled:flash_enabled_for_capabilities(),wanModes:['wired'],wifiModes:['11g','11n','11bg','11bgn'],
 		services:{ntp:!!stat('/etc/init.d/sysntpd'),pptp:!!stat('/usr/sbin/pppd') && !!stat('/lib/netifd/proto/ppp.sh') && !!stat('/etc/ppp/options.pptp') && length(glob('/usr/lib/pppd/*/pptp.so')||[])>0,
 			pptpd:!!stat('/usr/sbin/pptpd'),l2tp:!!stat('/usr/sbin/xl2tpd'),ipsec:!!stat('/usr/lib/ipsec/starter'),openvpn:!!stat('/usr/sbin/openvpn'),
 			wireguard:!!stat('/usr/bin/wg') && !!stat('/lib/netifd/proto/wireguard.sh') && (!!stat('/sys/module/wireguard') || length(glob('/lib/modules/*/wireguard.ko')||[])>0)},

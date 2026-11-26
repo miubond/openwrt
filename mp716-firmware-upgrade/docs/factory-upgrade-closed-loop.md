@@ -67,8 +67,8 @@ sequenceDiagram
 1. `GET system/firmware` → `canUpgrade=true`，`flashUpgradeEnabled=true`，`validationOnly=false`。
 2. 使用 **与设备 `upgrade.pub` 匹配** 的正式签名包（非一次性 CI 密钥，除非临时换公钥做试验）。
 3. 页面：选包 → 勾选保留配置 → **升级** → 确认。
-4. 响应：`signature_checked=true`，`flash_write=true`；设备重启。
-5. 重启后：版本号/`device.profile` 与包内 manifest 一致；Web 可登录；必要时核对 LAN/WAN。
+4. 响应：`signature_checked=true`，`flash_write=true`；页面跳转重启等待并探测 `auth/prelogin`，就绪后回登录页。
+5. 重启后：版本号/`device.profile` 与包内 manifest 一致；`installed.at` 为上传时刻；Web 可登录；必要时核对 LAN/WAN。
 6. **勿用** 781 字节 CI 玩具包做刷写 E2E。
 
 验签模式（`validationOnly=true`）仅执行步骤 1 与上传校验，步骤 4 要求 `flash_write=false`。

@@ -9,4 +9,7 @@ start_service() {
 	fi
 	mkdir -p -m 0700 /tmp/mp716-upgrade || return 1
 	/usr/sbin/mp716-upgraded boot-verify
+	if command -v ucode >/dev/null 2>&1 && [ -f /usr/share/mp716/firmware-boot-confirm.uc ]; then
+		ucode /usr/share/mp716/firmware-boot-confirm.uc 2>/dev/null || true
+	fi
 }

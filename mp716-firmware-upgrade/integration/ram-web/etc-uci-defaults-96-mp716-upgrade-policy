@@ -1,0 +1,8 @@
+#!/bin/sh
+# 首次启动写入升级策略（可被出厂 overlay 或 mp716-open-production-gate.sh 覆盖）
+if [ ! -f /etc/mp716-upgrade/upgrade-policy ]; then
+	mkdir -p /etc/mp716-upgrade
+	echo laboratory > /etc/mp716-upgrade/upgrade-policy
+	chmod 644 /etc/mp716-upgrade/upgrade-policy
+fi
+exit 0

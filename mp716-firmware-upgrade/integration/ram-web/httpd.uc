@@ -4,14 +4,15 @@
 import { connect } from 'ubus';
 import { popen, stdin, writefile, unlink, chmod, stat, readfile, mkdir } from 'fs';
 import { cursor } from 'uci';
-import { firmware_version, firmware_build_date, record_firmware_installed } from '/usr/share/mp716/build-meta.uc';
+import { firmware_version, firmware_build_date } from '/usr/share/mp716/build-meta.uc';
+import { FIRMWARE_MAX_BYTES, stream_firmware_upload, job_status_payload, reverify_job_image, job_get, job_mark_phase } from '/usr/share/mp716/firmware-job.uc';
+import { firmware_verifier_present, firmware_flash_allowed, firmware_policy_payload, flash_gate_confirmed, upgrade_policy } from '/usr/share/mp716/upgrade-policy.uc';
 import { route_native } from '/usr/share/mp716/dispatch.uc';
 import { capabilities } from '/usr/share/mp716/capabilities.uc';
-import { perf_enabled, perf_begin, perf_monotonic_ms, perf_shell_ms, perf_log,
-	perf_set_ubus_connect_ms, perf_set_session_access_ms } from '/usr/share/mp716/perf-diag.uc';
+import { perf_enabled, perf_begin, perf_monotonic_ms, perf_shell_ms, perf_log, perf_set_ubus_connect_ms, perf_set_session_access_ms } from '/usr/share/mp716/perf-diag.uc';
 
 function reply(status, body) {
-	printf('Status: %d %s\r\nContent-Type: application/json\r\n\r\n%J\n',
+	printf('Status: %d %s\r\nContent-Type: application/json; charset=utf-8\r\n\r\n%J\n',
 		status, status == 200 ? 'OK' : 'Error', body);
 }
 
@@ -53,11 +54,7 @@ function login(ubus) {
 	return ok({ token: session.ubus_rpc_session, expiresIn: session.timeout || 600 });
 }
 
-const FIRMWARE_VERIFY_MAX_BYTES = 8060928;
-
-function firmware_verifier_present() {
-	return !!(stat('/usr/sbin/mp716-upgraded') || stat('/usr/sbin/mp716-package-verify'));
-}
+const FIRMWARE_VERIFY_MAX_BYTES = FIRMWARE_MAX_BYTES;
 
 function shellquote(v) {
 	return "'" + replace(v, "'", "'\\''") + "'";
@@ -68,23 +65,29 @@ function trim_file(path) {
 	return raw ? trim(raw) : '';
 }
 
-function firmware_flash_production_gate() {
-	return trim_file('/etc/mp716-upgrade/flash-gate') == 'serial-recovery-verified' &&
-		trim_file('/etc/mp716-upgrade/platform') == 'confirmed';
-}
-
-function firmware_flash_allowed() {
-	return !!stat('/etc/mp716/allow-flash-upgrade') || firmware_flash_production_gate();
-}
-
 function firmware_info_payload() {
 	let upload = firmware_verifier_present();
-	let flash = upload && firmware_flash_allowed();
+	let pol = firmware_policy_payload();
 	return {
 		currentVersion: firmware_version(), buildDate: firmware_build_date(), hardware: 'MP716',
-		canUpgrade: upload, flashUpgradeEnabled: flash,
-		validationOnly: upload && !flash,
+		canUpgrade: upload, flashUpgradeEnabled: pol.flashUpgradeEnabled,
+		validationOnly: pol.validationOnly,
+		upgradePolicy: pol.upgradePolicy,
+		hardwareValidated: pol.hardwareValidated,
 		maxBytes: FIRMWARE_VERIFY_MAX_BYTES, maxSizeLabel: '8M',
+		upgradeEngine: 'v2',
+	};
+}
+
+function firmware_v2_info_payload() {
+	return {
+		engine: 'v2',
+		model: 'yunxm,mp716',
+		flashReal: firmware_flash_allowed(),
+		dryRunOnly: !firmware_flash_allowed(),
+		upgradePolicy: upgrade_policy(),
+		maxBytes: FIRMWARE_VERIFY_MAX_BYTES,
+		partitionBytes: FIRMWARE_MAX_BYTES,
 	};
 }
 
@@ -138,15 +141,15 @@ function firmware_keep_settings() {
 	return index(['0', 'false', 'no'], v) < 0;
 }
 
-function apply_firmware_package(path, keep, verify_report) {
+function apply_firmware_package(path, keep, verify_report, extras) {
 	if (!firmware_flash_allowed())
-		return fail(403, 'FORBIDDEN', '固件刷写未开启（需 allow-flash-upgrade 或正式验收门）');
+		return fail(403, 'FORBIDDEN', '固件刷写未开启（生产需 gate+platform；开发需实验室开关）');
 	if (!stat('/usr/sbin/mp716-sysupgrade'))
 		return fail(404, 'NOT_IMPLEMENTED', '未安装 OpenWrt sysupgrade 适配器');
 	let cmd = '/usr/sbin/mp716-sysupgrade apply ' + shellquote(path);
 	if (keep)
 		cmd += ' --keep-config';
-	if (stat('/etc/mp716/allow-flash-upgrade') && !firmware_flash_production_gate()) {
+	if (upgrade_policy() == 'laboratory' && stat('/etc/mp716/allow-flash-upgrade') && !flash_gate_confirmed()) {
 		let gate = '/tmp/mp716-lab-flash-gate', plat = '/tmp/mp716-lab-platform';
 		writefile(gate, 'serial-recovery-verified\n');
 		writefile(plat, 'confirmed\n');
@@ -157,19 +160,27 @@ function apply_firmware_package(path, keep, verify_report) {
 		return fail(500, 'INTERNAL', '无法启动固件刷写');
 	let output = child.read('all') || '';
 	let status = child.close();
-	unlink(path);
+	let async_submit = false;
+	try {
+		let row = json(trim(output));
+		async_submit = row?.detail == 'submitted';
+	} catch (e) {}
 	if (status == 0) {
-		record_firmware_installed();
 		let data = {
-			ok: true, code: 0, signature_checked: true, flash_write: true, upgraded: true,
-			detail: 'ok', message: '固件刷写已提交，设备将重启',
+			ok: true, code: 0, signature_checked: true, flash_write: true, upgraded: false,
+			detail: async_submit ? 'submitted' : 'ok', message: '固件刷写已提交，设备将重启',
 		};
 		if (type(verify_report) == 'object' && verify_report)
 			for (let k, v in verify_report)
 				if (k != 'flash_write' && k != 'ok' && k != 'upgraded')
 					data[k] = v;
+		if (type(extras) == 'object' && extras)
+			for (let k, v in extras)
+				data[k] = v;
 		return ok(data);
 	}
+	if (stat(path) && !async_submit)
+		unlink(path);
 	let report;
 	try { report = json(output); } catch (e) { report = null; }
 	if (report)
@@ -177,51 +188,68 @@ function apply_firmware_package(path, keep, verify_report) {
 	return fail(400, 'VALIDATION', trim(output) || '固件刷写失败', { output: substr(output, 0, 4096) });
 }
 
+function apply_job_by_id(job_id, keep) {
+	if (!firmware_flash_allowed())
+		return fail(403, 'FORBIDDEN', '固件刷写未开启（生产默认仅验证）');
+	let job = job_get(job_id);
+	if (!job || index(['verified', 'submitted'], job.phase) < 0)
+		return fail(400, 'VALIDATION', '无效或不可用的升级任务');
+	let rev = reverify_job_image(job);
+	if (rev.error)
+		return fail(400, 'VALIDATION', rev.error, rev.report);
+	job_mark_phase(job_id, 'submitted', { keep: keep == true });
+	let result = apply_firmware_package(job.path, keep, rev.report, { job_id: job_id, taskId: job_id });
+	job_mark_phase(job_id, 'applying', { keep: keep == true });
+	return result;
+}
+
 function upload_firmware_package() {
 	if (!firmware_verifier_present())
 		return fail(404, 'NOT_IMPLEMENTED', '设备未安装固件校验器');
+	let job_id = trim(query_value('job_id') || '');
+	let mode = firmware_upload_mode();
+	if (mode == 'flash' && length(job_id)) {
+		return apply_job_by_id(job_id, firmware_keep_settings());
+	}
 	let size = int(getenv('CONTENT_LENGTH') || '0');
 	if (size <= 0)
 		return fail(400, 'VALIDATION', '请选择固件文件');
 	if (size > FIRMWARE_VERIFY_MAX_BYTES)
 		return fail(400, 'VALIDATION', '固件文件不能超过 8M');
-	let path = '/tmp/mp716-firmware-upload-' + sprintf('%x', time()) + '.mp716upd';
-	// Stream to tmpfs. Holding the whole image in the ucode process as well fails the
-	// 64MB board's "payload + 8MB" memory budget.
-	let writer = popen('/bin/sh -c ' + shellquote('cat > ' + path), 'w');
-	if (!writer)
-		return fail(500, 'INTERNAL', '无法保存固件文件');
-	let got = 0;
-	while (got < size) {
-		let n = size - got;
-		if (n > 65536) n = 65536;
-		let chunk = stdin.read(n);
-		if (type(chunk) != 'string' || !length(chunk)) {
-			writer.close();
-			unlink(path);
-			return fail(400, 'VALIDATION', '固件上传不完整');
-		}
-		writer.write(chunk);
-		got += length(chunk);
+	let uploaded = stream_firmware_upload(size);
+	if (uploaded.error) {
+		let e = uploaded.error;
+		let code = e.code || 'VALIDATION';
+		let status = code == 'LOW_MEMORY' || code == 'LOW_TMP' ? 507 : code == 'DEVICE_BUSY' ? 409 : 400;
+		return fail(status, code, e.message || '上传失败', e);
 	}
-	if (writer.close() != 0) {
-		unlink(path);
-		return fail(500, 'INTERNAL', '无法保存固件文件');
-	}
-	chmod(path, 0600);
-	let mode = firmware_upload_mode();
+	let job = uploaded.job;
+	let report = uploaded.report;
+	let data = report;
+	data.job_id = job.job_id;
+	data.taskId = job.job_id;
+	data.flash_write = false;
 	if (mode == 'flash') {
-		let pre = verify_firmware_report(path);
-		if (pre.error) {
-			unlink(path);
-			return pre.error;
-		}
-		return apply_firmware_package(path, firmware_keep_settings(), pre.data);
+		return apply_job_by_id(job.job_id, firmware_keep_settings());
 	}
-	let out = verify_firmware_report(path);
-	unlink(path);
-	if (out.error) return out.error;
-	return ok(out.data);
+	return ok(data);
+}
+
+function firmware_v2_upload() {
+	return upload_firmware_package();
+}
+
+function firmware_v2_status() {
+	let id = trim(query_value('job_id') || query_value('taskId') || '');
+	return ok(job_status_payload(id));
+}
+
+function firmware_v2_apply(body) {
+	let job_id = trim(body?.job_id || body?.taskId || '');
+	if (!length(job_id))
+		return fail(400, 'VALIDATION', '缺少 job_id');
+	let keep = body?.keepSettings != false;
+	return apply_job_by_id(job_id, keep);
 }
 
 const SESSION_CACHE_DIR = '/tmp/mp716-api-cache';
@@ -316,7 +344,7 @@ function main() {
 		}
 		return ok({ interfaces: interfaces,
 			upnpEnabled: c.get('upnpd', 'config', 'enabled') == '1',
-			hardwareValidated: firmware_flash_production_gate(),
+			hardwareValidated: flash_gate_confirmed(),
 			flashUpgradeEnabled: firmware_flash_allowed(),
 			firmwareVerifyEnabled: firmware_verifier_present() });
 	}
@@ -327,8 +355,14 @@ function main() {
 			return fail(500, 'INTERNAL', '无法读取固件信息', { reason: e.message || sprintf('%s', e) });
 		}
 	}
+	if (method == 'GET' && path == '/cgi-bin/mp716/system/firmware-v2/info')
+		return ok(firmware_v2_info_payload());
+	if (method == 'GET' && path == '/cgi-bin/mp716/system/firmware-v2/status')
+		return firmware_v2_status();
 	if (method == 'POST' && path == '/cgi-bin/mp716/system/firmware-package/verify')
 		return upload_firmware_package();
+	if (method == 'POST' && path == '/cgi-bin/mp716/system/firmware-v2/upload')
+		return firmware_v2_upload();
 	if (method == 'POST' && path == '/cgi-bin/mp716/system/upgrade')
 		return upload_firmware_package();
 	let body = {};
@@ -347,6 +381,8 @@ function main() {
 	try {
 		let result = route_native(ubus, method, api_path, body, token);
 		if (result?.error) return fail(result.error == 'DEVICE_BUSY' ? 409 : result.error == 'NOT_IMPLEMENTED' ? 404 : 400, result.error, result.message);
+		if (method == 'POST' && api_path == 'system/firmware-v2/apply')
+			return firmware_v2_apply(body);
 		if (result != null) {
 			if (t0) {
 				let ser0 = perf_monotonic_ms();

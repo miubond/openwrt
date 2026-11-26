@@ -95,9 +95,30 @@ def stage(
                  "system-admin.uc", "system-apply.uc", "diagnostics.uc", "diagnostic-worker.sh",
                  "firewall-admin.uc", "network-services.uc", "network-routes.uc", "network-qos.uc", "port-links.sh",
                  "vpn.uc", "vpn-config.uc", "vpn-runtime.uc", "vpn-render.uc", "vpn-hook.uc", "vpn-services.uc", "vpn-health.uc", "wireguard.uc", "wg-health.uc",
-                 "vpn-ppp-up.sh", "vpn-ppp-down.sh", "vpn-openvpn-up.sh", "vpn-openvpn-down.sh", "timefix.sh"):
+                 "vpn-ppp-up.sh", "vpn-ppp-down.sh", "vpn-openvpn-up.sh", "vpn-openvpn-down.sh", "timefix.sh",
+                 "firmware-job.uc", "firmware-boot-confirm.uc", "upgrade-policy.uc",
+                 "mp716-open-production-gate.sh"):
         shutil.copyfile(Path(__file__).with_name(name), gateway.with_name(name))
         gateway.with_name(name).chmod(0o755 if name.endswith(".sh") else 0o644)
+    policy_default = (
+        Path(__file__).resolve().parents[1]
+        / "openwrt-package"
+        / "files"
+        / "etc"
+        / "mp716-upgrade"
+        / "upgrade-policy"
+    )
+    if policy_default.is_file():
+        dest = root / "etc/mp716-upgrade/upgrade-policy"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(policy_default, dest)
+        dest.chmod(0o644)
+    uci96 = Path(__file__).with_name("etc-uci-defaults-96-mp716-upgrade-policy")
+    if uci96.is_file():
+        dst = root / "etc/uci-defaults/96-mp716-upgrade-policy"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(uci96, dst)
+        dst.chmod(0o755)
     vpn_init = root / "etc/init.d/mp716-vpn"
     vpn_init.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("mp716-vpn.init"), vpn_init)
@@ -108,6 +129,19 @@ def stage(
     keep = root / "lib/upgrade/keep.d/mp716-admin"
     keep.parent.mkdir(parents=True, exist_ok=True)
     keep.write_text("/etc/mp716-admin/\n/etc/mp716-vpn/\n/etc/mp716-upgrade/installed.at\n", encoding="ascii")
+    sysupgrade = (
+        Path(__file__).resolve().parents[1]
+        / "openwrt-package"
+        / "files"
+        / "usr"
+        / "sbin"
+        / "mp716-sysupgrade"
+    )
+    if sysupgrade.is_file():
+        dest_sysup = root / "usr/sbin/mp716-sysupgrade"
+        dest_sysup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(sysupgrade, dest_sysup)
+        dest_sysup.chmod(0o755)
     init = root / "etc/init.d/mp716-admin"
     init.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("mp716-admin.init"), init)

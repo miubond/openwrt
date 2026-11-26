@@ -54,6 +54,9 @@ export function record_firmware_installed() {
 	if (!stamp) return '';
 	writefile('/etc/mp716-upgrade/installed.at', stamp + '\n');
 	chmod('/etc/mp716-upgrade/installed.at', 0644);
+	// no-keep sysupgrade 会清 overlay；子进程刷写前从该文件带进 pending 包。
+	writefile('/tmp/mp716-firmware-installed.at', stamp + '\n');
+	chmod('/tmp/mp716-firmware-installed.at', 0644);
 	return stamp;
 };
 
@@ -69,17 +72,23 @@ export function firmware_version() {
 	return 'unknown';
 };
 
+function image_build_stamp() {
+	for (let path in ['/etc/mp716-build.date', '/rom/etc/mp716-build.date']) {
+		let stamp = parse_build_stamp(first_line(readfile(path) || ''));
+		if (stamp) return stamp;
+	}
+	return '';
+}
+
 export function firmware_build_date() {
 	try {
-		// Image file mtimes are pinned to SOURCE_DATE_EPOCH, so the stamp written at build time wins.
-		for (let path in ['/rom/etc/mp716-build.date', '/etc/mp716-build.date']) {
-			let stamp = parse_build_stamp(first_line(readfile(path) || ''));
-			if (stamp) return stamp;
-		}
+		// 管理页「发布时间」展示本机上传/刷写时刻，而非 CI 构建戳。
 		let installed = parse_build_stamp(first_line(readfile('/etc/mp716-upgrade/installed.at') || ''));
 		if (installed) return installed;
 		let history = stamp_from_history();
 		if (history) return history;
+		let image = image_build_stamp();
+		if (image) return image;
 		for (let path in ['/etc/mp716-build.date', '/rom/etc/mp716-build.date', '/rom/etc/mp716-build.version', '/etc/mp716-build.version']) {
 			let stamp = stamp_from_mtime(path);
 			if (stamp) return stamp;

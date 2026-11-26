@@ -56,6 +56,7 @@ define Package/mp716-sysupgrade/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mp716-dhcp-discover $(1)/usr/sbin/mp716-dhcp-discover
 	$(INSTALL_CONF) ./files/etc/mp716-upgrade/flash-gate $(1)/etc/mp716-upgrade/flash-gate
 	$(INSTALL_CONF) ./files/etc/mp716-upgrade/platform $(1)/etc/mp716-upgrade/platform
+	$(INSTALL_CONF) ./files/etc/mp716-upgrade/upgrade-policy $(1)/etc/mp716-upgrade/upgrade-policy
 	$(if $(strip $(MP716_IMAGE_PROFILE)),$(INSTALL_CONF) "$(MP716_IMAGE_PROFILE)" $(1)/etc/mp716-upgrade/device.profile)
 	$(INSTALL_BIN) ./files/etc/init.d/mp716-sysupgrade $(1)/etc/init.d/mp716-sysupgrade
 	$(INSTALL_DATA) ./files/usr/share/rpcd/acl.d/mp716-upgrade.json $(1)/usr/share/rpcd/acl.d/mp716-upgrade.json

@@ -348,6 +348,7 @@ fi
 	echo "Final sysupgrade image exceeds the firmware partition." >&2
 	exit 2
 }
+python3 "$project/scripts/check-production-image-budget.py" "${sysupgrade[0]}"
 metadata="$output/sysupgrade-metadata.json"
 staging_dir/host/bin/fwtool -i "$metadata" "${sysupgrade[0]}"
 offset=$(python3 - "$project" "$metadata" "${sysupgrade[0]}" <<'PY'

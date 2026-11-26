@@ -208,7 +208,11 @@ export interface RouterAPI {
   getFirmwareV2Info(): Promise<ApiResponse<FirmwareV2EngineInfo>>
   uploadFirmwareV2(file: Blob): Promise<ApiResponse<FirmwareV2UploadResult>>
   getFirmwareV2Status(): Promise<ApiResponse<FirmwareV2Status>>
-  applyFirmwareV2(params?: { confirm?: boolean }): Promise<ApiResponse<ConfigApplyResult>>
+  applyFirmwareV2(params?: {
+    confirm?: boolean
+    jobId?: string
+    keepSettings?: boolean
+  }): Promise<ApiResponse<ConfigApplyResult>>
 
   getSystemLogs(limit?: number): Promise<ApiResponse<SystemLogState>>
   updateSyslog(enabled: boolean): Promise<ApiResponse<ConfigApplyResult>>

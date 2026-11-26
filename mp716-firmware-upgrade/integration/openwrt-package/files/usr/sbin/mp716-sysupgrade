@@ -114,47 +114,132 @@ case "$cmd" in
 			printf '%s\n' '{"ok":false,"error":"flash_disabled","flash_write":false}'
 			exit 24
 		fi
+		# uhttpd kills the CGI after 60s. Extracting on MT7628 takes longer than that,
+		# so the web request only moves the image aside and returns. The child waits
+		# until that CGI has exited, then extracts and flashes.
+		if [ -z "${MP716_TEST_ROOT:-}" ] && [ -z "${MP716_APPLY_CHILD:-}" ]; then
+			stable=/tmp/mp716-firmware-upload-apply.mp716upd
+			mv -f "$file" "$stable"
+			if [ "$keep" -eq 1 ]; then
+				MP716_APPLY_CHILD=1 MP716_GATE_FILE="$GATE_FILE" MP716_PLATFORM_FILE="$PLATFORM_FILE" \
+					setsid "$0" apply "$stable" --keep-config >/tmp/sysupgrade-run.log 2>&1 </dev/null &
+			else
+				MP716_APPLY_CHILD=1 MP716_GATE_FILE="$GATE_FILE" MP716_PLATFORM_FILE="$PLATFORM_FILE" \
+					setsid "$0" apply "$stable" >/tmp/sysupgrade-run.log 2>&1 </dev/null &
+			fi
+			printf '%s\n' '{"ok":true,"flash_write":true,"detail":"submitted"}'
+			exit 0
+		fi
+		if [ -z "${MP716_TEST_ROOT:-}" ]; then
+			sleep 3
+		fi
+		# Refuse apply before tuning vm.min_free_kbytes — do not rely on that knob alone.
+		_payload_kb=$(( $(wc -c < "$file") / 1024 ))
+		_need_kb=$(( _payload_kb + 8192 + 2048 ))
+		_avail_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+		if [ -n "$_avail_kb" ] && [ "$_avail_kb" -lt "$_need_kb" ]; then
+			printf '%s\n' "{\"ok\":false,\"error\":\"low_memory\",\"flash_write\":false,\"detail\":\"MemAvailable ${_avail_kb}kB < need ${_need_kb}kB\"}"
+			exit 25
+		fi
+		_tmp_kb=$(df -k /tmp 2>/dev/null | awk 'NR==2 {print $4}')
+		_need_tmp_kb=$(( _payload_kb + 512 ))
+		if [ -n "$_tmp_kb" ] && [ "$_tmp_kb" -lt "$_need_tmp_kb" ]; then
+			printf '%s\n' "{\"ok\":false,\"error\":\"low_tmp\",\"flash_write\":false,\"detail\":\"tmp free ${_tmp_kb}kB < need ${_need_tmp_kb}kB\"}"
+			exit 26
+		fi
+		# The memory check wants payload + 8MB free while the container is already on tmpfs.
+		# hostapd is restarted by netifd, so wpad stop alone does not free it. Ethernet stays up.
+		wifi down >/dev/null 2>&1 || true
+		for svc in wpad mp716-vpn sysntpd odhcpd log urngd uhttpd mp716-admin dnsmasq cron miniupnpd; do
+			/etc/init.d/$svc stop >/dev/null 2>&1 || true
+		done
+		sync
+		# dash exits on a failed redirect under set -e, even with "|| true".
+		# 64MB kernels reserve 8MB via min_free_kbytes, so MemAvailable stays under the
+		# payload+8MB budget even when MemFree is large enough to extract the image.
+		if [ -z "${MP716_TEST_ROOT:-}" ]; then
+			old_min=$(cat /proc/sys/vm/min_free_kbytes 2>/dev/null || printf '%s' 8192)
+			(echo 1024 > /proc/sys/vm/min_free_kbytes) 2>/dev/null || true
+		fi
+		(echo 3 > /proc/sys/vm/drop_caches) 2>/dev/null || true
 		stage=$(mktemp -d /tmp/mp716-sysupgrade.XXXXXX)
 		payload="$stage/sysupgrade.bin"
 		trap 'rm -rf -- "$stage"' EXIT
 		trap 'exit 1' HUP INT TERM
 		archive="$stage/config.tgz"
 		root="$stage/root"
-		check_container --extract "$payload" --pending-state "$stage/sysupgrade.pending"
+		if ! check_container --extract "$payload" --pending-state "$stage/sysupgrade.pending"; then
+			status=$?
+			if [ -n "${old_min:-}" ]; then
+				(echo "$old_min" > /proc/sys/vm/min_free_kbytes) 2>/dev/null || true
+			fi
+			# The web request is waiting on this process. Restarting Wi-Fi before
+			# exit keeps the HTTP response open, so the page never shows the error.
+			if [ -z "${MP716_TEST_ROOT:-}" ]; then
+				(
+					for svc in uhttpd dnsmasq mp716-admin log sysntpd odhcpd urngd wpad cron miniupnpd mp716-vpn; do
+						/etc/init.d/$svc start >/dev/null 2>&1 || true
+					done
+					wifi up >/dev/null 2>&1 || true
+				) >/dev/null 2>&1 &
+			fi
+			exit "$status"
+		fi
 		set -- "$payload"
 		if [ "$keep" -eq 0 ]; then
 			set -- -n "$@"
 		fi
 		sysupgrade -T "$@"
-		mkdir "$root"
-		if [ "$keep" -eq 1 ]; then
-			sysupgrade -b "$archive"
-			tar -xzf "$archive" -C "$root"
-		fi
-		mkdir -p "$root/etc/mp716-upgrade"
-		mv -f "$stage/sysupgrade.pending" "$root/etc/mp716-upgrade/sysupgrade.pending"
-		if [ "$keep" -eq 1 ]; then
-			(
-				cd "$root"
-				set --
-				for entry in ./* ./.[!.]* ./..?*; do
-					[ -e "$entry" ] || [ -L "$entry" ] || continue
-					set -- "$@" "$entry"
-				done
-				tar -czf "$archive" "$@"
-			)
-		else
-			tar -czf "$archive" -C "$root" ./etc/mp716-upgrade/sysupgrade.pending
-		fi
-		# procd may consume the image after sysupgrade returns.
+		# 64 MB boards cannot hold the uploaded container and the extracted image in tmpfs
+		# while procd stages the upgrade; only the verified extract is needed from here on.
+		case "$file" in /tmp/mp716-firmware-upload-*.mp716upd|/tmp/mp716-firmware-upload-apply.mp716upd) rm -f -- "$file" ;; esac
+		sync
+		(echo 3 > /proc/sys/vm/drop_caches) 2>/dev/null || true
+		# The web request is still resident. Packing and flashing in this process
+		# reboots a 64MB board without writing the image. Exit so uhttpd can
+		# answer, then flash once that memory has been released.
 		trap - EXIT HUP INT TERM
-		if sysupgrade -f "$archive" "$@"; then
-			exit 0
-		else
-			status=$?
-			rm -rf -- "$stage"
-			exit "$status"
+		cat > "$stage/run.sh" << EOF
+#!/bin/sh
+sleep $([ -n "${MP716_TEST_ROOT:-}" ] && printf '%s' 0 || printf '%s' 3)
+for s in mp716-admin uhttpd dnsmasq miniupnpd cron; do
+	/etc/init.d/\$s stop >/dev/null 2>&1 || true
+done
+sync
+(echo 3 > /proc/sys/vm/drop_caches) 2>/dev/null || true
+mkdir '$root' || exit 1
+if [ '$keep' -eq 1 ]; then
+	sysupgrade -b '$archive' || exit 1
+	tar -xzf '$archive' -C '$root' || exit 1
+fi
+mkdir -p '$root/etc/mp716-upgrade'
+if [ -f /tmp/mp716-firmware-installed.at ]; then
+	cp -f /tmp/mp716-firmware-installed.at '$root/etc/mp716-upgrade/installed.at'
+fi
+mv -f '$stage/sysupgrade.pending' '$root/etc/mp716-upgrade/sysupgrade.pending'
+if [ '$keep' -eq 1 ]; then
+	cd '$root' || exit 1
+	set --
+	for entry in ./* ./.[!.]* ./..?*; do
+		[ -e "\$entry" ] || [ -L "\$entry" ] || continue
+		set -- "\$@" "\$entry"
+	done
+	tar -czf '$archive' "\$@" || exit 1
+else
+	tar -czf '$archive' -C '$root' ./etc/mp716-upgrade/sysupgrade.pending || exit 1
+fi
+exec sysupgrade -f '$archive' $([ "$keep" -eq 0 ] && printf '%s' '-n ') '$payload'
+EOF
+		chmod 755 "$stage/run.sh"
+		# The adapter test has to observe sysupgrade's own exit. On the router the
+		# CGI must exit first, or the 64MB board reboots without writing.
+		if [ -n "${MP716_TEST_ROOT:-}" ]; then
+			set +e
+			"$stage/run.sh"
+			exit $?
 		fi
+		setsid "$stage/run.sh" >/tmp/sysupgrade-run.log 2>&1 </dev/null &
+		exit 0
 		;;
 	*)
 		usage

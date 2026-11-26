@@ -12,7 +12,8 @@
 | 4G 诚实契约 | `GET network/cellular` → 无模组说明（不虚构蜂窝菜单） |
 | 配置保存 | config-task 确认/撤销 |
 | 固件验签 | 上传 → verify |
-| 固件刷写（实验室） | `DEPLOY_ENABLE_FLASH=1` 热更 → `allow-flash-upgrade` |
+| 固件刷写（实验室） | `DEPLOY_ENABLE_FLASH=1` 热更 → `allow-flash-upgrade`；提交后 `?wait=1` 重启等待闭环 |
+| 发布时间 | `installed.at`（上传时刻），含 no-keep 经 pending 包保留 |
 | 固件策略（量产热更） | **默认** 删除 `allow-flash-upgrade` → `validationOnly` |
 | 首页 WAN 速率 | 缓存命中仍刷新 `wan`；`ratesReady` 前端「统计中」 |
 | 契约别名 | `POST system/upgrade` ≡ `firmware-package/verify` |

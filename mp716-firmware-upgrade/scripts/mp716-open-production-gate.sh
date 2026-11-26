@@ -9,6 +9,7 @@ if [ "$(cat "$G" 2>/dev/null)" = 'serial-recovery-verified' ] && [ "$(cat "$P" 2
 fi
 echo 'serial-recovery-verified' > "$G"
 echo 'confirmed' > "$P"
-chmod 644 "$G" "$P"
+echo 'production' > /etc/mp716-upgrade/upgrade-policy
+chmod 644 "$G" "$P" /etc/mp716-upgrade/upgrade-policy
 rm -f /etc/mp716/allow-flash-upgrade
-echo 'OK production flash gate open (no lab allow-flash)'
+echo 'OK production flash gate open (upgrade-policy=production)'

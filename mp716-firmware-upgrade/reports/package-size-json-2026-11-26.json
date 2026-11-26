@@ -1,0 +1,112 @@
+﻿{
+  "repo_component_bytes": {
+    "web_dist": 696940,
+    "web_src_pages": 398400,
+    "ram_web_uc": 550977,
+    "device_src": 93106,
+    "packer": 111132,
+    "integration_openwrt_package": 13466
+  },
+  "largest_repo_files": [
+    [
+      23149568,
+      "web\\node_modules\\@rolldown\\binding-win32-x64-msvc\\rolldown-binding.win32-x64-msvc.node"
+    ],
+    [
+      9484800,
+      "web\\node_modules\\lightningcss-win32-x64-msvc\\lightningcss.win32-x64-msvc.node"
+    ],
+    [
+      9144216,
+      "web\\node_modules\\typescript\\lib\\typescript.js"
+    ],
+    [
+      8060928,
+      "build\\fault-tests\\known-good.bin"
+    ],
+    [
+      8060928,
+      "build\\fault-tests\\firmware.fakemtd"
+    ],
+    [
+      8060928,
+      "build\\device-tests\\firmware.fakemtd"
+    ],
+    [
+      7589732,
+      "web\\node_modules\\@lucide\\vue\\dist\\cjs\\lucide-vue.js.map"
+    ],
+    [
+      6239091,
+      "web\\node_modules\\typescript\\lib\\_tsc.js"
+    ],
+    [
+      5824768,
+      "web\\node_modules\\sass\\sass.dart.js"
+    ],
+    [
+      3627040,
+      "web\\node_modules\\playwright-core\\lib\\coreBundle.js"
+    ],
+    [
+      3349180,
+      "web\\node_modules\\playwright-core\\lib\\utilsBundle.js"
+    ],
+    [
+      3245056,
+      "web\\node_modules\\@tailwindcss\\oxide-win32-x64-msvc\\tailwindcss-oxide.win32-x64-msvc.node"
+    ],
+    [
+      2826376,
+      "web\\node_modules\\playwright\\lib\\transform\\babelBundle.js"
+    ],
+    [
+      2518668,
+      "web\\node_modules\\@lucide\\vue\\dist\\lucide-vue.d.ts"
+    ],
+    [
+      2408014,
+      "web\\node_modules\\@lucide\\vue\\dist\\lucide-vue.prefixed.d.ts"
+    ],
+    [
+      2403310,
+      "web\\node_modules\\@lucide\\vue\\dist\\lucide-vue.suffixed.d.ts"
+    ],
+    [
+      2349483,
+      "web\\node_modules\\typescript\\lib\\lib.dom.d.ts"
+    ],
+    [
+      1750581,
+      "web\\node_modules\\@vue\\compiler-sfc\\dist\\compiler-sfc.esm-browser.js"
+    ],
+    [
+      1718647,
+      "web\\node_modules\\@tailwindcss\\oxide-wasm32-wasi\\tailwindcss-oxide.wasm32-wasi.wasm"
+    ],
+    [
+      1633120,
+      "web\\node_modules\\jsdom\\lib\\generated\\idl\\CSSStyleProperties.js"
+    ]
+  ],
+  "device_probe": {
+    "date": "2026-11-26",
+    "host": "10.251.0.140",
+    "flash_total_bytes": 8388608,
+    "firmware_partition_bytes": 8060928,
+    "erase_block_bytes": 65536,
+    "rootfs_data_mtd_bytes": 1114112,
+    "overlay_available_kib": 772,
+    "overlay_total_kib": 1088,
+    "overlay_used_kib": 316,
+    "ram_total_kib": 58460,
+    "ram_available_kib": 17620,
+    "tmpfs_total_mib": 28.5,
+    "tmpfs_used_kib": 656,
+    "rom_df_blocks": 5120,
+    "web_mp716_kib": 698,
+    "ucode_share_kib": 221,
+    "wpad_kib": 648,
+    "mp716_upgraded_kib": 100
+  }
+}

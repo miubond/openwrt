@@ -50,6 +50,8 @@ Path("build/ci-release/device.profile").write_text(
     f"web_ui={json.loads(Path('web/package.json').read_text())['version']}\nupgrade_engine=1.0.0\n",
     encoding="utf-8")
 PY
+python3 scripts/check-mp716upd-artifact-size.py build/ci-release/test.mp716upd
+python3 scripts/check-production-image-budget.py build/ci-release/test.mp716upd
 verify_report build/ci-release/verify.json \
   python3 packer/mp716_fwverify.py build/ci-release/test.mp716upd \
   --public-key build/ci-release/upgrade.pub \

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import UiCard from '@/components/UiCard.vue'
 import UiButton from '@/components/UiButton.vue'
 import UiModal from '@/components/UiModal.vue'
@@ -11,9 +12,11 @@ import { readVerificationReport, isSignedVersionRejection } from '@/api/firmware
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
+const router = useRouter()
 const toast = useToastStore()
 const loading = ref(true)
 const uploading = ref(false)
+const applying = ref(false)
 const keepSettings = ref(true)
 const info = ref<FirmwareInfo | null>(null)
 const file = ref<File | null>(null)
@@ -21,11 +24,14 @@ const fileName = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const verification = ref<FirmwareVerificationReport | null>(null)
 const outcome = ref('')
+const jobId = ref('')
+const verifyReady = ref(false)
 
 const canUpload = computed(() => info.value?.canUpgrade !== false)
 const flashEnabled = computed(() => !!info.value?.flashUpgradeEnabled)
 const verifyOnly = computed(() => !flashEnabled.value)
 const confirmOpen = ref(false)
+const canApply = computed(() => flashEnabled.value && verifyReady.value && !!jobId.value)
 
 function show(value?: string) {
   const raw = (value || '').trim()
@@ -61,6 +67,8 @@ function onFile(e: Event) {
   fileName.value = next?.name || ''
   verification.value = null
   outcome.value = ''
+  jobId.value = ''
+  verifyReady.value = false
 }
 
 function validateFile(): boolean {
@@ -81,29 +89,35 @@ function validateFile(): boolean {
   return true
 }
 
-function onSubmitClick() {
+function onVerifyClick() {
   if (!validateFile()) return
-  if (flashEnabled.value) confirmOpen.value = true
-  else void submitUpload()
+  void runVerify()
 }
 
-async function submitUpload() {
-  confirmOpen.value = false
+function onApplyClick() {
+  if (!canApply.value) return
+  confirmOpen.value = true
+}
+
+async function runVerify() {
   if (!file.value || !validateFile()) return
   uploading.value = true
   verification.value = null
   outcome.value = ''
+  jobId.value = ''
+  verifyReady.value = false
   try {
     const result = unwrap(
       await getRouterApi().uploadFirmware(file.value, {
         keepSettings: keepSettings.value,
-        flash: flashEnabled.value,
+        flash: false,
       }),
     )
     verification.value = result.verificationReport || null
-    outcome.value = result.message || (result.flashWrite ? t('upgrade.success') : t('upgrade.successValidateOnly'))
-    if (result.flashWrite) toast.success(outcome.value)
-    else if (result.validated) toast.success(outcome.value)
+    jobId.value = (result.jobId || '').trim()
+    verifyReady.value = !!result.validated && !!jobId.value
+    outcome.value = t('upgrade.successValidateOnly')
+    toast.success(outcome.value)
   } catch (e) {
     verification.value = readVerificationReport(e instanceof ApiCallError ? e.details : null)
     outcome.value = explain(verification.value, formatApiError(e, t))
@@ -111,6 +125,34 @@ async function submitUpload() {
     else toast.error(outcome.value)
   } finally {
     uploading.value = false
+  }
+}
+
+async function runApply() {
+  confirmOpen.value = false
+  if (!jobId.value) return
+  applying.value = true
+  try {
+    const result = unwrap(
+      await getRouterApi().applyFirmwareV2({
+        jobId: jobId.value,
+        keepSettings: keepSettings.value,
+      }),
+    )
+    verification.value = result.verificationReport || verification.value
+    if (result.flashWrite) {
+      outcome.value = t('upgrade.applySubmitted')
+      toast.success(outcome.value)
+      await router.push({ name: 'sys-reboot', query: { wait: '1' } })
+      return
+    }
+    toast.error(result.message || t('upgrade.checkRejected'))
+  } catch (e) {
+    verification.value = readVerificationReport(e instanceof ApiCallError ? e.details : null)
+    outcome.value = explain(verification.value, formatApiError(e, t))
+    toast.error(outcome.value)
+  } finally {
+    applying.value = false
   }
 }
 
@@ -134,6 +176,10 @@ onMounted(() => void load())
           <div class="label">{{ t('upgrade.release') }}</div>
           <div class="value">{{ show(info?.buildDate) }}</div>
         </div>
+        <div v-if="info?.upgradePolicy" class="row">
+          <div class="label">{{ t('upgrade.policy') }}</div>
+          <div class="value">{{ show(info?.upgradePolicy) }}</div>
+        </div>
 
         <p v-if="!canUpload" class="warn">{{ t('upgrade.uploadDisabled') }}</p>
 
@@ -152,16 +198,16 @@ onMounted(() => void load())
                 <input class="name" :value="fileName" readonly />
                 <button class="select" type="button" @click="pickFile">{{ t('upgrade.pick') }}</button>
               </div>
-              <UiButton variant="secondary" :disabled="uploading || !file" @click="onSubmitClick">
-                {{
-                  uploading
-                    ? flashEnabled
-                      ? t('upgrade.upgrading')
-                      : t('upgrade.verifying')
-                    : flashEnabled
-                      ? t('upgrade.submit')
-                      : t('upgrade.verify')
-                }}
+              <UiButton variant="secondary" :disabled="uploading || applying || !file" @click="onVerifyClick">
+                {{ uploading ? t('upgrade.verifying') : t('upgrade.validateFirmware') }}
+              </UiButton>
+              <UiButton
+                v-if="flashEnabled"
+                variant="primary"
+                :disabled="!canApply || applying || uploading"
+                @click="onApplyClick"
+              >
+                {{ applying ? t('upgrade.upgrading') : t('upgrade.startUpgrade') }}
               </UiButton>
             </div>
           </div>
@@ -177,7 +223,7 @@ onMounted(() => void load())
           <p v-if="info?.maxSizeLabel" class="hint">{{ t('upgrade.maxSize', { tip: info.maxSizeLabel }) }}</p>
           <p v-if="verifyOnly" class="warn">{{ t('upgrade.verifyOnly') }}</p>
           <p v-else class="warn">{{ t('upgrade.warnRun') }}</p>
-          <p v-if="uploading" class="hint">{{ t('upgrade.waitingResult') }}</p>
+          <p v-if="jobId" class="hint">{{ t('upgrade.jobReady', { id: jobId }) }}</p>
           <p v-if="outcome" class="result">{{ outcome }}</p>
         </template>
 
@@ -204,7 +250,7 @@ onMounted(() => void load())
       :title="t('upgrade.confirmTitle')"
       danger
       @close="confirmOpen = false"
-      @confirm="submitUpload"
+      @confirm="runApply"
     >
       {{ t('upgrade.confirmBody') }}
     </UiModal>

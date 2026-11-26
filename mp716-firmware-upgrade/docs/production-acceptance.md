@@ -1,44 +1,78 @@
-# 生产验收
+# MP716 生产验收
 
-状态为研发测试阶段。此阶段只验收固定源码构建、产物和静态检查。设备启动、物理网络和生产升级另行验收。
+更新：2026-11-26  
+实验室单机已运行 **1.0.11**；本表仍是**发布门**记录，不因单机已迁移而自动标 RELEASE。
 
-实验室 MP716 已运行自研 **1.0.7**（原厂 014 Web/系统已替换，见 [实机运行状态](mp716-device-runtime-state.md)）。下列清单项仍按**发布门**逐项记录，不因单机已迁移而自动标为 RELEASE。
+## 发布门（任一不成立 = TEST）
 
-固定源码是 OpenWrt `v25.12.6`，提交 `64900e756efa667774214f9c6b17c113222e01f7`。CI 对独立 checkout 执行固定提交校验，使用该版本的交叉工具链、内核及精简的 ramips/mt76x8 包配置。
+- 串口恢复可把原厂/自研镜像刷回并启动
+- 镜像格式、容量、`yunxm,mp716`、**RELEASE 签名**、生产预算（≤ 7 012 352 flash_span）
+- 未使用 `sysupgrade -F`；平台脚本不写 u-boot/config/factory
+- **`upgrade-policy=production` 的 RELEASE 整包**（见 `write-release-upgrade-policy-overlay.sh`）
+- Web 升级在专用测试机完成下列 §固件升级 实机矩阵
 
-在 Linux 上使用上述提交的专用 checkout。以下命令会覆盖该 checkout 的 `.config`，输出 TEST 镜像、构建日志、SHA-256、设备树和构建报告。详细命令见 [项目 README](../README.md#构建测试镜像)。
+## 固件升级 — 实机矩阵（须专用机 + 人工）
+
+**禁止**在未经同意的在线生产设备上自动刷写。每项须附证据（日志、截图、时间、版本号）。
+
+| 项 | 结果 | 证据 |
+|---|---|---|
+| 正式签名包真实刷写 | 未执行 | |
+| 保留配置升级 | 未执行 | |
+| 不保留配置升级 | 未执行 | |
+| 连续版本升级 | 未执行 | |
+| 超容量镜像拒绝 | 未执行 | 宿主：`check-production-image-budget.py` on 1.0.11 WARN 超目标 |
+| 错误型号拒绝 | 未执行 | 宿主：`tests/packer/test_container.py` |
+| 签名错误拒绝 | 未执行 | 宿主：`test_device_cli.py` |
+| 上传中断恢复 | 未执行 | |
+| RAM 不足拒绝 | 未执行 | 代码：`mp716-sysupgrade` exit 25/26 |
+| 配置恢复 | 未执行 | |
+| LAN/WAN/Wi-Fi 恢复 | 未执行 | |
+| WireGuard/OpenVPN 恢复 | 未执行 | |
+| 升级后 Overlay 容量 | 未执行 | 实机只读 772 KiB free（2026-11-26） |
+| 救砖/串口演练 | 未执行 | 未跑 gate 脚本于量产机 |
+
+## 容量 / RAM（实机只读 2026-11-26）
+
+| 项 | 值 |
+|---|---|
+| firmware | 8 060 928 B |
+| rootfs_data | 1 088 KiB（余 772 KiB） |
+| MemAvailable | 17 620 KiB |
+| tmpfs | 28.5 MiB |
+
+详见 `mp716-firmware-size-budget.md`、`mp716-upgrade-memory-report.md`。
+
+## 构建
+
+OpenWrt **25.12.6**，pin `64900e756efa667774214f9c6b17c113222e01f7`。
 
 ```sh
 bash scripts/build-openwrt-test.sh --lan-candidate web/dist /path/to/openwrt-test config/test-device.profile /path/to/test-output
 ```
 
-## 容量
+RELEASE overlay：
 
-mt76x8 子目标带有 `small_flash`，MP716 TEST 配置包含 `kmod-mt7603` 和 `wpad-basic-mbedtls`。固件分区只有 7872 KiB，内存按现有资料是 64 MiB。包含无线驱动后的镜像仍需通过最终大小检查，实际运行内存和生产功能待实机验证。
+```sh
+bash scripts/write-release-upgrade-policy-overlay.sh "$STAGING_ROOT"
+```
 
-## 待验证清单
+## 其他清单（节选）
 
 | 项 | 结果 |
 |---|---|
-| RAM 启动 | 未执行 |
-| 网口 | 原厂已只读测量 VLAN 成员及 MAC 来源；1.0.2 候选配置 eth0.1 LAN、eth0.2 WAN（端口 4）。TODO 验证新驱动、每个物理端口、隔离及吞吐 |
-| Wi-Fi | 已配置 WMAC 和 MT7603 驱动，nvmem 读取 Factory 偏移 0 的 1024 字节。TODO 实机验证 EEPROM 读取、MAC、校准、AP 认证和连接稳定性 |
-| GPIO、按键和指示灯 | TODO 确认引脚与电平 |
-| 原厂必要功能 | 已审计当前 DHCP WAN、UPnP 和关闭的可选服务，并生成本地私有迁移计划；候选运行、NAT、DNS、UPnP 和端到端上网未执行 |
-| 串口恢复 | TODO 核对 U-Boot 的 RAM 加载地址、内存报告、原厂备份恢复和重启 |
-| 固件升级 | 未执行 |
-| 断电和异常恢复 | 未执行 |
-| 重启后版本核对 | 未执行 |
-| 原厂网页首次迁移 | TODO 获取确切的 014 原厂升级文件，核对封装及原厂网页验证规则。原厂 `sysupgrade -T` 通过只验证板卡和镜像头 |
+| RAM 启动 | 实机 1.0.11 在线 |
+| 网口/Wi-Fi | 部分历史记录，见 hardware 文档 |
+| 固件升级 Web 闭环 | **代码就绪**；实机 RELEASE 验收未闭环 |
+| 断电恢复 | 未执行 |
 
-工程已有的历史产物包括 Gitea [RAM 镜像构建 #10333](https://git.cloudlink.hk/cloud/openwrt/actions/runs/10333) 和离线重打包的 LAN 候选镜像。原厂 014 上的签名上传校验和 `sysupgrade -T` 已执行过，尚无自研镜像在 MP716 上启动的记录。本次源码构建的结果以各工作流产物内的 `build-report.json` 为准。
+## 放行 Web 升级的判定
 
-## 发布门
+同时满足才可标 **RELEASE** 并对出厂设备开放 `flashUpgradeEnabled`：
 
-下列任何一项不成立，产物都只能叫 TEST，不能叫 RELEASE：
+1. 上表 §固件升级 全项 **PASS**（附证据）
+2. CI：`build-openwrt-test.sh` + `check-production-image-budget.py` 绿
+3. 镜像内含 RELEASE `upgrade.pub`（非 ci-test）
+4. `write-release-upgrade-policy-overlay.sh` 已打入 squashfs
 
-- 串口恢复已经把原厂固件刷回并启动
-- 镜像通过格式、容量、CRC、`yunxm,mp716` 兼容性和签名检查
-- 检查没有使用 `sysupgrade -F`
-- 镜像不是 EVB BIN，也不是原厂 MTD 备份
-- 首次迁移包和后续 sysupgrade 包分别构建
+未满足前：镜像保持 `development` 或 gate 关闭，UI 仅校验或按钮灰化。
