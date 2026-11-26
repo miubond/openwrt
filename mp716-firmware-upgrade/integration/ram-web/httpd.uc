@@ -143,11 +143,13 @@ function firmware_keep_settings() {
 	return index(['0', 'false', 'no'], v) < 0;
 }
 
+const APPLY_STAGING_PATH = '/tmp/mp716-firmware-upload-apply.mp716upd';
+
 function apply_firmware_package(path, keep, verify_report, extras) {
 	if (!firmware_flash_allowed())
-		return fail(403, 'FORBIDDEN', '固件刷写未开启（生产需 gate+platform；开发需实验室开关）');
+		return { ok: false, status: 403, code: 'FORBIDDEN', message: '固件刷写未开启（生产需 gate+platform；开发需实验室开关）' };
 	if (!stat('/usr/sbin/mp716-sysupgrade'))
-		return fail(404, 'NOT_IMPLEMENTED', '未安装 OpenWrt sysupgrade 适配器');
+		return { ok: false, status: 404, code: 'NOT_IMPLEMENTED', message: '未安装 OpenWrt sysupgrade 适配器' };
 	let cmd = '/usr/sbin/mp716-sysupgrade apply ' + shellquote(path);
 	if (keep)
 		cmd += ' --keep-config';
@@ -159,7 +161,7 @@ function apply_firmware_package(path, keep, verify_report, extras) {
 	}
 	let child = popen('/bin/sh -c ' + shellquote(cmd + ' 2>&1'), 'r');
 	if (!child)
-		return fail(500, 'INTERNAL', '无法启动固件刷写');
+		return { ok: false, status: 500, code: 'INTERNAL', message: '无法启动固件刷写' };
 	let output = child.read('all') || '';
 	let status = child.close();
 	let async_submit = false;
@@ -179,15 +181,15 @@ function apply_firmware_package(path, keep, verify_report, extras) {
 		if (type(extras) == 'object' && extras)
 			for (let k, v in extras)
 				data[k] = v;
-		return ok(data);
+		return { ok: true, data: data, async_submit: async_submit };
 	}
 	if (stat(path) && !async_submit)
 		unlink(path);
 	let report;
 	try { report = json(output); } catch (e) { report = null; }
 	if (report)
-		return fail(400, 'VALIDATION', report.detail || report.error || '固件刷写失败', report);
-	return fail(400, 'VALIDATION', trim(output) || '固件刷写失败', { output: substr(output, 0, 4096) });
+		return { ok: false, status: 400, code: 'VALIDATION', message: report.detail || report.error || '固件刷写失败', details: report };
+	return { ok: false, status: 400, code: 'VALIDATION', message: trim(output) || '固件刷写失败', details: { output: substr(output, 0, 4096) } };
 }
 
 function apply_job_by_id(job_id, keep) {
@@ -196,19 +198,22 @@ function apply_job_by_id(job_id, keep) {
 	let job = job_get(job_id);
 	if (!job || index(['verified', 'submitted'], job.phase) < 0)
 		return fail(400, 'VALIDATION', '无效或不可用的升级任务');
-	let rev = reverify_job_image(job);
-	if (rev.error)
-		return fail(400, 'VALIDATION', rev.error, rev.report);
 	let cap = firmware_capacity_check(job.size, 'apply');
 	if (!cap.ok) {
 		let st = cap.code == 'LOW_TMP' ? 507 : cap.code == 'LOW_MEMORY' ? 507 : 400;
 		return fail(st, cap.code || 'VALIDATION', cap.message || '容量不足', cap);
 	}
+	let rev = reverify_job_image(job);
+	if (rev.error)
+		return fail(400, 'VALIDATION', rev.error, rev.report);
 	job_clear_apply_result();
-	job_mark_phase(job_id, 'submitted', { keep: keep == true });
 	let result = apply_firmware_package(job.path, keep, rev.report, { job_id: job_id, taskId: job_id });
-	job_mark_phase(job_id, 'applying', { keep: keep == true });
-	return result;
+	if (!result.ok) {
+		job_mark_phase(job_id, 'verified', { keep: keep == true });
+		return fail(result.status || 400, result.code || 'VALIDATION', result.message || '固件刷写失败', result.details);
+	}
+	job_mark_phase(job_id, 'applying', { keep: keep == true, path: APPLY_STAGING_PATH });
+	return ok(result.data);
 }
 
 function upload_firmware_package() {
@@ -384,13 +389,13 @@ function main() {
 		if (type(body) != 'object') return fail(400, 'VALIDATION', '无效的请求对象');
 	}
 	let api_path = substr(path, length('/cgi-bin/mp716/'));
+	if (method == 'POST' && api_path == 'system/firmware-v2/apply')
+		return firmware_v2_apply(body);
 	let t0 = perf_enabled() ? perf_monotonic_ms() : 0;
 	if (perf_enabled()) perf_begin(substr(token, 0, 8), api_path);
 	try {
 		let result = route_native(ubus, method, api_path, body, token);
 		if (result?.error) return fail(result.error == 'DEVICE_BUSY' ? 409 : result.error == 'NOT_IMPLEMENTED' ? 404 : 400, result.error, result.message);
-		if (method == 'POST' && api_path == 'system/firmware-v2/apply')
-			return firmware_v2_apply(body);
 		if (result != null) {
 			if (t0) {
 				let ser0 = perf_monotonic_ms();

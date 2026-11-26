@@ -31,3 +31,23 @@ it('rejects an inconsistent successful HTTP envelope containing a failed native 
   const result = await new DeviceRouterAdapter(() => null).uploadFirmware(new Blob())
   expect(result.ok).toBe(false)
 })
+
+it('does not pretend apply succeeded on HTTP 507 or network abort', async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ ok: false, code: 'LOW_MEMORY', message: '系统可用内存不足', details: { needMemKb: 8704 } }),
+        { status: 507 },
+      ),
+    )
+    .mockRejectedValueOnce(new DOMException('aborted', 'AbortError'))
+  vi.stubGlobal('fetch', fetch)
+  const api = new DeviceRouterAdapter(() => 'test-session')
+  const denied = await api.applyFirmwareV2({ jobId: 'abc', keepSettings: true })
+  expect(denied.ok).toBe(false)
+  if (!denied.ok) expect(denied.code).toBe('LOW_MEMORY')
+  const aborted = await api.applyFirmwareV2({ jobId: 'abc', keepSettings: true })
+  expect(aborted.ok).toBe(false)
+  if (!aborted.ok) expect(aborted.message).toMatch(/超时/)
+})

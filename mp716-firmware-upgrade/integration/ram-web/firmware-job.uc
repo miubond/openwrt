@@ -92,8 +92,8 @@ export function firmware_capacity_check(file_bytes, phase) {
 	let tmp = tmp_free_kb();
 	let need_mem;
 	if (phase == 'apply') {
-		/* 镜像已在 /tmp，仅核对刷写 staging（与 mp716-upgraded --require-memory 一致） */
-		need_mem = MEM_NEED_EXTRA_KB + 512;
+		/* 容器已在 /tmp；HTTP 层仅防 OOM。完整 payload+8MiB 预算由 mp716-sysupgrade 停服后判定。 */
+		need_mem = MEM_VERIFY_EXTRA_KB;
 	} else {
 		let mem_extra = MEM_VERIFY_EXTRA_KB;
 		need_mem = int((file_bytes + 1023) / 1024) + mem_extra;
@@ -250,6 +250,12 @@ export function reverify_job_image(job) {
 	let info = stat(job.path);
 	if (type(info.size) == 'int' && job.size > 0 && info.size != job.size)
 		return { error: '镜像已被替换或截断' };
+	let vr = job.verify_report;
+	if (job.phase == 'verified' && vr?.ok == true && vr?.signature_checked == true) {
+		let cached = vr?.payload_sha256 || vr?.sha256 || '';
+		if (length(job.payload_sha256) && length(cached) && job.payload_sha256 == cached)
+			return { report: vr };
+	}
 	let check = run_check(job.path, true);
 	if (check.error) return check;
 	let sig = check.report?.payload_sha256 || check.report?.sha256 || '';

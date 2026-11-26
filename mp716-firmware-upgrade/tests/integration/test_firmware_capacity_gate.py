@@ -6,11 +6,16 @@ import unittest
 
 PARTITION_BYTES = 8060928
 MEM_EXTRA_KB = 8 * 1024
+VERIFY_EXTRA_KB = 2 * 1024
 TMP_EXTRA_KB = 512
 
 
 def need_memory_kb(file_bytes: int) -> int:
     return (file_bytes + 1023) // 1024 + MEM_EXTRA_KB
+
+
+def need_apply_memory_kb() -> int:
+    return VERIFY_EXTRA_KB
 
 
 def need_tmp_kb(file_bytes: int) -> int:
@@ -27,6 +32,10 @@ class FirmwareCapacityGateTests(unittest.TestCase):
         need = need_memory_kb(PARTITION_BYTES)
         self.assertGreater(need, MEM_EXTRA_KB)
         self.assertLess(need, 64 * 1024)
+
+    def test_apply_http_gate_defers_extract_budget_to_sysupgrade(self) -> None:
+        self.assertEqual(need_apply_memory_kb(), VERIFY_EXTRA_KB)
+        self.assertLess(need_apply_memory_kb(), need_memory_kb(7 * 1024 * 1024))
 
     def test_ci_sysupgrade_size_gate_is_enforced_in_script(self) -> None:
         script = (

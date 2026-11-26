@@ -155,7 +155,9 @@ async function runApply() {
     toast.error(result.message || t('upgrade.checkRejected'))
   } catch (e) {
     verification.value = readVerificationReport(e instanceof ApiCallError ? e.details : null)
-    outcome.value = explain(verification.value, formatApiError(e, t))
+    const apiCode = e instanceof ApiCallError ? e.code : ''
+    if (apiCode === 'LOW_MEMORY') outcome.value = t('upgrade.memoryRejected')
+    else outcome.value = explain(verification.value, formatApiError(e, t))
     toast.error(outcome.value)
   } finally {
     applying.value = false

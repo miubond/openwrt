@@ -629,7 +629,18 @@ export class DeviceRouterAdapter implements RouterAPI {
       }
       const reportPayload = result.data
       if (!res.ok || result.ok !== true) {
-        const code = res.status === 403 ? 'FORBIDDEN' : res.status === 401 ? 'UNAUTHORIZED' : 'VALIDATION'
+        const bodyCode =
+          reportPayload && typeof reportPayload === 'object' && 'code' in reportPayload
+            ? String((reportPayload as { code?: string }).code || '')
+            : ''
+        const code =
+          res.status === 403
+            ? 'FORBIDDEN'
+            : res.status === 401
+              ? 'UNAUTHORIZED'
+              : res.status === 507 || bodyCode === 'LOW_MEMORY' || bodyCode === 'LOW_TMP'
+                ? 'LOW_MEMORY'
+                : 'VALIDATION'
         if (code === 'UNAUTHORIZED') notifySessionInvalid()
         return failure(code, result.message || '固件刷写失败', reportPayload)
       }
@@ -650,18 +661,12 @@ export class DeviceRouterAdapter implements RouterAPI {
         },
         ts: Date.now(),
       } satisfies ApiResponse<ConfigApplyResult>
-    } catch {
-      return {
-        ok: true,
-        data: {
-          accepted: true,
-          rollbackSec: 0,
-          validated: true,
-          flashWrite: true,
-          message: '固件可能正在刷写，设备将重启；请稍后重新登录',
-        },
-        ts: Date.now(),
-      } satisfies ApiResponse<ConfigApplyResult>
+    } catch (e) {
+      const name = e instanceof DOMException ? e.name : ''
+      if (name === 'AbortError') {
+        return failure('NETWORK', '刷写请求超时，请刷新页面后确认是否已提交')
+      }
+      return failure('NETWORK', '无法连接固件刷写接口')
     }
   }
   getSystemLogs(limit = 100) {
