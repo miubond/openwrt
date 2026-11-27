@@ -35,14 +35,15 @@ esac
 # lets the target compiler resolve absolute imports and load its own musl.
 install -d -m 755 "$root/mp716-ci"
 install -m 755 "$emulator" "$root/mp716-ci/qemu-mipsel-static"
-install -d -m 777 "$root/mp716-ci/output"
+install -d -m 755 "$root/mp716-ci/output"
+runner_user="$(id -u):$(id -g)"
 entrypoints=(
 	httpd admin-tick firmware-boot-confirm apply-task system-apply
 	vpn-render vpn-hook vpn-health wg-health
 )
 for entry in "${entrypoints[@]}"; do
 	echo "Compile $image_type /usr/share/mp716/$entry.uc"
-	sudo chroot --userspec=65534:65534 "$root" /mp716-ci/qemu-mipsel-static /usr/bin/ucode \
+	sudo chroot --userspec="$runner_user" "$root" /mp716-ci/qemu-mipsel-static /usr/bin/ucode \
 		-c -s -o "/mp716-ci/output/$entry.ucb" "/usr/share/mp716/$entry.uc"
 	test -s "$root/mp716-ci/output/$entry.ucb"
 done
