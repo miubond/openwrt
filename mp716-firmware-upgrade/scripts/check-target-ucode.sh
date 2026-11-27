@@ -10,13 +10,20 @@ sandbox=$(mktemp -d)
 trap 'chmod -R u+rwX "$sandbox"; rm -rf -- "$sandbox"' EXIT
 root="$sandbox/root"
 
+# Only extract the compiler, its libraries, and the shipped scripts.
+# Both root filesystems can contain device nodes that need privileged extraction.
+compiler_paths=(lib usr/lib usr/bin/ucode usr/share/mp716)
 case "$image_type" in
 	initramfs)
 		mkdir "$root"
-		(cd "$root" && "$extractor" -id --no-absolute-filenames < "$image")
+		patterns=()
+		for path in "${compiler_paths[@]}"; do
+			patterns+=("$path" "$path/*" "./$path" "./$path/*")
+		done
+		(cd "$root" && "$extractor" -id --no-absolute-filenames "${patterns[@]}" < "$image")
 		;;
 	sysupgrade)
-		"$extractor" -no-progress -d "$root" -offset "$4" "$image"
+		"$extractor" -no-progress -d "$root" -offset "$4" "$image" "${compiler_paths[@]}"
 		;;
 	*)
 		echo "Unknown MP716 image type: $image_type" >&2
