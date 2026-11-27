@@ -70,6 +70,20 @@ done
 }
 ssh "root@$RouterHost" $policyRemote
 
+$portMapsDir = Join-Path $RamWeb 'port-maps'
+$lanMacRaw = (ssh -o ConnectTimeout=12 "root@$RouterHost" "jsonfilter -e '@.network.lan.macaddr' /etc/board.json 2>/dev/null" 2>$null)
+$lanMac = if ($lanMacRaw) { $lanMacRaw.Trim().ToLower() } else { '' }
+if ($lanMac -match '^([0-9a-f]{2}:){5}[0-9a-f]{2}$') {
+  $mapFile = Join-Path $portMapsDir ($lanMac.Replace(':', '') + '.json')
+  if (Test-Path $mapFile) {
+    ssh "root@$RouterHost" 'mkdir -p /etc/mp716-admin'
+    Push-RawFile -LocalPath (Resolve-Path $mapFile).Path -RemotePath '/etc/mp716-admin/port-map.json' -Mode '600' -Text
+    Write-Host "Installed port-map for $lanMac"
+  }
+} elseif (-not $lanMac) {
+  Write-Warning "Skipping port-map install: could not read LAN MAC from $RouterHost"
+}
+
 if ($ReleasePubPath -and (Test-Path $ReleasePubPath)) {
   Push-RawFile -LocalPath (Resolve-Path $ReleasePubPath).Path -RemotePath '/etc/mp716-upgrade/upgrade.pub' -ExpectSize 32
 }

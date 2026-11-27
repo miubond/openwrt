@@ -575,6 +575,8 @@ export default {
     waitTimeout: 'This is taking longer than expected. Check power and cables, then refresh the page.',
     waitElapsed: 'Elapsed {time}',
     waitHint: 'Usually 3–5 minutes. Wi-Fi may drop and return; reconnect to this device’s Wi-Fi if needed. This page checks automatically.',
+    waitFirmwareHint:
+      'During a firmware flash the web UI is offline for about 10–20 minutes. Use a LAN cable and open http://192.168.199.1/mp716/; do not power off.',
     waitGoLogin: 'Go to login',
   },
   sysReset: {

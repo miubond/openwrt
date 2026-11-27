@@ -572,6 +572,8 @@ export default {
     waitTimeout: '等待時間超出預期，請檢查裝置電源和網路線後手動重新整理頁面。',
     waitElapsed: '已等待 {time}',
     waitHint: '通常需要 3～5 分鐘。期間 WiFi 可能斷開又重連，使用 WiFi 時請重新連線到本裝置熱點，本頁會自動偵測。',
+    waitFirmwareHint:
+      '韌體刷寫期間管理面會關閉，通常需要 10～20 分鐘。請用網線連接 LAN，優先開啟 http://192.168.199.1/mp716/；請勿斷電。',
     waitGoLogin: '前往登入頁',
   },
   sysReset: {

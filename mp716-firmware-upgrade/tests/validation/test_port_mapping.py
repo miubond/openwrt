@@ -35,7 +35,17 @@ def raw(up=(3, 4, 6), uptime=100):
             "control_mac": MAC, "host_key_sha256": "a" * 64, "commands": commands}
 
 
+LAB_PORT_MAP = ROOT / "integration/ram-web/port-maps/001ca3364355.json"
+
+
 class PortMappingTests(unittest.TestCase):
+    def test_lab_port_map_matches_stock_vlan_layout(self) -> None:
+        payload = json.loads(LAB_PORT_MAP.read_text(encoding="utf-8"))
+        self.assertEqual(payload["schema"], "mp716-port-map/v1")
+        self.assertEqual(payload["board"], "yunxm,mp716")
+        labels = {row["switch_port"]: row["label"] for row in payload["mappings"]}
+        self.assertEqual(labels, {0: "LAN1", 1: "LAN2", 2: "LAN3", 3: "LAN4", 4: "WAN"})
+
     def test_real_rt305x_shape_and_unsupported_arl_are_preserved(self):
         value = PORTS.snapshot(raw())
         self.assertTrue(value["stable"])

@@ -1,0 +1,11 @@
+#!/bin/sh
+# 出厂 / firstboot 后默认打开 2.4G（OpenWrt 基底常把 wifi-iface 标为 disabled=1）。
+. /lib/functions.sh
+[ "$(board_name)" = yunxm,mp716 ] || exit 0
+for sec in radio0 default_radio0; do
+	uci -q get "wireless.$sec" >/dev/null 2>&1 || continue
+	uci -q delete "wireless.$sec.disabled"
+done
+uci commit wireless 2>/dev/null || exit 0
+/sbin/wifi up 2>/dev/null || true
+exit 0

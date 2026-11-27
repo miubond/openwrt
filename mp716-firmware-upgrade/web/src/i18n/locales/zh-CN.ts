@@ -575,6 +575,8 @@ export default {
     waitTimeout: '等待时间超出预期，请检查设备电源和网线后手动刷新页面。',
     waitElapsed: '已等待 {time}',
     waitHint: '通常需要 3～5 分钟。期间 WiFi 可能断开又重连，使用 WiFi 时请重新连接到本设备热点，本页会自动检测。',
+    waitFirmwareHint:
+      '固件刷写期间管理面会关闭，通常需要 10～20 分钟。请用网线连接 LAN，优先访问 http://192.168.199.1/mp716/；勿断电。',
     waitGoLogin: '前往登录页',
   },
   sysReset: {

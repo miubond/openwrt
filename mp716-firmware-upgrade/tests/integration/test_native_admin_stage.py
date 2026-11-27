@@ -64,6 +64,24 @@ class NativeAdminStageTests(unittest.TestCase):
             '2023-11-14 22:13:20',
         )
 
+    def test_lan_candidate_includes_release_upgrade_overlay_paths(self):
+        uci96 = (self.root / 'etc/uci-defaults/96-mp716-upgrade-policy').read_text()
+        self.assertIn('serial-recovery-verified', uci96)
+        self.assertIn('production', uci96)
+
+    def test_factory_port_map_defaults_installed(self):
+        self.assertTrue((self.root / 'usr/share/mp716/port-map-chassis-default.json').is_file())
+        self.assertTrue((self.root / 'etc/uci-defaults/94-mp716-port-map-defaults').is_file())
+        self.assertIn('mp716-port-map-defaults.sh', (self.root / 'etc/uci-defaults/94-mp716-port-map-defaults').read_text())
+
+    def test_factory_wireless_defaults_enable_radio(self):
+        script = self.root / 'etc/uci-defaults/97-mp716-wireless-defaults'
+        self.assertTrue(script.is_file())
+        body = script.read_text()
+        self.assertIn('default_radio0', body)
+        self.assertIn('delete "wireless.$sec.disabled"', body)
+        self.assertIn('/sbin/wifi up', body)
+
     def test_native_services_survive_boot_and_upgrade_configuration_retention(self):
         defaults = (self.root / 'etc/uci-defaults/98-mp716-admin').read_text()
         for service in ('mp716-admin', 'mp716-vpn', 'mp716-timefix'):

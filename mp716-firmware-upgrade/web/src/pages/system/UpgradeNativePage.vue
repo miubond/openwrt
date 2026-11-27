@@ -149,7 +149,7 @@ async function runApply() {
     if (result.flashWrite) {
       outcome.value = t('upgrade.applySubmitted')
       toast.success(outcome.value)
-      await router.push({ name: 'sys-reboot', query: { wait: '1' } })
+      await router.push({ name: 'sys-reboot', query: { wait: '1', firmware: '1' } })
       return
     }
     toast.error(result.message || t('upgrade.checkRejected'))

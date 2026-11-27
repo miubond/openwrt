@@ -1,0 +1,54 @@
+{
+  "schema": "mp716-port-map/v1",
+  "board": "yunxm,mp716",
+  "device_mac": "__LAN_MAC__",
+  "switch": "switch0",
+  "note": "Default MP716 switch0 layout (LAN1–4=P0–P3, WAN=P4); device_mac filled at install.",
+  "mappings": [
+    {
+      "switch_port": 0,
+      "label": "LAN1",
+      "verified": true,
+      "evidence": [
+        "e5eca05eb1d47ff6feaa5a436c0592d55d7929a330b6b062aef785d69cbe71c0",
+        "63d9a2a6cfb60606c7f9dd9c9aa19b4b9a5252791025b7418804b1a27e80a753"
+      ]
+    },
+    {
+      "switch_port": 1,
+      "label": "LAN2",
+      "verified": true,
+      "evidence": [
+        "e5eca05eb1d47ff6feaa5a436c0592d55d7929a330b6b062aef785d69cbe71c0",
+        "63d9a2a6cfb60606c7f9dd9c9aa19b4b9a5252791025b7418804b1a27e80a753"
+      ]
+    },
+    {
+      "switch_port": 2,
+      "label": "LAN3",
+      "verified": true,
+      "evidence": [
+        "e5eca05eb1d47ff6feaa5a436c0592d55d7929a330b6b062aef785d69cbe71c0",
+        "63d9a2a6cfb60606c7f9dd9c9aa19b4b9a5252791025b7418804b1a27e80a753"
+      ]
+    },
+    {
+      "switch_port": 3,
+      "label": "LAN4",
+      "verified": true,
+      "evidence": [
+        "e5eca05eb1d47ff6feaa5a436c0592d55d7929a330b6b062aef785d69cbe71c0",
+        "63d9a2a6cfb60606c7f9dd9c9aa19b4b9a5252791025b7418804b1a27e80a753"
+      ]
+    },
+    {
+      "switch_port": 4,
+      "label": "WAN",
+      "verified": true,
+      "evidence": [
+        "e5eca05eb1d47ff6feaa5a436c0592d55d7929a330b6b062aef785d69cbe71c0",
+        "63d9a2a6cfb60606c7f9dd9c9aa19b4b9a5252791025b7418804b1a27e80a753"
+      ]
+    }
+  ]
+}

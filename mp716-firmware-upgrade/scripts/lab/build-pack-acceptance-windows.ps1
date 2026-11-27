@@ -1,12 +1,12 @@
 ﻿# Windows：宿主打包 + 门禁 pytest（不含 OpenWrt 全量编译，全量须 Linux 见 build-openwrt-test.sh）
 param(
   [string]$SourceMp716upd = $(Join-Path $env:USERPROFILE 'Desktop\MP716-1.0.11\test.mp716upd'),
-  [string]$ArtifactDir = $(Join-Path $env:USERPROFILE "Desktop\MP716-$((Get-Content (Join-Path $PSScriptRoot '..\config\firmware.version') -Raw).Trim())"),
+  [string]$ArtifactDir = $(Join-Path $env:USERPROFILE "Desktop\MP716-$((Get-Content (Join-Path $PSScriptRoot '..\..\config\firmware.version') -Raw).Trim())"),
   [string]$WebDist = $(Join-Path (Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent) 'openwrt_system\dist-openwrt'),
   [switch]$SkipWebBuild
 )
 $ErrorActionPreference = 'Stop'
-$Root = Join-Path $PSScriptRoot '..'
+$Root = Join-Path $PSScriptRoot '..\..'
 Set-Location (Resolve-Path $Root)
 
 $fw = (Get-Content config\firmware.version -Raw).Trim()

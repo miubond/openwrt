@@ -100,6 +100,9 @@ if [ -n "$web_input" ]; then
 	fi
 	python3 "$project/integration/ram-web/stage.py" "$web_input" "$tree/files" "${stage_args[@]}"
 	install -D -m 0755 "$project/integration/ram-web/03_mp716_ram_web" files/etc/board.d/03_mp716_ram_web
+	if [ "$lan_candidate" -eq 1 ]; then
+		bash "$project/scripts/write-release-upgrade-policy-overlay.sh" "$tree/files"
+	fi
 fi
 include='include ./yunxm_mp716.mk'
 grep -Fxq "$include" target/linux/ramips/image/mt76x8.mk ||
@@ -221,7 +224,9 @@ native_entries=(usr/sbin/uhttpd sbin/rpcd usr/bin/ucode usr/bin/jsonfilter
 	www/mp716/index.html www/cgi-bin/mp716
 	etc/init.d/mp716-admin etc/init.d/mp716-vpn etc/init.d/mp716-timefix
 	etc/rc.d/S18mp716-admin etc/rc.d/S59mp716-vpn etc/rc.d/S99mp716-timefix
+	etc/uci-defaults/94-mp716-port-map-defaults etc/uci-defaults/97-mp716-wireless-defaults
 	etc/uci-defaults/98-mp716-admin etc/mp716-build.version etc/mp716-build.date
+	usr/share/mp716/port-map-chassis-default.json usr/share/mp716/mp716-port-map-defaults.sh
 	usr/share/mp716/build-meta.uc
 	lib/upgrade/keep.d/mp716-admin usr/share/rpcd/acl.d/mp716.json
 	usr/sbin/mp716-package-verify usr/sbin/mp716-upgraded usr/sbin/mp716-dhcp-discover

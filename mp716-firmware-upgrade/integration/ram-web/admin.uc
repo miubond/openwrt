@@ -348,7 +348,9 @@ function wifi_config(c) {
 function wifi_status(bus, c, client_count) {
 	let cfg=wifi_config(c),ifaces=wifi_interfaces(bus), dev=ifaces[0]?.ifname;
 	let clients = type(client_count) == 'int' ? client_count : length(stations(bus,c));
-	return {iface:dev||'',band:'2.4GHz',enabled:any(ifaces,(i)=>i.up),ssid:cfg.ssid,channel:cfg.channel=='auto'?0:cfg.channel,autoChannel:cfg.channel=='auto',txPower:cfg.txPower,clients:clients,security:cfg.security,mode:cfg.mode,mac:dev?trim(readfile('/sys/class/net/'+dev+'/address')||''):''};
+	// 首页「无线状态」对齐原厂 wifi_admin（UCI），不等同于 ubus radio pending 瞬间的 up=false。
+	let enabled = cfg.enabled || any(ifaces, (i) => i.up);
+	return {iface:dev||'',band:'2.4GHz',enabled:enabled,ssid:cfg.ssid,channel:cfg.channel=='auto'?0:cfg.channel,autoChannel:cfg.channel=='auto',txPower:cfg.txPower,clients:clients,security:cfg.security,mode:cfg.mode,mac:dev?trim(readfile('/sys/class/net/'+dev+'/address')||''):''};
 };
 
 function home_dashboard(bus, c) {
@@ -365,6 +367,9 @@ function home_dashboard_cached(bus, c) {
 	if (hit != null) {
 		// WAN 速率依赖两次采样，整页缓存会冻结 ratesReady/0bps；命中缓存时仍刷新 WAN。
 		hit.wan = iface_status(bus, c, 'wan');
+		let client_list = hosts_cached(bus, c);
+		let wireless_clients = length(filter(client_list, (row) => row.wired == false));
+		hit.wifi = wifi_status(bus, c, wireless_clients);
 		return hit;
 	}
 	let data = home_dashboard(bus, c);

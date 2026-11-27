@@ -1,0 +1,3 @@
+#!/bin/sh
+/bin/sh /usr/share/mp716/mp716-port-map-defaults.sh
+exit 0

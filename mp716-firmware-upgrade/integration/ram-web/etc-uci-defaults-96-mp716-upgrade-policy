@@ -1,8 +1,16 @@
 #!/bin/sh
-# 首次启动写入升级策略（可被出厂 overlay 或 mp716-open-production-gate.sh 覆盖）
+# 首次启动 / 恢复出厂后恢复生产升级门（squashfs 可能仍为 TEST 的 closed）
+. /lib/functions.sh
+[ "$(board_name)" = yunxm,mp716 ] || exit 0
+mkdir -p /etc/mp716-upgrade
 if [ ! -f /etc/mp716-upgrade/upgrade-policy ]; then
-	mkdir -p /etc/mp716-upgrade
 	echo production > /etc/mp716-upgrade/upgrade-policy
-	chmod 644 /etc/mp716-upgrade/upgrade-policy
+fi
+if [ "$(cat /etc/mp716-upgrade/upgrade-policy 2>/dev/null)" = production ]; then
+	printf '%s\n' serial-recovery-verified > /etc/mp716-upgrade/flash-gate
+	printf '%s\n' confirmed > /etc/mp716-upgrade/platform
+	chmod 644 /etc/mp716-upgrade/upgrade-policy \
+		/etc/mp716-upgrade/flash-gate /etc/mp716-upgrade/platform
+	rm -f /etc/mp716/allow-flash-upgrade
 fi
 exit 0

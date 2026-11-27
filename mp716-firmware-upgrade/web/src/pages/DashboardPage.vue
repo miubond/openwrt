@@ -384,7 +384,7 @@ onUnmounted(() => {
                 <dt>{{ t('dashboard.associated') }}</dt>
                 <dd>
                   <button class="link-btn clients-link" type="button" @click="router.push({ name: 'devices' })">
-                    {{ t('dashboard.clientsView', { n: staListCount }) }}
+                    {{ t('dashboard.clientsView', { n: wifi.clients ?? 0 }) }}
                   </button>
                 </dd>
               </div>

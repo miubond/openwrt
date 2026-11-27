@@ -150,6 +150,15 @@ def stage(
     init.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(__file__).with_name("mp716-admin.init"), init)
     init.chmod(0o755)
+    for name in ("port-map-chassis-default.json", "mp716-port-map-defaults.sh"):
+        shutil.copyfile(Path(__file__).with_name(name), gateway.with_name(name))
+        gateway.with_name(name).chmod(0o644 if name.endswith(".json") else 0o755)
+    port_map_uci = root / "etc/uci-defaults/94-mp716-port-map-defaults"
+    shutil.copyfile(Path(__file__).with_name("94-mp716-port-map-defaults"), port_map_uci)
+    port_map_uci.chmod(0o755)
+    wireless_defaults = root / "etc/uci-defaults/97-mp716-wireless-defaults"
+    shutil.copyfile(Path(__file__).with_name("97-mp716-wireless-defaults"), wireless_defaults)
+    wireless_defaults.chmod(0o755)
     defaults = root / "etc/uci-defaults/98-mp716-admin"
     defaults.parent.mkdir(parents=True, exist_ok=True)
     defaults.write_text("#!/bin/sh\n/etc/init.d/mp716-admin enable\n/etc/init.d/mp716-vpn enable\n/etc/init.d/mp716-timefix enable\n/etc/init.d/mp716-admin start\n/etc/init.d/mp716-vpn start\n/etc/init.d/mp716-timefix start\n", encoding="ascii")

@@ -7,11 +7,18 @@ const FIRST_PROBE_MS = 10_000
 const PROBE_EVERY_MS = 5_000
 const MIN_BACK_MS = 120_000
 const GIVE_UP_MS = 480_000
+/** 固件刷写：停服解压+sysupgrade，管理面常超过 15 分钟 */
+const FIRMWARE_MIN_BACK_MS = 180_000
+const FIRMWARE_GIVE_UP_MS = 900_000
 
 export type RebootWaitPhase = 'idle' | 'down' | 'back' | 'timeout'
 
+export type RebootWaitOptions = { firmware?: boolean }
+
 /** 刷写/重启后探测设备恢复（与 RebootOnlyPage 一致） */
-export function useDeviceRebootWait() {
+export function useDeviceRebootWait(opts?: RebootWaitOptions) {
+  const minBackMs = opts?.firmware ? FIRMWARE_MIN_BACK_MS : MIN_BACK_MS
+  const giveUpMs = opts?.firmware ? FIRMWARE_GIVE_UP_MS : GIVE_UP_MS
   const router = useRouter()
   const auth = useAuthStore()
   const phase = ref<RebootWaitPhase>('idle')
@@ -47,14 +54,14 @@ export function useDeviceRebootWait() {
     }
     if (stopped) return
     if (!reachable) seenDown = true
-    if (reachable && (seenDown || elapsed >= MIN_BACK_MS)) {
+    if (reachable && (seenDown || elapsed >= minBackMs)) {
       phase.value = 'back'
       clearTimers()
       auth.setSession(null)
       await router.replace({ name: 'login' })
       return
     }
-    if (elapsed >= GIVE_UP_MS) {
+    if (elapsed >= giveUpMs) {
       phase.value = 'timeout'
       clearTimers()
       return

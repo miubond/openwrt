@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import UiCard from '@/components/UiCard.vue'
@@ -12,7 +12,10 @@ import { useToastStore } from '@/stores/toast'
 const { t } = useI18n()
 const route = useRoute()
 const toast = useToastStore()
-const { phase, waiting, elapsedText, startWaiting, goLogin } = useDeviceRebootWait()
+const firmwareWait = computed(() => route.query.firmware === '1')
+const { phase, waiting, elapsedText, startWaiting, goLogin } = useDeviceRebootWait({
+  firmware: route.query.firmware === '1',
+})
 const rebootOpen = ref(false)
 const rebooting = ref(false)
 
@@ -50,7 +53,9 @@ onMounted(() => {
           {{ phase === 'back' ? t('sysReboot.waitBack') : phase === 'timeout' ? t('sysReboot.waitTimeout') : t('sysReboot.waitDown') }}
         </p>
         <p class="wait-elapsed">{{ t('sysReboot.waitElapsed', { time: elapsedText }) }}</p>
-        <p class="wait-hint">{{ t('sysReboot.waitHint') }}</p>
+        <p class="wait-hint">
+          {{ firmwareWait ? t('sysReboot.waitFirmwareHint') : t('sysReboot.waitHint') }}
+        </p>
         <UiButton v-if="phase === 'timeout'" variant="secondary" @click="goLogin">
           {{ t('sysReboot.waitGoLogin') }}
         </UiButton>

@@ -3,6 +3,7 @@ START=18
 STOP=90
 USE_PROCD=1
 start_service() {
+	/bin/sh /usr/share/mp716/mp716-port-map-defaults.sh 2>/dev/null
 	/bin/sh /usr/share/mp716/mp716-ucode-compile.sh
 	if [ "$action" = boot ]; then
 		MP716_BOOT=1 /usr/bin/ucode /usr/share/mp716/admin-tick.uc
