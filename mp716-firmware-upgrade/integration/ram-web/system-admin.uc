@@ -27,7 +27,7 @@ export function system_action_status() {
 		systemAction: result ? { id: result[1], state: result[2] } : null,
 		factoryResetMarker: !!stat(RESET_MARKER),
 	};
-}
+};
 
 function start_system_action(reset) {
 	let previous = stat(ACTION_FILE);
@@ -60,7 +60,7 @@ export function parse_log_limit(value) {
 	if (type(value) != 'string' || !match(value, /^[1-9][0-9]{0,2}$/) || int(value) > 500)
 		return null;
 	return int(value);
-}
+};
 
 function read_system_logs(c, requested_limit) {
 	let limit = parse_log_limit(requested_limit);

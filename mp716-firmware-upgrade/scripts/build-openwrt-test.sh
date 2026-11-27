@@ -330,6 +330,10 @@ if [ "$serial_rx" -eq 1 ]; then
 		# CPIO implementations may prefix relative entries with ./.
 		sed 's@^\./@@' "$output/initramfs-files.txt" > "$output/native-rootfs-files.txt"
 		check_native_rootfs "$output/native-rootfs-files.txt" ''
+		if [ "${MP716_REQUIRE_UCODE_COMPILE:-0}" = 1 ]; then
+			bash "$project/scripts/check-target-ucode.sh" initramfs staging_dir/host/bin/cpio "${archives[0]}" \
+				2>&1 | tee "$output/ucode-compile.log"
+		fi
 	fi
 	if [ -n "$web_input" ] && [ -n "$test_public_key" ]; then
 		staging_dir/host/bin/cpio -i --to-stdout 'etc/mp716-upgrade/upgrade.pub' './etc/mp716-upgrade/upgrade.pub' \
@@ -383,6 +387,10 @@ entries=(usr/sbin/mp716-upgraded usr/sbin/mp716-sysupgrade etc/rc.d/S95mp716-sys
 grep -Eq '^squashfs-root/lib/modules/[^/]+/mt7603e\.ko(\.(xz|zst|gz))?$' "$output/rootfs-files.txt"
 if [ "$lan_candidate" -eq 1 ]; then
 	check_native_rootfs "$output/rootfs-files.txt" 'squashfs-root/'
+	if [ "${MP716_REQUIRE_UCODE_COMPILE:-0}" = 1 ]; then
+		bash "$project/scripts/check-target-ucode.sh" sysupgrade "$unsquashfs" "${sysupgrade[0]}" "$offset" \
+			2>&1 | tee "$output/ucode-compile.log"
+	fi
 	if [ -n "$test_public_key" ]; then
 		entries+=(etc/mp716-upgrade/upgrade.pub)
 		"$unsquashfs" -offset "$offset" -cat "${sysupgrade[0]}" etc/mp716-upgrade/upgrade.pub > "$output/sysupgrade-upgrade.pub"

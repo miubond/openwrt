@@ -40,7 +40,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential bison flex gawk gcc-multilib g++-multilib gettext \
             libelf-dev libncurses-dev libssl-dev libjson-c-dev pkg-config python3-cryptography python3-setuptools \
-            rsync swig unzip zlib1g-dev
+            qemu-user-static rsync swig unzip zlib1g-dev
+          command -v qemu-mipsel-static
           python3 -c 'import cryptography'
           printf 'JOBS=%s\n' "$(nproc)" >> "$GITHUB_ENV"
 
@@ -51,7 +52,9 @@ jobs:
           python3 scripts/build-jsonfilter-host.py 2>&1 | tee build/ci-logs/jsonfilter-build.log
           export JSONFILTER="$PWD/build/host-tools/jsonfilter"
           export MP716_REQUIRE_JSONFILTER=1
-          bash -n scripts/build-ci-images.sh scripts/build-openwrt-cached.sh scripts/build-openwrt-test.sh scripts/package-ci-test.sh
+          for script in scripts/{build-ci-images,build-openwrt-cached,build-openwrt-test,check-target-ucode,package-ci-test}.sh; do
+            bash -n "$script"
+          done
           python3 scripts/build_host.py 2>&1 | tee build/ci-logs/host-build.log
           ./build/host/test_device build/host/unit 2>&1 | tee build/ci-logs/fake-mtd.log
           python3 tests/run_all.py 2>&1 | tee build/ci-logs/host-tests.log
@@ -82,6 +85,8 @@ jobs:
 
       - name: Build and verify LAN and RAM images
         id: images
+        env:
+          MP716_REQUIRE_UCODE_COMPILE: '1'
         run: bash scripts/build-ci-images.sh
 
       - name: Check independently verified toolchain cache
@@ -171,6 +176,8 @@ jobs:
             echo
             grep -hE '^(MP716 toolchain cache |LAN sysupgrade elapsed:|RAM initramfs elapsed:)' \
               build/ci-logs/sysupgrade.log build/ci-logs/initramfs.log | sed 's/^/- /'
+            grep -h '^ucode compile passed' \
+              build/target-images/ucode-compile.log build/ram-images/ucode-compile.log | sed 's/^/- /'
             echo
             printf -- '- [Versioned release](%s)\n- [Signed test container](%s)\n' "$RELEASE_URL" "$TEST_URL"
           } >> "$GITHUB_STEP_SUMMARY"

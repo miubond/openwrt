@@ -68,7 +68,7 @@ export function firmware_boot_result() {
 		if (m) result[m[1]] = m[2];
 	}
 	return { state: result.state || '', expectedVersion: result.expected_custom_firmware || '' };
-}
+};
 
 function mem_available_kb() {
 	let child = popen('awk \'/^MemAvailable:/ {print $2}\' /proc/meminfo 2>/dev/null', 'r');
@@ -197,11 +197,11 @@ export function with_job_lock(callback) {
 	catch (e) { lock.close(); die(e); }
 	lock.close();
 	return result;
-}
+};
 
 export function job_can_apply(job) {
 	return job?.phase == 'verified' && time() - job.created_at < VERIFIED_TTL;
-}
+};
 
 function cleanup_job(job) {
 	if (!job) return;
