@@ -318,7 +318,7 @@ export class DeviceRouterAdapter implements RouterAPI {
     return this.call<VpnOnlineUser[]>('vpn/online')
   }
   disconnectVpnUser(pid: string) {
-    return this.call<null>('vpn/online/disconnect', { pid })
+    return this.call<{ disconnected: boolean } | null>('vpn/online/disconnect', { pid })
   }
   getOpenVpn() {
     return this.call<OpenVpnConfig>('vpn/openvpn')
@@ -454,21 +454,25 @@ export class DeviceRouterAdapter implements RouterAPI {
   getFirmwareInfo() {
     return this.call<FirmwareInfo>('system/firmware')
   }
-  async uploadFirmware(
+  uploadFirmware(file: Blob, options?: { keepSettings?: boolean; flash?: boolean }) {
+    return this.uploadFirmwarePackage('system/firmware-package/verify', file, options)
+  }
+  private async uploadFirmwarePackage(
+    endpoint: string,
     file: Blob,
     options?: { keepSettings?: boolean; flash?: boolean },
   ): Promise<ApiResponse<ConfigApplyResult>> {
     const flash = options?.flash === true
     const keep = options?.keepSettings !== false
     const token = this.getToken()
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 180_000)
     try {
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 180_000)
       const params = new URLSearchParams()
       if (flash) params.set('mode', 'flash')
       if (!keep) params.set('keep', '0')
       const query = params.toString()
-      const response = await fetch(this.path('system/firmware-package/verify') + (query ? `?${query}` : ''), {
+      const response = await fetch(this.path(endpoint) + (query ? `?${query}` : ''), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/octet-stream',
@@ -480,9 +484,9 @@ export class DeviceRouterAdapter implements RouterAPI {
         credentials: 'same-origin',
         signal: controller.signal,
       })
-      clearTimeout(timer)
       const result = (await response.json()) as {
         ok?: boolean
+        code?: string
         message?: string
         details?: unknown
         data?: unknown
@@ -494,7 +498,9 @@ export class DeviceRouterAdapter implements RouterAPI {
             ? 'UNAUTHORIZED'
             : response.status === 403
               ? 'FORBIDDEN'
-              : 'VALIDATION'
+              : response.status === 409 || result.code === 'DEVICE_BUSY'
+                ? 'DEVICE_BUSY'
+                : result.code === 'LOW_MEMORY' ? 'LOW_MEMORY' : 'VALIDATION'
         if (code === 'UNAUTHORIZED') notifySessionInvalid()
         return failure(
           code,
@@ -544,58 +550,40 @@ export class DeviceRouterAdapter implements RouterAPI {
         ts: Date.now(),
       }
     } catch {
-      if (flash) {
-        return {
-          ok: true,
-          data: {
-            accepted: true,
-            rollbackSec: 0,
-            validated: true,
-            flashWrite: true,
-            message: '固件可能正在刷写，设备将重启；请稍后重新登录',
-          },
-          ts: Date.now(),
-        }
-      }
-      return failure('NETWORK', '无法连接固件校验接口')
+      return failure('NETWORK', flash ? '无法确认刷写是否已提交，请查询升级任务' : '无法连接固件校验接口')
+    } finally {
+      clearTimeout(timer)
     }
   }
   getFirmwareV2Info() {
     return this.call<FirmwareV2EngineInfo>('system/firmware-v2/info')
   }
   async uploadFirmwareV2(file: Blob): Promise<ApiResponse<FirmwareV2UploadResult>> {
-    const token = this.getToken()
-    const res = await fetch(this.path('system/firmware-v2/upload'), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: file,
-      credentials: 'same-origin',
-    })
-    const body = (await res.json()) as { ok?: boolean; data?: Record<string, unknown>; message?: string }
-    if (!res.ok || body.ok !== true) {
-      return failure('VALIDATION', body.message || '固件上传失败', body.data)
-    }
-    const raw = body.data || {}
-    const report = readVerificationReport(raw)
+    const result = await this.uploadFirmwarePackage('system/firmware-v2/upload', file)
+    if (!result.ok) return result
+    const { validated, flashWrite, verificationReport, jobId, message } = result.data
     return {
       ok: true,
       data: {
-        validated: !!report?.ok,
-        signed: !!report?.signature_checked,
-        flashWrite: false,
-        dryRunOnly: !report?.flash_write,
-        jobId: String(raw.job_id || raw.taskId || ''),
-        taskId: String(raw.taskId || raw.job_id || ''),
-        message: '固件已校验并暂存',
+        validated: !!validated,
+        signed: !!verificationReport?.signature_checked,
+        flashWrite: !!flashWrite,
+        dryRunOnly: !flashWrite,
+        jobId,
+        taskId: jobId,
+        message,
       },
       ts: Date.now(),
     }
   }
-  getFirmwareV2Status() {
-    return this.call<FirmwareV2Status>('system/firmware-v2/status')
+  getFirmwareV2Status(jobId?: string) {
+    const query = jobId ? `?job_id=${encodeURIComponent(jobId)}` : ''
+    return requestJson<FirmwareV2Status>(this.path('system/firmware-v2/status') + query, {
+      method: 'GET',
+      token: this.getToken(),
+      timeoutMs: 5000,
+      suppressUnauthorized: true,
+    })
   }
   async applyFirmwareV2(params?: {
     confirm?: boolean

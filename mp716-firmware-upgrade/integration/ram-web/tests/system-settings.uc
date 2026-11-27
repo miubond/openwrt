@@ -2,7 +2,7 @@
 // replaced there, including date -s, passwd, firstboot and reboot. Do not run
 // this file against installed modules or real /etc/config.
 import { route_system, validate_time, validate_schedule, validate_browser_time,
-	validate_password_change, parse_localtime, tick_system, schedule_due } from '../system-admin.uc';
+	validate_password_change, parse_localtime, tick_system, schedule_due, parse_log_limit } from '../system-admin.uc';
 import { get_task } from '../admin-state.uc';
 import { cursor } from 'uci';
 import { readfile, writefile, mkdir, chmod, unlink } from 'fs';
@@ -17,6 +17,12 @@ assert(index(state,'MP716_TEST_COMMAND_STUB')>=0,'Refusing to run without the co
 let owner='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', passed=[];
 function rejects(name,fn) {let failed=false;try{fn();}catch(e){failed=true;}assert(failed,name);push(passed,name);}
 function success(name) {push(passed,name);}
+
+assert(parse_log_limit(null)==100 && parse_log_limit('1')==1 &&
+	parse_log_limit('37')==37 && parse_log_limit('500')==500,'Valid log limits were not preserved');
+for (let bad in ['', '0', '501', '3.0', '3%20', '3;reboot'])
+	assert(parse_log_limit(bad)==null,'Invalid log limit accepted');
+success('log_limit_defaults_bounds_and_validation');
 
 assert(validate_browser_time('2028-02-29 23:59:59')=='2028-02-29 23:59:59','Valid leap date rejected');success('browser_clock_valid_leap_day');
 rejects('browser_clock_non_leap_day',()=>validate_browser_time('2027-02-29 12:00:00'));

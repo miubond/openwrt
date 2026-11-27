@@ -104,7 +104,7 @@ const data = {
   'network/wan/config': ['WanConfig', 'WAN 配置'], 'network/wan/status': ['WanStatus', 'WAN 状态与流量采样'],
   'system/capabilities': ['NativeCapabilities', '设备接口和服务能力'], 'system/config-task/:id': ['ConfigTaskStatus', '配置任务状态'],
   'system/device': ['DeviceInfo', '设备资料'], 'system/firmware': ['FirmwareInfo', '固件版本与仅校验能力'],
-  'system/info': ['SystemInfo', '系统信息'], 'system/logs': ['SystemLogState', '日志开关和最近 200 行日志'],
+  'system/info': ['SystemInfo', '系统信息'], 'system/logs': ['SystemLogState', '日志开关和指定条数的最近日志'],
   'system/ping': [object({ latencyMs: { type: 'number', const: 0 } }), '检查会话及 API 存活；不探测外网'],
   'system/sche-reboot': ['ScheRebootConfig', '定时重启配置'], 'system/status': ['SystemStatus', '运行状态'],
   'system/time': ['SystemTimeConfig', '时区与 NTP 配置'], 'vpn/online': [array('VpnOnlineUser'), 'VPN 在线会话'],
@@ -135,7 +135,8 @@ Object.assign(bodies, {
   'wizard/complete': object(), 'wizard/quick': object({ wan: ref('QuickSettingWan'), wifi: ref('QuickSettingWifi') }),
 })
 const nullResponse = { type: 'null' }
-const postData = Object.fromEntries(['auth/logout', 'hosts/device-acl', 'hosts/disconnect', 'system/logs/clear', 'system/password', 'system/time/browser', 'tools/diagnostic/start', 'tools/diagnostic/stop', 'vpn/online/disconnect', 'wizard/complete'].map(path => [path, nullResponse]))
+const postData = Object.fromEntries(['auth/logout', 'hosts/device-acl', 'hosts/disconnect', 'system/logs/clear', 'system/password', 'system/time/browser', 'tools/diagnostic/start', 'tools/diagnostic/stop', 'wizard/complete'].map(path => [path, nullResponse]))
+postData['vpn/online/disconnect'] = object({ disconnected: bool }, ['disconnected'])
 Object.assign(postData, { 'auth/login': ref('LoginResult'), 'system/backup/download': ref('BackupDownload'), 'system/config-task/cancel': ref('ConfigTaskStatus'), 'system/config-task/confirm': ref('ConfigTaskStatus'), 'system/firmware-package/verify': ref('FirmwareVerificationReport'), 'tools/diagnostic': ref('DiagnosticResult'), 'tools/diagnostic/poll': ref('DiagnosticPoll'), 'wizard/quick': ref('QuickSettingApplyResult') })
 const specialDescriptions = {
   'auth/login': '登录并创建 rpcd 会话', 'auth/logout': '退出当前会话', 'hosts/device-acl': '立即加入/解除终端禁止上网列表；无配置任务倒计时',
@@ -167,7 +168,9 @@ for (const entry of routes) {
   for (const [status, description] of [['400','Validation failed; firmware verifier details may still show signature_checked=true.'],['401','Missing/expired session; log in again.'],['404','Unknown or unavailable interface.'],['409','Device busy; finish the pending configuration task.'],['500','Internal service failure.'],['503','Session service unavailable.']]) operation.responses[status] = { description, content: { 'application/json': { schema: ref('NativeError') } } }
   if (['auth/prelogin','auth/login'].includes(path)) operation.security = []
   if (path.includes(':id')) operation.parameters = [{ name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[a-f0-9]{32}$' } }]
-  if (path === 'system/logs') operation.description = 'Current native implementation always reads the latest 200 lines; the adapter limit query is not implemented.'
+  if (read && path === 'system/logs') operation.parameters = [
+    { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 500, default: 100 } },
+  ]
   if (!read) operation.requestBody = { required: true, content: path === 'system/firmware-package/verify'
     ? { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } }
     : { 'application/json': { schema: bodies[path] } } }

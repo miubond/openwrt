@@ -8,6 +8,7 @@ export interface RequestOptions {
   body?: unknown
   token?: string | null
   timeoutMs?: number
+  suppressUnauthorized?: boolean
 }
 
 function failure(
@@ -52,7 +53,7 @@ export async function requestJson<T>(
     clearTimeout(timer)
 
     if (res.status === 401) {
-      if (!url.includes('/auth/login')) notifyUnauthorized()
+      if (!options.suppressUnauthorized && !url.includes('/auth/login')) notifyUnauthorized()
       return failure('UNAUTHORIZED', '会话无效或已过期，请重新登录', undefined, 'errors.unauthorized')
     }
     if (res.status === 403) {
@@ -83,7 +84,8 @@ export async function requestJson<T>(
 
     const payload = (await res.json()) as ApiResponse<T>
     if (typeof payload === 'object' && payload !== null && 'ok' in payload) {
-      if (payload.ok === false && (payload as ApiFailure).code === 'UNAUTHORIZED' && !url.includes('/auth/login')) {
+      if (!options.suppressUnauthorized && payload.ok === false &&
+          (payload as ApiFailure).code === 'UNAUTHORIZED' && !url.includes('/auth/login')) {
         notifyUnauthorized()
       }
       return payload

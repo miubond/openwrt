@@ -11,6 +11,12 @@ const router = createRouter({
       meta: { public: true, title: '登录' },
     },
     {
+      path: '/system-action-result',
+      name: 'system-action-result',
+      component: () => import('@/pages/system/RebootOnlyPage.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/wizard',
       name: 'wizard',
       component: () => import('@/pages/WizardPage.vue'),

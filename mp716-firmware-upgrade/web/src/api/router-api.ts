@@ -139,7 +139,7 @@ export interface RouterAPI {
   updateL2tpClient(config: L2tpClientConfig): Promise<ApiResponse<ConfigApplyResult>>
 
   getVpnStatus(): Promise<ApiResponse<VpnOnlineUser[]>>
-  disconnectVpnUser(pid: string): Promise<ApiResponse<null>>
+  disconnectVpnUser(pid: string): Promise<ApiResponse<{ disconnected: boolean } | null>>
 
   getOpenVpn(): Promise<ApiResponse<OpenVpnConfig>>
   updateOpenVpn(config: OpenVpnConfig): Promise<ApiResponse<ConfigApplyResult>>
@@ -207,7 +207,7 @@ export interface RouterAPI {
 
   getFirmwareV2Info(): Promise<ApiResponse<FirmwareV2EngineInfo>>
   uploadFirmwareV2(file: Blob): Promise<ApiResponse<FirmwareV2UploadResult>>
-  getFirmwareV2Status(): Promise<ApiResponse<FirmwareV2Status>>
+  getFirmwareV2Status(jobId?: string): Promise<ApiResponse<FirmwareV2Status>>
   applyFirmwareV2(params?: {
     confirm?: boolean
     jobId?: string

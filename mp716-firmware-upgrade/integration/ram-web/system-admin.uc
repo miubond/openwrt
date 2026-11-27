@@ -6,6 +6,8 @@ import { validate_openvpn } from '/usr/share/mp716/vpn-config.uc';
 import { command, store, load, acquire, release, expire, pending, blocking_pending, dismiss_failed_pending, begin, applied, rollback, uptime, ensure_dirs } from '/usr/share/mp716/admin-state.uc';
 
 const ADMIN_RUNTIME = '/tmp/mp716-admin';
+const ACTION_FILE = ADMIN_RUNTIME + '/system-action';
+const RESET_MARKER = '/etc/mp716-admin/factory-reset-marker';
 
 /**
  * 在 CGI 里用 `(...) &` 起的后台任务会随 CGI 退出被 SIGHUP/进程组清理杀掉；
@@ -18,13 +20,55 @@ function detached(name, body) {
 	chmod(script, 0700);
 	return command('/sbin/start-stop-daemon -S -b -x ' + script).code == 0;
 }
-function request_reboot() {
-	if (detached('reboot-request', 'sync\nsleep 3\nexec /sbin/reboot\n')) return true;
-	return command('/sbin/reboot >/dev/null 2>&1').code == 0;
+export function system_action_status() {
+	let row = trim(readfile(ACTION_FILE) || '');
+	let result = match(row, /^([0-9a-f-]{36}) (pending|failed)$/);
+	return {
+		systemAction: result ? { id: result[1], state: result[2] } : null,
+		factoryResetMarker: !!stat(RESET_MARKER),
+	};
 }
-function request_factory_reset() {
-	if (detached('factory-reset', 'sync\nsleep 3\n/sbin/firstboot -y && exec /sbin/reboot\n')) return true;
-	return command('/sbin/firstboot -y && /sbin/reboot >/dev/null 2>&1').code == 0;
+
+function start_system_action(reset) {
+	let previous = stat(ACTION_FILE);
+	if (system_action_status().systemAction?.state == 'pending' && previous && time() - previous.mtime < 300)
+		return { error: 'DEVICE_BUSY', message: '已有重启或恢复出厂请求正在执行' };
+	let id = trim(readfile('/proc/sys/kernel/random/uuid') || '');
+	let boot = trim(readfile('/proc/sys/kernel/random/boot_id') || '');
+	if (!match(id, /^[0-9a-f-]{36}$/) || !match(boot, /^[0-9a-f-]{36}$/))
+		die('无法创建可核验的重启任务');
+	ensure_dirs();
+	if (reset) {
+		if (!stat('/overlay/upper')) die('未发现可恢复出厂的持久配置分区');
+		if (writefile(RESET_MARKER, id + '\n') == null) die('无法保存恢复确认标记');
+	}
+	if (writefile(ACTION_FILE, id + ' pending\n') == null) die('无法保存重启任务');
+	let fail = "printf '%s\\n' '" + id + " failed' > '" + ACTION_FILE + "'\n";
+	let script = 'sync\nsleep 3\n';
+	if (reset)
+		script += 'if ! /sbin/firstboot -y; then\n' + fail + 'exit 1\nfi\n';
+	script += 'if ! /sbin/reboot; then\n' + fail + 'exit 1\nfi\n';
+	if (!detached('system-action', script)) {
+		unlink(ACTION_FILE);
+		die('无法提交重启任务');
+	}
+	return { data: { accepted: true, rollbackSec: 0, systemAction: { id: id, boot: boot } } };
+}
+
+export function parse_log_limit(value) {
+	if (value == null) return 100;
+	if (type(value) != 'string' || !match(value, /^[1-9][0-9]{0,2}$/) || int(value) > 500)
+		return null;
+	return int(value);
+}
+
+function read_system_logs(c, requested_limit) {
+	let limit = parse_log_limit(requested_limit);
+	if (limit == null) return {error:'VALIDATION',message:'日志条数须为 1–500 的整数'};
+	if (c.get('mp716_system','main','logging') == '0') return {data:{enabled:false,content:''}};
+	let logs = command('/sbin/logread -l ' + limit);
+	if (logs.code != 0) return {error:'INTERNAL',message:'无法读取系统日志'};
+	return {data:{enabled:true,content:logs.output}};
 }
 
 export const CONFIGS=['network','wireless','dhcp','system','firewall','upnpd','mp716_system','mp716_vpn','pptpd','xl2tp','ipsec','openvpn'];
@@ -321,7 +365,7 @@ export function route_system(bus,method,path,body,owner) {
 	if(method=='GET') {
 		if(path=='system/time')return {data:time_config(c)};
 		if(path=='system/sche-reboot')return {data:schedule(c)};
-		if(path=='system/logs') {let enabled=c.get('mp716_system','main','logging')!='0';return {data:{enabled:enabled,content:enabled?command('/sbin/logread -l 100').output:''}};}
+		if(path=='system/logs') return read_system_logs(c, body?.limit);
 		return {error:'VALIDATION',message:'此操作需要 POST'};
 	}
 	if(method!='POST')return {error:'VALIDATION',message:'无效请求方式'};
@@ -390,13 +434,11 @@ export function route_system(bus,method,path,body,owner) {
 			if(command('/etc/init.d/log '+action+' >/dev/null 2>&1').code!=0)die('无法清空日志');return {data:null};
 		}
 		if(path=='system/reboot') {
-			if (!request_reboot()) die('无法提交重启请求');
-			return {data:{accepted:true,rollbackSec:0}};
+			return start_system_action(false);
 		}
 		if(path=='system/factory-reset') {
 			if(body.confirmToken!='RESET')die('请确认恢复出厂设置');
-			if (!request_factory_reset()) die('无法提交恢复出厂请求');
-			return {data:{accepted:true,rollbackSec:0}};
+			return start_system_action(true);
 		}
 	})();}catch(e){result={error:'VALIDATION',message:e.message || sprintf('%s', e)};}
 	release();return result;

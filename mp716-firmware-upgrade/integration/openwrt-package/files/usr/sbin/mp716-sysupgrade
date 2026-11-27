@@ -152,7 +152,10 @@ case "$cmd" in
 		# until that CGI has exited, then extracts and flashes.
 		if [ -z "${MP716_TEST_ROOT:-}" ] && [ -z "${MP716_APPLY_CHILD:-}" ]; then
 			stable=/tmp/mp716-firmware-upload-apply.mp716upd
-			mv -f "$file" "$stable"
+			if ! mv -f "$file" "$stable"; then
+				printf '%s\n' '{"ok":false,"error":"stage_container","flash_write":false}'
+				exit 1
+			fi
 			if [ "$keep" -eq 1 ]; then
 				MP716_APPLY_CHILD=1 MP716_GATE_FILE="$GATE_FILE" MP716_PLATFORM_FILE="$PLATFORM_FILE" \
 					setsid "$0" apply "$stable" --keep-config >/tmp/sysupgrade-run.log 2>&1 </dev/null &
@@ -199,7 +202,10 @@ case "$cmd" in
 			apply_failed "{\"ok\":false,\"error\":\"low_memory\",\"flash_write\":false,\"detail\":\"MemAvailable ${_avail_kb}kB < need ${_need_kb}kB\"}"
 			exit 25
 		fi
-		stage=$(mktemp -d /tmp/mp716-sysupgrade.XXXXXX)
+		if ! stage=$(mktemp -d /tmp/mp716-sysupgrade.XXXXXX); then
+			apply_failed '{"ok":false,"error":"stage_directory","flash_write":false}'
+			exit 1
+		fi
 		payload="$stage/sysupgrade.bin"
 		trap 'rm -rf -- "$stage"' EXIT
 		trap 'exit 1' HUP INT TERM
@@ -233,9 +239,27 @@ case "$cmd" in
 		# The web request is still resident. Packing and flashing in this process
 		# reboots a 64MB board without writing the image. Exit so uhttpd can
 		# answer, then flash once that memory has been released.
-		trap - EXIT HUP INT TERM
-		cat > "$stage/run.sh" << EOF
+		if ! cat > "$stage/run.sh" << EOF
 #!/bin/sh
+set -eu
+step=prepare_config
+finish() {
+	rc=\$?
+	[ "\$rc" -ne 0 ] || return 0
+	mkdir -p '$(dirname "$RESULT_FILE")' 2>/dev/null || true
+	printf '{"ok":false,"error":"%s","detail":"%s exit %s"}\n' "\$step" "\$step" "\$rc" > '$RESULT_FILE' || true
+	cd /
+	rm -rf '$stage'
+	[ -n '${MP716_TEST_ROOT:-}' ] || {
+		[ -z '${old_min:-}' ] || (echo '${old_min:-}' > /proc/sys/vm/min_free_kbytes) 2>/dev/null || true
+		for s in uhttpd dnsmasq mp716-admin log sysntpd odhcpd urngd wpad cron miniupnpd mp716-vpn; do
+			/etc/init.d/\$s start >/dev/null 2>&1 || true
+		done
+		wifi up >/dev/null 2>&1 || true
+	}
+}
+trap finish EXIT
+trap 'exit 1' HUP INT TERM
 sleep $([ -n "${MP716_TEST_ROOT:-}" ] && printf '%s' 0 || printf '%s' 3)
 for s in mp716-admin uhttpd dnsmasq miniupnpd cron; do
 	/etc/init.d/\$s stop >/dev/null 2>&1 || true
@@ -263,22 +287,18 @@ if [ '$keep' -eq 1 ]; then
 else
 	tar -czf '$archive' -C '$root' ./etc/mp716-upgrade/sysupgrade.pending || exit 1
 fi
+step=sysupgrade
 sysupgrade -f '$archive' $([ "$keep" -eq 0 ] && printf '%s' '-n ') '$payload'
-rc=\$?
-[ "\$rc" -ne 0 ] || exit 0
-mkdir -p '$(dirname "$RESULT_FILE")'
-printf '{"ok":false,"error":"sysupgrade","flash_write":false,"detail":"sysupgrade exit %s"}\n' "\$rc" > '$RESULT_FILE'
-rm -rf '$root' '$archive' '$payload'
-[ -n '${MP716_TEST_ROOT:-}' ] || {
-	[ -z '${old_min:-}' ] || echo '${old_min:-}' > /proc/sys/vm/min_free_kbytes
-	for s in uhttpd dnsmasq mp716-admin log sysntpd odhcpd urngd wpad cron miniupnpd mp716-vpn; do
-		/etc/init.d/\$s start >/dev/null 2>&1 || true
-	done
-	wifi up >/dev/null 2>&1 || true
-}
-exit \$rc
 EOF
-		chmod 755 "$stage/run.sh"
+		then
+			apply_failed '{"ok":false,"error":"stage_worker","flash_write":false}'
+			exit 1
+		fi
+		if ! chmod 755 "$stage/run.sh"; then
+			apply_failed '{"ok":false,"error":"stage_worker","flash_write":false}'
+			exit 1
+		fi
+		trap - EXIT HUP INT TERM
 		# The adapter test has to observe sysupgrade's own exit. On the router the
 		# CGI must exit first, or the 64MB board reboots without writing.
 		if [ -n "${MP716_TEST_ROOT:-}" ]; then

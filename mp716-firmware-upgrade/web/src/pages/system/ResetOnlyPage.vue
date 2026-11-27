@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import UiCard from '@/components/UiCard.vue'
 import UiButton from '@/components/UiButton.vue'
 import UiModal from '@/components/UiModal.vue'
 import { asApplyHandle, formatApiError, getRouterApi, unwrap } from '@/api'
 import { useApplyConfirm } from '@/composables/useApplyConfirm'
+import { systemActionRoute } from '@/composables/useDeviceRebootWait'
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const toast = useToastStore()
+const router = useRouter()
 const { begin } = useApplyConfirm()
 const resetOpen = ref(false)
 const resetting = ref(false)
@@ -19,6 +22,10 @@ async function doReset() {
   resetting.value = true
   try {
     const result = unwrap(await getRouterApi().factoryReset({ confirmToken: 'RESET' }))
+    if (result.systemAction) {
+      await router.push(systemActionRoute('reset', result.systemAction))
+      return
+    }
     if (result.rollbackSec > 0) await begin(asApplyHandle(result))
     toast.warning(t('sysReset.warnResetting'))
   } catch (e) {

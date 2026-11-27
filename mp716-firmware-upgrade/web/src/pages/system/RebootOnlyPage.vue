@@ -1,20 +1,32 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import UiCard from '@/components/UiCard.vue'
 import UiButton from '@/components/UiButton.vue'
 import UiModal from '@/components/UiModal.vue'
-import { formatApiError, getRouterApi, unwrap } from '@/api'
-import { useDeviceRebootWait } from '@/composables/useDeviceRebootWait'
+import { formatApiError, getApiMode, getRouterApi, unwrap } from '@/api'
+import { systemActionRoute, useDeviceRebootWait } from '@/composables/useDeviceRebootWait'
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const toast = useToastStore()
 const firmwareWait = computed(() => route.query.firmware === '1')
-const { phase, waiting, elapsedText, startWaiting, goLogin } = useDeviceRebootWait({
-  firmware: route.query.firmware === '1',
+const actionResult = route.name === 'system-action-result'
+const resetResult = actionResult && route.query.operation === 'reset'
+function queryString(key: string) {
+  const value = route.query[key]
+  return typeof value === 'string' ? value : ''
+}
+const { phase, waiting, elapsedText, failureMessage, startWaiting, goLogin } = useDeviceRebootWait({
+  firmware: firmwareWait.value ? {
+    task: queryString('task'),
+    version: queryString('version'),
+    boot: queryString('boot'),
+  } : undefined,
+  action: actionResult ? { id: queryString('action'), boot: queryString('boot'), reset: resetResult } : undefined,
 })
 const rebootOpen = ref(false)
 const rebooting = ref(false)
@@ -23,8 +35,14 @@ async function doReboot() {
   rebootOpen.value = false
   rebooting.value = true
   try {
-    unwrap(await getRouterApi().rebootDevice())
-    startWaiting()
+    const result = unwrap(await getRouterApi().rebootDevice())
+    if (result.systemAction) {
+      await router.push(systemActionRoute('reboot', result.systemAction))
+    } else if (getApiMode() !== 'device') {
+      startWaiting()
+    } else {
+      toast.warning(t('sysReboot.waitActionUnconfirmed'))
+    }
   } catch (e) {
     toast.error(formatApiError(e, t))
   } finally {
@@ -33,12 +51,12 @@ async function doReboot() {
 }
 
 onMounted(() => {
-  if (route.query.wait === '1') startWaiting()
+  if (actionResult || route.query.wait === '1') startWaiting()
 })
 </script>
 
 <template>
-  <div>
+  <div :class="{ 'action-result': actionResult }">
     <UiCard v-if="!waiting" :subtitle="t('sysReboot.subtitle')">
       <div class="actions">
         <UiButton variant="secondary" :disabled="rebooting" @click="rebootOpen = true">
@@ -46,18 +64,31 @@ onMounted(() => {
         </UiButton>
       </div>
     </UiCard>
-    <UiCard v-else :subtitle="t('sysReboot.waitTitle')">
+    <UiCard v-else :subtitle="t(resetResult ? 'sysReset.resultTitle' : 'sysReboot.waitTitle')">
       <div class="wait">
-        <div v-if="phase !== 'timeout'" class="spinner" aria-hidden="true" />
+        <div v-if="phase === 'down'" class="spinner" aria-hidden="true" />
         <p class="wait-main">
-          {{ phase === 'back' ? t('sysReboot.waitBack') : phase === 'timeout' ? t('sysReboot.waitTimeout') : t('sysReboot.waitDown') }}
+          {{ phase === 'failed' ? (failureMessage || t(firmwareWait ? 'sysReboot.waitFirmwareFailed' :
+              resetResult ? 'sysReset.resultFailed' : 'sysReboot.waitActionFailed')) :
+            phase === 'back' ? t(firmwareWait ? 'sysReboot.waitFirmwareConfirmed' :
+              resetResult ? 'sysReset.resultConfirmed' : actionResult ? 'sysReboot.waitActionConfirmed' : 'sysReboot.waitBack') :
+            phase === 'timeout' ? t(firmwareWait ? 'sysReboot.waitFirmwareUnconfirmed' :
+              resetResult ? 'sysReset.resultUnconfirmed' : actionResult ? 'sysReboot.waitActionUnconfirmed' : 'sysReboot.waitTimeout') :
+            t(resetResult ? 'sysReset.warnResetting' : 'sysReboot.waitDown') }}
         </p>
         <p class="wait-elapsed">{{ t('sysReboot.waitElapsed', { time: elapsedText }) }}</p>
-        <p class="wait-hint">
+        <p v-if="phase === 'down'" class="wait-hint">
           {{ firmwareWait ? t('sysReboot.waitFirmwareHint') : t('sysReboot.waitHint') }}
         </p>
-        <UiButton v-if="phase === 'timeout'" variant="secondary" @click="goLogin">
+        <UiButton v-if="phase === 'timeout' || phase === 'back'" variant="secondary" @click="goLogin">
           {{ t('sysReboot.waitGoLogin') }}
+        </UiButton>
+        <UiButton v-if="phase === 'failed' && firmwareWait" variant="secondary" @click="router.replace({ name: 'sys-upgrade' })">
+          {{ t('sysReboot.waitGoUpgrade') }}
+        </UiButton>
+        <UiButton v-if="phase === 'failed' && actionResult" variant="secondary"
+          @click="router.replace({ name: resetResult ? 'sys-reset' : 'sys-reboot' })">
+          {{ t('sysReboot.waitGoBack') }}
         </UiButton>
       </div>
     </UiCard>
@@ -73,6 +104,12 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.action-result {
+  max-width: 660px;
+  margin: 32px auto;
+  padding: 0 16px;
+}
+
 .actions {
   display: flex;
   justify-content: center;

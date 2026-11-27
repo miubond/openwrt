@@ -570,6 +570,7 @@ export interface ConfigApplyResult {
   accepted: boolean
   rollbackSec: number
   taskId?: string
+  systemAction?: SystemActionReceipt
   validated?: boolean
   flashWrite?: boolean
   message?: string
@@ -580,11 +581,17 @@ export interface ConfigApplyResult {
   reconnectIp?: string
 }
 
+export interface SystemActionReceipt {
+  id: string
+  boot: string
+}
+
 export interface FirmwareVerificationReport {
   ok: boolean
   code: number
   signature_checked: boolean
   flash_write: boolean
+  firmware_version?: string
   bytes_programmed?: number
   erased?: boolean
   detail?: string
@@ -648,6 +655,11 @@ export interface PreLoginConfig {
   firstBoot: number
   /** 0 时首次启动可直接进向导而不先登录 */
   needAuthorized: number
+  bootId?: string
+  systemAction?: { id: string; state: 'pending' | 'failed' } | null
+  factoryResetMarker?: boolean
+  firmwareVersion?: string
+  firmwareBoot?: { state: string; expectedVersion: string }
   companyName?: string
   sysMode?: number
 }

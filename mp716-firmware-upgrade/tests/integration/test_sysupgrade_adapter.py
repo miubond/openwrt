@@ -53,6 +53,7 @@ class SysupgradeAdapterTests(unittest.TestCase):
             "sysupgrade": (
                 'printf "sysupgrade %s\\n" "$*" >> "$MP716_TRACE"\n'
                 'if [ "$1" = -b ]; then\n'
+                '  [ -z "${MP716_BACKUP_FAIL:-}" ] || exit 95\n'
                 '  tar -czf "$2" -C "$MP716_TEST_ROOT/old-root" etc\n  exit $?\nfi\n'
                 'test_only=0\n[ "$1" != -T ] || { test_only=1; shift; }\n'
                 'if [ "$1" = -f ]; then cp "$2" "$MP716_TEST_ROOT/submitted.tgz"; shift 2; fi\n'
@@ -219,3 +220,15 @@ class SysupgradeAdapterTests(unittest.TestCase):
         result = json.loads((self.root / "apply-result.json").read_text(encoding="utf-8"))
         self.assertEqual(result["error"], "sysupgrade_test")
         self.assertFalse(result["flash_write"])
+
+    def test_config_backup_failure_reports_terminal_state_without_flash(self) -> None:
+        self.platform.write_text("confirmed\n", encoding="utf-8")
+        self.gate.write_text("serial-recovery-verified\n", encoding="utf-8")
+        self.env["MP716_BACKUP_FAIL"] = "1"
+        proc = self.run_adapter("apply", posix(self.custom), "--keep-config")
+        self.assertEqual(proc.returncode, 1, proc.stderr)
+        trace = self.trace.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(trace), 2)
+        self.assertTrue(trace[1].startswith("sysupgrade -b "), trace)
+        result = json.loads((self.root / "apply-result.json").read_text(encoding="utf-8"))
+        self.assertEqual(result["error"], "prepare_config")

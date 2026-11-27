@@ -26,6 +26,21 @@ it('never treats invalid signatures or a reported flash write as a harmless vers
   expect(readVerificationReport({ signature_checked: true })).toBeNull()
 })
 
+it('keeps the original signed rejection from older nested upload responses', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+    ok: false, code: 'VALIDATION', details: { details: versionRejection },
+  }), { status: 400 })))
+  const result = await new DeviceRouterAdapter(() => 'test-session').uploadFirmware(new Blob())
+  expect(result.ok).toBe(false)
+  if (!result.ok) expect(isSignedVersionRejection(readVerificationReport(result.details))).toBe(true)
+})
+
+it('does not report legacy flash upload as submitted when the request fails', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
+  const result = await new DeviceRouterAdapter(() => 'test-session').uploadFirmware(new Blob(), { flash: true })
+  expect(result).toMatchObject({ ok: false, code: 'NETWORK' })
+})
+
 it('rejects an inconsistent successful HTTP envelope containing a failed native report', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true, data: versionRejection }))))
   const result = await new DeviceRouterAdapter(() => null).uploadFirmware(new Blob())

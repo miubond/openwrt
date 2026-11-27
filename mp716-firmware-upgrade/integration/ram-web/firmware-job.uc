@@ -3,19 +3,19 @@
  * 两阶段固件任务：落盘 /tmp（不写 overlay），验签后返回 job_id；apply 仅在刷写门开启时异步提交。
  * 对外状态：UPLOADING | VERIFIED | SUBMITTED | APPLYING | REBOOTING | BOOT_CONFIRMED | FAILED | UNKNOWN
  */
-import { popen, stdin, writefile, unlink, chmod, stat, readfile, mkdir } from 'fs';
+import { popen, stdin, writefile, unlink, chmod, stat, readfile, mkdir, open, rename, glob } from 'fs';
 
 export const FIRMWARE_MAX_BYTES = 8060928;
 export const STREAM_CHUNK = 65536;
 const JOB_ROOT = '/tmp/mp716-upgrade';
 const JOB_DIR = JOB_ROOT + '/jobs';
-const JOB_LOCK = JOB_ROOT + '/job.lock';
+const JOB_LOCK = JOB_ROOT + '/jobs.lock';
 const ACTIVE_JOB = JOB_ROOT + '/active-job.json';
 const APPLY_RESULT = JOB_ROOT + '/apply-result.json';
 /** 仅验签落盘（与 VERIFY_RESERVE 2MiB 对齐，避免 64MB 机在常态内存下无法上传）；apply 分支只以它防 OOM */
 const MEM_VERIFY_EXTRA_KB = 2 * 1024;
 const TMP_MIN_EXTRA_KB = 512;
-const BUSY_PHASES = ['uploading', 'verified', 'submitted', 'applying', 'rebooting'];
+const VERIFIED_TTL = 30 * 60;
 
 function shellquote(v) {
 	return "'" + replace(v, "'", "'\\''") + "'";
@@ -60,14 +60,14 @@ function device_failure_message() {
 	return '上次升级未生效' + (length(error) ? '（' + error + '）' : '') + '，设备继续运行当前版本';
 }
 
-function read_device_upgrade_state() {
+export function firmware_boot_result() {
 	let raw = readfile('/etc/mp716-upgrade/state') || '';
-	let name = '';
+	let result = {};
 	for (let line in split(raw, '\n')) {
-		let m = match(line, /^state=([A-Z_]+)/);
-		if (m) name = m[1];
+		let m = match(line, /^(state|expected_custom_firmware)=(.*)$/);
+		if (m) result[m[1]] = m[2];
 	}
-	return name;
+	return { state: result.state || '', expectedVersion: result.expected_custom_firmware || '' };
 }
 
 function mem_available_kb() {
@@ -139,10 +139,17 @@ function load_json(path) {
 }
 
 function store_job(job) {
-	writefile(job_meta_path(job.job_id), sprintf('%J\n', job));
-	chmod(job_meta_path(job.job_id), 0600);
-	writefile(ACTIVE_JOB, sprintf('%J\n', { job_id: job.job_id, updated: time() }));
-	chmod(ACTIVE_JOB, 0600);
+	store_json(job_meta_path(job.job_id), job);
+	store_json(ACTIVE_JOB, { job_id: job.job_id, updated: time() });
+}
+
+function store_json(path, row) {
+	let temporary = path + '.new';
+	if (writefile(temporary, sprintf('%J\n', row)) == null ||
+	    !chmod(temporary, 0600) || !rename(temporary, path)) {
+		unlink(temporary);
+		die('无法保存固件任务');
+	}
 }
 
 /* mp716-sysupgrade 在 CGI 返回 submitted 之后才失败，结果只能经此文件回传 */
@@ -152,12 +159,10 @@ function reconcile_apply_result(job) {
 	let row = load_json(APPLY_RESULT);
 	if (type(row) != 'object' || !row?.error)
 		return job;
-	unlink(APPLY_RESULT);
 	job.phase = 'failed';
 	job.updated_at = time();
 	job.apply_report = row;
-	job.message = '升级未执行：' + (row?.detail || row?.error || '刷写失败') + '；设备未改动，可重新上传';
-	store_job(job);
+	job.message = '升级失败：' + (row?.detail || row?.error || '刷写失败');
 	return job;
 }
 
@@ -169,51 +174,48 @@ function load_active_job() {
 
 export function job_get(id) {
 	if (!match(id || '', /^[0-9a-f]{16}$/)) return null;
-	return reconcile_apply_result(load_json(job_meta_path(id)));
+	let job = load_active_job();
+	return job?.job_id == id ? job : null;
 };
 
 export function job_clear_apply_result() {
 	if (stat(APPLY_RESULT)) unlink(APPLY_RESULT);
 };
 
-function with_job_lock(callback) {
+export function with_job_lock(callback) {
 	ensure_dirs();
-	let lock = popen('/bin/sh -c ' + shellquote('mkdir ' + JOB_LOCK + ' 2>/dev/null'), 'r');
-	if (lock) lock.close();
-	if (!stat(JOB_LOCK))
+	/* O_CLOEXEC prevents the detached apply worker from inheriting the lock. */
+	let lock = open(JOB_LOCK, 'ae', 0600);
+	if (!lock)
+		return { error: { code: 'INTERNAL', message: '无法打开升级任务锁' } };
+	if (!lock.lock('xn')) {
+		lock.close();
 		return { error: { code: 'DEVICE_BUSY', message: '升级任务忙' } };
-	let result = callback();
-	let rd = popen('/bin/sh -c ' + shellquote('rmdir ' + JOB_LOCK + ' 2>/dev/null'), 'r');
-	if (rd) rd.close();
+	}
+	let result;
+	try { result = callback(); }
+	catch (e) { lock.close(); die(e); }
+	lock.close();
 	return result;
 }
 
-function busy_job_conflict() {
-	let active = load_active_job();
-	if (!active) return null;
-	let state = job_public_phase(active.phase || '', read_device_upgrade_state());
-	if (index(['UPLOADING', 'VERIFIED', 'SUBMITTED', 'APPLYING', 'REBOOTING'], state) >= 0)
-		return active;
-	return null;
+export function job_can_apply(job) {
+	return job?.phase == 'verified' && time() - job.created_at < VERIFIED_TTL;
 }
 
-export function job_cleanup(id, reason) {
-	let job = id ? job_get(id) : load_active_job();
+function cleanup_job(job) {
 	if (!job) return;
-	id = job.job_id;
-	let pub = job_public_phase(job.phase, read_device_upgrade_state());
-	if (index(['APPLYING', 'REBOOTING'], pub) >= 0)
-		return;
-	if (stat(job_image_path(id)))
-		unlink(job_image_path(id));
-	if (stat(job_meta_path(id)))
-		unlink(job_meta_path(id));
-	if (stat(ACTIVE_JOB)) {
-		let row = load_json(ACTIVE_JOB);
-		if (row?.job_id == id) unlink(ACTIVE_JOB);
-	}
-	if (reason)
-		writefile(JOB_ROOT + '/last-cleanup.log', sprintf('%s %s\n', time(), reason));
+	unlink(ACTIVE_JOB);
+	unlink(job_image_path(job.job_id));
+	unlink(job_meta_path(job.job_id));
+}
+
+export function job_cleanup(id) {
+	return with_job_lock(() => {
+		let job = id ? job_get(id) : load_active_job();
+		if (job && index(['submitted', 'applying', 'rebooting'], job.phase) < 0)
+			cleanup_job(job);
+	});
 };
 
 function parse_verify_report(raw, status, require_no_flash) {
@@ -261,12 +263,16 @@ export function reverify_job_image(job) {
 };
 
 export function stream_firmware_upload(size) {
-	let cap = firmware_capacity_check(size, 'upload');
-	if (!cap.ok) return { error: cap };
 	return with_job_lock(() => {
-		let busy = busy_job_conflict();
-		if (busy)
-			return { error: { code: 'DEVICE_BUSY', message: '已有进行中的升级任务', job_id: busy.job_id } };
+		let active = load_active_job();
+		if (active && index(['uploading', 'submitted', 'applying', 'rebooting'], active.phase) >= 0)
+			return { error: { code: 'DEVICE_BUSY', message: '已有进行中的升级任务', job_id: active.job_id } };
+		/* 新上传替换闲置镜像，先释放旧包占用的 tmpfs。 */
+		cleanup_job(active);
+		for (let orphan in glob(JOB_DIR + '/*.mp716upd') || [])
+			unlink(orphan);
+		let cap = firmware_capacity_check(size, 'upload');
+		if (!cap.ok) return { error: cap };
 		let id = new_job_id();
 		let path = job_image_path(id);
 		let writer = popen('/bin/sh -c ' + shellquote('cat > ' + path), 'w');
@@ -312,21 +318,23 @@ export function stream_firmware_upload(size) {
 
 export function job_status_payload(id) {
 	let job = id ? job_get(id) : load_active_job();
-	let dev = read_device_upgrade_state();
+	let dev = firmware_boot_result().state;
 	if (!job) {
 		return {
-			state: job_public_phase('', dev),
+			state: id ? 'UNKNOWN' : job_public_phase('', dev),
 			message: dev == 'FAILED' ? device_failure_message() : (length(dev) ? 'device state ' + dev : 'no active job'),
 			deviceState: dev || null,
 		};
 	}
-	let state = job_public_phase(job.phase, dev);
+	let expired = job.phase == 'verified' && !job_can_apply(job);
+	let state = expired ? 'FAILED' : job_public_phase(job.phase, dev);
 	let msg = '验签完成';
 	if (state == 'SUBMITTED') msg = '升级已提交';
 	if (state == 'APPLYING') msg = '正在刷写';
 	if (state == 'REBOOTING') msg = '设备重启核验中';
 	if (state == 'BOOT_CONFIRMED') msg = '新版本已确认';
-	if (state == 'FAILED') msg = job.message || (dev == 'FAILED' ? device_failure_message() : '升级失败');
+	if (state == 'FAILED') msg = expired ? '验签任务已过期，请重新上传' :
+		job.message || (dev == 'FAILED' ? device_failure_message() : '升级失败');
 	return {
 		state: state,
 		taskId: job.job_id,
@@ -340,8 +348,9 @@ export function job_status_payload(id) {
 };
 
 export function job_mark_phase(id, phase, extra) {
-	let job = job_get(id);
-	if (!job) return false;
+	/* Mutations run under the lock. Ignore the worker result here; status reconciles it separately. */
+	let job = load_json(job_meta_path(id));
+	if (job?.job_id != id) return false;
 	job.phase = phase;
 	job.updated_at = time();
 	if (type(extra) == 'object')
@@ -352,10 +361,9 @@ export function job_mark_phase(id, phase, extra) {
 };
 
 export function job_mark_boot_confirmed() {
-	let active = load_active_job();
-	if (active) {
-		active.phase = 'boot_confirmed';
-		active.updated_at = time();
-		store_job(active);
-	}
+	return with_job_lock(() => {
+		let active = load_active_job();
+		if (active?.phase == 'rebooting')
+			job_mark_phase(active.job_id, 'boot_confirmed');
+	});
 };

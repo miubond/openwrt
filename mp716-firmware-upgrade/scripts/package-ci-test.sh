@@ -1,7 +1,8 @@
 #!/bin/bash
-# Sign and verify a CI-only container using a disposable test key.
+# Sign and verify a CI-only container, optionally using a stable external lab key.
 set -euo pipefail
 ARTIFACT_DIR=${1:?Missing absolute CI artifact directory}
+SIGNING_KEY=${MP716_CI_SIGNING_KEY:-build/ci-release/ci-test.priv}
 mkdir -p "$ARTIFACT_DIR" build/ci-logs
 verify_report() {
   local report=$1 status
@@ -16,7 +17,7 @@ verify_report() {
 }
 if [ -d build/ram-images ]; then
   trap 'rm -f build/ci-release/ci-test.priv' EXIT
-  if [ ! -f build/payload.bin ] || [ ! -f build/ci-release/ci-test.priv ] ||
+  if [ ! -f build/payload.bin ] || [ ! -f "$SIGNING_KEY" ] ||
      ! cmp -s build/ram-images/ram-upgrade.pub build/ci-release/upgrade.pub ||
      ! cmp -s build/target-images/sysupgrade-upgrade.pub build/ci-release/upgrade.pub; then
     echo "Missing CI payload or signing key pair matching both compiled images." >&2
@@ -35,7 +36,7 @@ if not payload.exists():
 PY
 python3 packer/mp716_fwpack.py pack \
   --payload build/payload.bin \
-  --private-key build/ci-release/ci-test.priv \
+  --private-key "$SIGNING_KEY" \
   --out build/ci-release/test.mp716upd \
   --hardware-revision ci-lab \
   --firmware-version "$(cat config/firmware.version)" \

@@ -286,8 +286,12 @@ const result = await response.json()
 | `POST /system/time/browser {localTime:...}` | 立即设置设备时钟，格式 YYYY-MM-DD HH:mm:ss，不是确认倒计时任务 |
 | `POST /system/sche-reboot {config:...}` | 保存定时重启配置，有事务；mode 0=关闭、1=倒计时、2=指定时间；weeks 使用现有 DTO 位掩码 |
 | `POST /system/password {oldPassword,newPassword}` | 修改管理 root 密码；当前服务端要求新密码 5–32 位、不同于原密码，页面可采用更严格校验 |
-| `POST /system/reboot {}` | 约 3 秒后发起实际重启，没有配置回滚 |
-| `POST /system/factory-reset {confirmToken:"RESET"}` | 清空可写配置后重启，不能作为普通页面联调操作 |
+| `POST /system/reboot {}` | 返回 `systemAction.id` 与操作前的 `systemAction.boot`。重连后用 `GET /auth/prelogin` 的 `bootId` 确认重启 |
+| `POST /system/factory-reset {confirmToken:"RESET"}` | 同样返回任务凭据。重连后须同时满足 `bootId` 已变化且 `factoryResetMarker: false`，才能确认旧配置区已清除 |
+| `GET /system/logs?limit=37` | 返回最近最多 37 行日志。可省略 `limit`，默认 100，合法范围为 1–500 的整数 |
+| `POST /vpn/online/disconnect {pid:"…"}` | 原 PPP 会话进程退出后返回 `disconnected: true`。在确认窗口内未退出时返回 HTTP 504 |
+
+重启和恢复请求提交成功后，若后台命令执行失败，`GET /auth/prelogin` 会在当前启动中报告对应任务的 `systemAction.state: "failed"`。恢复出厂后管理地址可能变化，旧地址上的等待页在无法重新连通时会报告结果未确认。
 
 ## 9. 常见联调问题
 

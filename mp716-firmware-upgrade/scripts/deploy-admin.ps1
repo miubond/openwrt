@@ -59,8 +59,8 @@ mkdir -p /etc/mp716-upgrade
   @'
 mkdir -p /etc/mp716-upgrade
 echo production > /etc/mp716-upgrade/upgrade-policy
-echo serial-recovery-verified > /etc/mp716-upgrade/flash-gate
-echo confirmed > /etc/mp716-upgrade/platform
+[ -f /etc/mp716-upgrade/flash-gate ] || echo closed > /etc/mp716-upgrade/flash-gate
+[ -f /etc/mp716-upgrade/platform ] || echo unconfirmed > /etc/mp716-upgrade/platform
 chmod 644 /etc/mp716-upgrade/upgrade-policy /etc/mp716-upgrade/flash-gate /etc/mp716-upgrade/platform
 rm -f /etc/mp716/allow-flash-upgrade
 for p in /etc/mp716-upgrade/flash-gate /etc/mp716-upgrade/platform /etc/mp716-upgrade/upgrade-policy; do

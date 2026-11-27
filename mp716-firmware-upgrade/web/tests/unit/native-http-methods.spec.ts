@@ -63,7 +63,7 @@ describe('native adapter actual HTTP mutation methods', () => {
   it('sends an empty JSON object when clearing logs and leaves reading logs as GET', async () => {
     await adapter.clearSyslog()
     expect(fetchMock.mock.calls[0]![1].body).toBe('{}')
-    fetchMock.mockClear(); await adapter.getSystemLogs(100)
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/cgi-bin/mp716/system/logs?limit=100', expect.objectContaining({ method: 'GET', body: undefined }))
+    fetchMock.mockClear(); await adapter.getSystemLogs(37)
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/cgi-bin/mp716/system/logs?limit=37', expect.objectContaining({ method: 'GET', body: undefined }))
   })
 })

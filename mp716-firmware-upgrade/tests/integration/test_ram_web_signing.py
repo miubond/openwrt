@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -14,12 +15,31 @@ KEY_PATH = "etc/mp716-upgrade/upgrade.pub"
 
 
 class RamWebSigningTests(unittest.TestCase):
+    def test_external_lab_key_keeps_public_key_stable_without_copying_seed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            seed = work / "external.key"
+            seed.write_bytes(bytes(range(32)))
+            env = dict(os.environ, MP716_CI_SIGNING_KEY=str(seed))
+            public_keys = []
+            for name in ("first", "second"):
+                build = work / name
+                build.mkdir()
+                subprocess.run([sys.executable, ROOT / "scripts/prepare-ci-test-key.py"],
+                               cwd=build, env=env, check=True)
+                key_dir = build / "build/ci-release"
+                public_keys.append((key_dir / "upgrade.pub").read_bytes())
+                self.assertFalse((key_dir / "ci-test.priv").exists())
+            self.assertEqual(public_keys[0], public_keys[1])
+            self.assertEqual(seed.read_bytes(), bytes(range(32)))
+
     def test_ram_overlay_accepts_the_same_run_package(self):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
             subprocess.run(
                 [sys.executable, ROOT / "scripts/prepare-ci-test-key.py"],
                 cwd=work, check=True,
+                env={name: value for name, value in os.environ.items() if name != "MP716_CI_SIGNING_KEY"},
             )
             keys = work / "build/ci-release"
             payload = work / "payload.bin"

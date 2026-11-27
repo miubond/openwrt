@@ -1,6 +1,12 @@
 import type { FirmwareVerificationReport } from './types'
 
 export function readVerificationReport(value: unknown): FirmwareVerificationReport | null {
+  return parseReport(value) ?? (value && typeof value === 'object' && 'details' in value
+    ? parseReport(value.details)
+    : null)
+}
+
+function parseReport(value: unknown): FirmwareVerificationReport | null {
   if (!value || typeof value !== 'object') return null
   const report = value as Record<string, unknown>
   if (typeof report.ok !== 'boolean' || typeof report.code !== 'number' ||

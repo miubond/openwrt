@@ -31,7 +31,8 @@ const canUpload = computed(() => info.value?.canUpgrade !== false)
 const flashEnabled = computed(() => !!info.value?.flashUpgradeEnabled)
 const verifyOnly = computed(() => !flashEnabled.value)
 const confirmOpen = ref(false)
-const canApply = computed(() => flashEnabled.value && verifyReady.value && !!jobId.value)
+const canApply = computed(() => flashEnabled.value && verifyReady.value && !!jobId.value &&
+  !!verification.value?.firmware_version && !uploading.value && !applying.value)
 const outcomeKind = computed<'success' | 'warn' | 'error'>(() => {
   if (!outcome.value) return 'success'
   if (verifyReady.value && flashEnabled.value) return 'success'
@@ -56,6 +57,7 @@ async function load() {
 }
 
 function pickFile() {
+  if (uploading.value || applying.value || confirmOpen.value) return
   fileInput.value?.click()
 }
 
@@ -68,6 +70,7 @@ function explain(report: FirmwareVerificationReport | null, fallback: string) {
 }
 
 function onFile(e: Event) {
+  if (uploading.value || applying.value || confirmOpen.value) return
   const next = (e.target as HTMLInputElement).files?.[0] ?? null
   file.value = next
   fileName.value = next?.name || ''
@@ -106,7 +109,8 @@ function onApplyClick() {
 }
 
 async function runVerify() {
-  if (!file.value || !validateFile()) return
+  const selected = file.value
+  if (!selected || uploading.value || applying.value || !validateFile()) return
   uploading.value = true
   verification.value = null
   outcome.value = ''
@@ -114,11 +118,12 @@ async function runVerify() {
   verifyReady.value = false
   try {
     const result = unwrap(
-      await getRouterApi().uploadFirmware(file.value, {
+      await getRouterApi().uploadFirmware(selected, {
         keepSettings: keepSettings.value,
         flash: false,
       }),
     )
+    if (file.value !== selected) return
     verification.value = result.verificationReport || null
     jobId.value = (result.jobId || '').trim()
     verifyReady.value = !!result.validated && !!jobId.value
@@ -126,7 +131,9 @@ async function runVerify() {
     toast.success(outcome.value)
   } catch (e) {
     verification.value = readVerificationReport(e instanceof ApiCallError ? e.details : null)
-    outcome.value = explain(verification.value, formatApiError(e, t))
+    outcome.value = e instanceof ApiCallError && e.code === 'LOW_MEMORY'
+      ? t('upgrade.memoryRejected')
+      : explain(verification.value, formatApiError(e, t))
     if (isSignedVersionRejection(verification.value)) toast.warning(outcome.value)
     else toast.error(outcome.value)
   } finally {
@@ -136,12 +143,21 @@ async function runVerify() {
 
 async function runApply() {
   confirmOpen.value = false
-  if (!jobId.value) return
+  if (!canApply.value) return
+  const task = jobId.value
+  const version = verification.value?.firmware_version || ''
+  const api = getRouterApi()
   applying.value = true
+  let boot = ''
+  async function waitForUpgrade() {
+    verifyReady.value = false
+    await router.push({ name: 'sys-reboot', query: { wait: '1', firmware: '1', task, version, boot } })
+  }
   try {
+    boot = unwrap(await api.getPreLoginConfig()).bootId || ''
     const result = unwrap(
-      await getRouterApi().applyFirmwareV2({
-        jobId: jobId.value,
+      await api.applyFirmwareV2({
+        jobId: task,
         keepSettings: keepSettings.value,
       }),
     )
@@ -149,11 +165,15 @@ async function runApply() {
     if (result.flashWrite) {
       outcome.value = t('upgrade.applySubmitted')
       toast.success(outcome.value)
-      await router.push({ name: 'sys-reboot', query: { wait: '1', firmware: '1' } })
+      await waitForUpgrade()
       return
     }
     toast.error(result.message || t('upgrade.checkRejected'))
   } catch (e) {
+    if (e instanceof ApiCallError && e.code === 'NETWORK' && boot) {
+      await waitForUpgrade()
+      return
+    }
     verification.value = readVerificationReport(e instanceof ApiCallError ? e.details : null)
     const apiCode = e instanceof ApiCallError ? e.code : ''
     if (apiCode === 'LOW_MEMORY') outcome.value = t('upgrade.memoryRejected')
@@ -195,11 +215,12 @@ onMounted(() => void load())
                 class="hidden"
                 type="file"
                 accept=".mp716upd,.mp7fw,.bin,application/octet-stream"
+                :disabled="uploading || applying || confirmOpen"
                 @change="onFile"
               />
               <div class="file-box">
                 <input class="name" :value="fileName" readonly />
-                <button class="select" type="button" @click="pickFile">{{ t('upgrade.pick') }}</button>
+                <button class="select" type="button" :disabled="uploading || applying || confirmOpen" @click="pickFile">{{ t('upgrade.pick') }}</button>
               </div>
               <UiButton variant="secondary" :disabled="uploading || applying || !file" @click="onVerifyClick">
                 {{ uploading ? t('upgrade.verifying') : t('upgrade.validateFirmware') }}
@@ -218,7 +239,7 @@ onMounted(() => void load())
           <div class="row keep-row">
             <div class="label" />
             <label class="keep">
-              <input v-model="keepSettings" type="checkbox" :disabled="!flashEnabled" />
+              <input v-model="keepSettings" type="checkbox" :disabled="!flashEnabled || applying || confirmOpen" />
               {{ t('upgrade.keepSettings') }}
             </label>
           </div>

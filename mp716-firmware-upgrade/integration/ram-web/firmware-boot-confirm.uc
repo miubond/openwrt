@@ -18,5 +18,5 @@ if (st == 'SUCCESS') {
 	record_firmware_installed();
 	job_mark_boot_confirmed();
 } else if (st == 'FAILED') {
-	job_cleanup('', 'boot-verify failed');
+	job_cleanup('');
 }

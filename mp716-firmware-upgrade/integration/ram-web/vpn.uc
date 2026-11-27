@@ -107,6 +107,20 @@ function session_alive(row) {
 	let process=readfile('/proc/'+row.pid+'/stat') || '', fields=split(substr(process,index(process,') ')+2),' ');
 	return length(fields)>19 && fields[19]==row.started && fields[0]!='Z';
 }
+function disconnect_session(pid) {
+	if (!match(pid || '', /^[1-9][0-9]{0,7}$/)) die('VPN 会话无效');
+	let row = load(RUNTIME+'/sessions/'+pid+'.json');
+	if (row?.pid != pid || !session_alive(row) || index(readfile('/proc/'+pid+'/cmdline') || '', 'pppd') < 0)
+		die('VPN 会话已失效');
+	if (command('/bin/busybox kill -TERM '+pid).code != 0 && session_alive(row))
+		die('无法断开会话');
+	for (let attempt = 0; attempt < 3 && session_alive(row); attempt++)
+		command('/bin/busybox sleep 1');
+	if (session_alive(row))
+		return {error:'TIMEOUT',message:'已请求断开，但尚未确认该 VPN 会话退出'};
+	return {data:{disconnected:true}};
+}
+
 function online() {
 	let rows=[];
 	for(let path in glob(RUNTIME+'/sessions/*.json') || []) {
@@ -249,12 +263,7 @@ export function route_vpn(bus,method,path,body,owner) {
 		try {result=(function(){
 			expire();if(blocking_pending())return {error:'DEVICE_BUSY',message:'请先确认或撤销当前配置'};dismiss_failed_pending();
 			if(index(kind,'wireguard/')==0)return wireguard_post(bus,c,owner,substr(kind,10),body,m);
-			if(kind=='online/disconnect') {
-				if(!match(body.pid || '',/^[1-9][0-9]{0,7}$/))die('VPN 会话无效');
-				let row=load(RUNTIME+'/sessions/'+body.pid+'.json');
-				if(!session_alive(row)||index(readfile('/proc/'+body.pid+'/cmdline') || '','pppd')<0)die('VPN 会话已失效');
-				if(command('/bin/busybox kill -TERM '+body.pid).code!=0)die('无法断开会话');return {data:null};
-			}
+			if(kind=='online/disconnect') return disconnect_session(body.pid);
 			if(kind=='openvpn/upload') {
 				let files=upload_files(body,owner), extras=map(keys(files),(n)=>'/etc/mp716-vpn/'+n);
 				vpn_plan(m,(path)=>files[pop(split(path,'/'))] ?? readfile(path),'');

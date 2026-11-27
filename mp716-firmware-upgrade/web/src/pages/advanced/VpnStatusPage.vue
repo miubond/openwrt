@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import UiCard from '@/components/UiCard.vue'
 import UiModal from '@/components/UiModal.vue'
 import LoadingState from '@/components/LoadingState.vue'
-import { formatApiError, getRouterApi, unwrap } from '@/api'
+import { ApiCallError, formatApiError, getRouterApi, unwrap } from '@/api'
 import type { VpnOnlineUser } from '@/api'
 import { useToastStore } from '@/stores/toast'
 
@@ -13,13 +13,16 @@ const toast = useToastStore()
 const loading = ref(true)
 const users = ref<VpnOnlineUser[]>([])
 const disconnectPid = ref('')
+const disconnecting = ref(false)
 const POLL_MS = import.meta.env.VITE_ROUTER_ADAPTER === 'device' ? 15_000 : 5000
 let timer: ReturnType<typeof setInterval> | undefined
 
 async function load(quiet = false) {
+  if (disconnecting.value) return
   if (!quiet) loading.value = true
   try {
-    users.value = unwrap(await getRouterApi().getVpnStatus())
+    const current = unwrap(await getRouterApi().getVpnStatus())
+    if (!disconnecting.value) users.value = current
   } catch (e) {
     if (!quiet) toast.error(formatApiError(e, t))
   } finally {
@@ -30,21 +33,32 @@ async function load(quiet = false) {
 async function confirmDisconnect() {
   const pid = disconnectPid.value
   disconnectPid.value = ''
-  if (!pid) return
+  if (!pid || disconnecting.value) return
+  disconnecting.value = true
   try {
-    unwrap(await getRouterApi().disconnectVpnUser(pid))
+    const api = getRouterApi()
+    const result = unwrap(await api.disconnectVpnUser(pid))
+    if (result?.disconnected) {
+      users.value = users.value.filter(user => user.pid !== pid)
+    } else {
+      users.value = unwrap(await api.getVpnStatus())
+      if (users.value.some(user => user.pid === pid)) {
+        toast.warning(t('vpn.disconnectUnconfirmed'))
+        return
+      }
+    }
     toast.success(t('vpn.userDisconnected'))
-    await load(true)
   } catch (e) {
-    toast.error(formatApiError(e, t))
+    if (e instanceof ApiCallError && e.code === 'TIMEOUT') toast.warning(t('vpn.disconnectUnconfirmed'))
+    else toast.error(formatApiError(e, t))
+  } finally {
+    disconnecting.value = false
   }
 }
 
 onMounted(() => {
-  void (async () => {
-    await load()
-    timer = setInterval(() => void load(true), POLL_MS)
-  })()
+  void load()
+  timer = setInterval(() => void load(true), POLL_MS)
 })
 onUnmounted(() => {
   if (timer) clearInterval(timer)
@@ -75,7 +89,7 @@ onUnmounted(() => {
             <td>{{ user.assignIp || '—' }}</td>
             <td>{{ user.joinedAt || '—' }}</td>
             <td class="actions">
-              <button type="button" @click="disconnectPid = user.pid">{{ t('vpn.disconnect') }}</button>
+              <button type="button" :disabled="disconnecting" @click="disconnectPid = user.pid">{{ t('vpn.disconnect') }}</button>
             </td>
           </tr>
         </tbody>

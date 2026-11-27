@@ -66,7 +66,9 @@ class NativeAdminStageTests(unittest.TestCase):
 
     def test_lan_candidate_includes_release_upgrade_overlay_paths(self):
         uci96 = (self.root / 'etc/uci-defaults/96-mp716-upgrade-policy').read_text()
-        self.assertIn('serial-recovery-verified', uci96)
+        self.assertIn('closed', uci96)
+        self.assertIn('unconfirmed', uci96)
+        self.assertNotIn('serial-recovery-verified', uci96)
         self.assertIn('production', uci96)
 
     def test_factory_port_map_defaults_installed(self):

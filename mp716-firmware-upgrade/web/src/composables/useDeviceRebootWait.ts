@@ -1,28 +1,38 @@
-import { computed, onUnmounted, ref, type Ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { getRouterApi } from '@/api'
+import { getRouterApi, type SystemActionReceipt } from '@/api'
 import { useAuthStore } from '@/stores/auth'
 
 const FIRST_PROBE_MS = 10_000
 const PROBE_EVERY_MS = 5_000
 const MIN_BACK_MS = 120_000
 const GIVE_UP_MS = 480_000
-/** 固件刷写：停服解压+sysupgrade，管理面常超过 15 分钟 */
-const FIRMWARE_MIN_BACK_MS = 180_000
 const FIRMWARE_GIVE_UP_MS = 900_000
 
-export type RebootWaitPhase = 'idle' | 'down' | 'back' | 'timeout'
+export type RebootWaitPhase = 'idle' | 'down' | 'back' | 'failed' | 'timeout'
 
-export type RebootWaitOptions = { firmware?: boolean }
+export type RebootWaitOptions = {
+  firmware?: { task: string; version: string; boot: string }
+  action?: SystemActionReceipt & { reset: boolean }
+}
+
+export function systemActionRoute(operation: 'reboot' | 'reset', receipt: SystemActionReceipt) {
+  return {
+    name: 'system-action-result',
+    query: { operation, action: receipt.id, boot: receipt.boot },
+  }
+}
 
 /** 刷写/重启后探测设备恢复（与 RebootOnlyPage 一致） */
 export function useDeviceRebootWait(opts?: RebootWaitOptions) {
-  const minBackMs = opts?.firmware ? FIRMWARE_MIN_BACK_MS : MIN_BACK_MS
-  const giveUpMs = opts?.firmware ? FIRMWARE_GIVE_UP_MS : GIVE_UP_MS
+  const firmware = opts?.firmware
+  const action = opts?.action
+  const giveUpMs = firmware ? FIRMWARE_GIVE_UP_MS : GIVE_UP_MS
   const router = useRouter()
   const auth = useAuthStore()
   const phase = ref<RebootWaitPhase>('idle')
   const elapsedSec = ref(0)
+  const failureMessage = ref('')
   let startedAt = 0
   let seenDown = false
   let probeTimer: number | undefined
@@ -47,16 +57,43 @@ export function useDeviceRebootWait(opts?: RebootWaitOptions) {
     if (stopped) return
     const elapsed = Date.now() - startedAt
     let reachable = false
+    let confirmed = false
     try {
-      reachable = (await getRouterApi().getPreLoginConfig()).ok
+      const api = getRouterApi()
+      const response = await api.getPreLoginConfig()
+      reachable = response.ok
+      if (firmware && response.ok) {
+        const { bootId, firmwareBoot, firmwareVersion } = response.data
+        if (bootId && firmware.boot && bootId !== firmware.boot) {
+          if (firmwareBoot?.expectedVersion === firmware.version && firmware.version) {
+            confirmed = firmwareBoot.state === 'SUCCESS' && firmwareVersion === firmware.version
+            if (firmwareBoot.state === 'FAILED' || (firmwareBoot.state === 'SUCCESS' && !confirmed))
+              return failWait()
+          }
+        } else if (firmware.task) {
+          const status = await api.getFirmwareV2Status(firmware.task)
+          if (status.ok && status.data.taskId === firmware.task && status.data.state === 'FAILED')
+            return failWait(status.data.message)
+        }
+      }
+      if (action && response.ok) {
+        const { bootId, systemAction, factoryResetMarker } = response.data
+        if (action.id && systemAction?.id === action.id && systemAction.state === 'failed')
+          return failWait()
+        if (action.id && bootId && action.boot && bootId !== action.boot) {
+          if (action.reset && factoryResetMarker === true) return failWait()
+          confirmed = !action.reset || factoryResetMarker === false
+        }
+      }
     } catch {
       reachable = false
     }
     if (stopped) return
     if (!reachable) seenDown = true
-    if (reachable && (seenDown || elapsed >= minBackMs)) {
+    if (firmware || action ? confirmed : reachable && (seenDown || elapsed >= MIN_BACK_MS)) {
       phase.value = 'back'
       clearTimers()
+      if (firmware || action) return
       auth.setSession(null)
       await router.replace({ name: 'login' })
       return
@@ -69,7 +106,16 @@ export function useDeviceRebootWait(opts?: RebootWaitOptions) {
     probeTimer = window.setTimeout(() => void probe(), PROBE_EVERY_MS)
   }
 
+  function failWait(message = '') {
+    if (stopped) return
+    failureMessage.value = message
+    phase.value = 'failed'
+    clearTimers()
+  }
+
   function startWaiting() {
+    clearTimers()
+    failureMessage.value = ''
     stopped = false
     startedAt = Date.now()
     seenDown = false
@@ -94,12 +140,5 @@ export function useDeviceRebootWait(opts?: RebootWaitOptions) {
 
   onUnmounted(() => stop())
 
-  return { phase, waiting, elapsedText, startWaiting, goLogin, stop } satisfies {
-    phase: Ref<RebootWaitPhase>
-    waiting: Ref<boolean>
-    elapsedText: Ref<string>
-    startWaiting: () => void
-    goLogin: () => void
-    stop: () => void
-  }
+  return { phase, waiting, elapsedText, failureMessage, startWaiting, goLogin, stop }
 }

@@ -5,14 +5,15 @@ import { connect } from 'ubus';
 import { popen, stdin, writefile, unlink, chmod, stat, readfile, mkdir } from 'fs';
 import { cursor } from 'uci';
 import { firmware_version, firmware_build_date } from '/usr/share/mp716/build-meta.uc';
-import { FIRMWARE_MAX_BYTES, stream_firmware_upload, job_status_payload, reverify_job_image, job_get, job_mark_phase, firmware_capacity_check, job_clear_apply_result } from '/usr/share/mp716/firmware-job.uc';
+import { FIRMWARE_MAX_BYTES, stream_firmware_upload, job_status_payload, reverify_job_image, job_get, job_mark_phase, firmware_capacity_check, job_clear_apply_result, with_job_lock, job_can_apply, firmware_boot_result } from '/usr/share/mp716/firmware-job.uc';
 import { firmware_verifier_present, firmware_flash_allowed, firmware_policy_payload, flash_gate_confirmed, upgrade_policy } from '/usr/share/mp716/upgrade-policy.uc';
 import { route_native } from '/usr/share/mp716/dispatch.uc';
+import { system_action_status } from '/usr/share/mp716/system-admin.uc';
 import { capabilities } from '/usr/share/mp716/capabilities.uc';
 import { perf_enabled, perf_begin, perf_monotonic_ms, perf_shell_ms, perf_log, perf_set_ubus_connect_ms, perf_set_session_access_ms } from '/usr/share/mp716/perf-diag.uc';
 
 function reply(status, body) {
-	printf('Status: %d %s\r\nContent-Type: application/json; charset=utf-8\r\n\r\n%J\n',
+	printf('Status: %d %s\r\nContent-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\n\r\n%J\n',
 		status, status == 200 ? 'OK' : 'Error', body);
 }
 
@@ -193,11 +194,18 @@ function apply_firmware_package(path, keep, verify_report, extras) {
 }
 
 function apply_job_by_id(job_id, keep) {
+	let result = with_job_lock(() => apply_locked_job(job_id, keep));
+	if (result?.error)
+		return fail(result.error.code == 'DEVICE_BUSY' ? 409 : 500, result.error.code, result.error.message);
+	return result;
+}
+
+function apply_locked_job(job_id, keep) {
 	if (!firmware_flash_allowed())
 		return fail(403, 'FORBIDDEN', '固件刷写未开启（生产默认仅验证）');
 	let job = job_get(job_id);
-	if (!job || index(['verified', 'submitted'], job.phase) < 0)
-		return fail(400, 'VALIDATION', '无效或不可用的升级任务');
+	if (!job_can_apply(job))
+		return fail(400, 'VALIDATION', '升级任务已过期、被替换或已提交');
 	let cap = firmware_capacity_check(job.size, 'apply');
 	if (!cap.ok) {
 		let st = cap.code == 'LOW_TMP' ? 507 : cap.code == 'LOW_MEMORY' ? 507 : 400;
@@ -207,12 +215,13 @@ function apply_job_by_id(job_id, keep) {
 	if (rev.error)
 		return fail(400, 'VALIDATION', rev.error, rev.report);
 	job_clear_apply_result();
+	job_mark_phase(job_id, 'submitted', { keep: keep == true });
 	let result = apply_firmware_package(job.path, keep, rev.report, { job_id: job_id, taskId: job_id });
 	if (!result.ok) {
 		job_mark_phase(job_id, stat(job.path) ? 'verified' : 'failed', { keep: keep == true });
 		return fail(result.status || 400, result.code || 'VALIDATION', result.message || '固件刷写失败', result.details);
 	}
-	job_mark_phase(job_id, 'applying', { keep: keep == true, path: APPLY_STAGING_PATH });
+	job_mark_phase(job_id, 'applying', { path: APPLY_STAGING_PATH });
 	return ok(result.data);
 }
 
@@ -233,8 +242,8 @@ function upload_firmware_package() {
 	if (uploaded.error) {
 		let e = uploaded.error;
 		let code = e.code || 'VALIDATION';
-		let status = code == 'LOW_MEMORY' || code == 'LOW_TMP' ? 507 : code == 'DEVICE_BUSY' ? 409 : 400;
-		return fail(status, code, e.message || '上传失败', e);
+		let status = code == 'LOW_MEMORY' || code == 'LOW_TMP' ? 507 : code == 'DEVICE_BUSY' ? 409 : code == 'INTERNAL' ? 500 : 400;
+		return fail(status, code, e.message || '上传失败', e.details || e);
 	}
 	let job = uploaded.job;
 	let report = uploaded.report;
@@ -315,7 +324,12 @@ function main() {
 	if (method == 'GET' && path == '/cgi-bin/mp716/auth/prelogin') {
 		let c = cursor();
 		let firstBoot = c.get('system', '@system[0]', 'mp716_wizard_complete') == '0' ? 1 : 0;
-		return ok({ firstBoot: firstBoot, needAuthorized: 1 });
+		return ok({
+			firstBoot: firstBoot, needAuthorized: 1,
+			bootId: trim(readfile('/proc/sys/kernel/random/boot_id') || ''),
+			firmwareVersion: firmware_version(), firmwareBoot: firmware_boot_result(),
+			...system_action_status(),
+		});
 	}
 	let t_ubus = perf_enabled() ? perf_monotonic_ms() : 0;
 	let ubus = connect();
@@ -389,13 +403,18 @@ function main() {
 		if (type(body) != 'object') return fail(400, 'VALIDATION', '无效的请求对象');
 	}
 	let api_path = substr(path, length('/cgi-bin/mp716/'));
+	if (method == 'GET' && api_path == 'system/logs')
+		body.limit = query_value('limit');
 	if (method == 'POST' && api_path == 'system/firmware-v2/apply')
 		return firmware_v2_apply(body);
 	let t0 = perf_enabled() ? perf_monotonic_ms() : 0;
 	if (perf_enabled()) perf_begin(substr(token, 0, 8), api_path);
 	try {
 		let result = route_native(ubus, method, api_path, body, token);
-		if (result?.error) return fail(result.error == 'DEVICE_BUSY' ? 409 : result.error == 'NOT_IMPLEMENTED' ? 404 : 400, result.error, result.message);
+		if (result?.error) {
+			let status = { DEVICE_BUSY: 409, NOT_IMPLEMENTED: 404, INTERNAL: 500, TIMEOUT: 504 };
+			return fail(status[result.error] || 400, result.error, result.message);
+		}
 		if (result != null) {
 			if (t0) {
 				let ser0 = perf_monotonic_ms();

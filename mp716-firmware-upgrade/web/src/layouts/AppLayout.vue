@@ -11,6 +11,7 @@ import UiModal from '@/components/UiModal.vue'
 import ApplyBanner from '@/components/ApplyBanner.vue'
 import { asApplyHandle, formatApiError, getApiMode, getRouterApi, unwrap } from '@/api'
 import { useRootApplyConfirm } from '@/composables/rootApplyConfirm'
+import { systemActionRoute } from '@/composables/useDeviceRebootWait'
 import { useToastStore } from '@/stores/toast'
 
 const { t } = useI18n()
@@ -75,8 +76,10 @@ async function doReboot() {
   rebootBusy.value = true
   rebootOpen.value = false
   try {
-    unwrap(await getRouterApi().rebootDevice())
-    toast.info(t('common.rebooting'))
+    const result = unwrap(await getRouterApi().rebootDevice())
+    if (result.systemAction) await router.push(systemActionRoute('reboot', result.systemAction))
+    else if (getApiMode() === 'device') toast.warning(t('sysReboot.waitActionUnconfirmed'))
+    else toast.info(t('common.rebooting'))
   } catch (e) {
     toast.error(formatApiError(e, t))
   } finally {
